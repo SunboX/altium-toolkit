@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2026 André Fiedler
+
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
+
 # Altium Toolkit
 
 Altium Toolkit is an ESM JavaScript library for parsing native Altium
@@ -80,5 +86,31 @@ native customer, vendor, or source project files to this repository.
 
 ## License
 
-This repository is licensed under the PolyForm Noncommercial License 1.0.0.
-See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+This project is available under two licensing options.
+
+### 1. Open-source software license
+
+GNU General Public License v3.0 or later (`GPL-3.0-or-later`).
+
+You may use, modify, and distribute this project under the GPL. If you
+distribute modified versions or larger works based on this project, they must
+comply with the GPL, including source-code availability requirements.
+
+### 2. Commercial/proprietary license
+
+For use in closed-source, proprietary, or otherwise GPL-incompatible products,
+a separate paid commercial license is required.
+
+Commercial licensing contact: https://github.com/SunboX
+
+### Documentation and notices
+
+Documentation and non-code text are licensed under Creative Commons
+Attribution-ShareAlike 4.0 (`CC-BY-SA-4.0`) unless otherwise marked.
+
+Copyright (C) 2026 André Fiedler.
+
+Copyright, license, attribution, and source-origin notices must be preserved as
+required by the GPL, CC-BY-SA-4.0, and the notice files in this repository.
+See [LICENSE](LICENSE), [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md), and
+[NOTICE.md](NOTICE.md).

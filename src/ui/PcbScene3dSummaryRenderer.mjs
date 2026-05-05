@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 /**
  * Renders a non-interactive summary of recovered PCB 3D scene inputs.
  */

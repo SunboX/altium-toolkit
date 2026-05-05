@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import './altium-parser/schematic-basics.mjs'
 import './altium-parser/schematic-symbols.mjs'
 import './altium-parser/schematic-layout.mjs'

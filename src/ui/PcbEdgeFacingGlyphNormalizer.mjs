@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 /**
  * Normalizes edge-facing footprint documentation glyphs so repeated mirrored
  * variants open toward the nearest board edge in the 2D PCB renderer.

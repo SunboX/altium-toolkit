@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { PcbScene3dBuilder } from './PcbScene3dBuilder.mjs'
 import { PcbScene3dModelRegistry } from './PcbScene3dModelRegistry.mjs'
 

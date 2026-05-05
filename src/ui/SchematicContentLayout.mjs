@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { SchematicSvgUtils } from './SchematicSvgUtils.mjs'
 import { SchematicTypography } from './SchematicTypography.mjs'
 

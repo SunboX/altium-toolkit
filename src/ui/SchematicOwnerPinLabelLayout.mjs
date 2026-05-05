@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 /**
  * Shared layout helpers for explicit owner pin-name labels and their paired
  * synthetic pin-number clearance.

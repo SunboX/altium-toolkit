@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import './renderers/schematic-core.mjs'
 import './renderers/schematic-large-text.mjs'
 import './renderers/schematic-parity.mjs'

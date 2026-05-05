@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 const ZOOM_IN_FACTOR = 0.97
 const ZOOM_OUT_FACTOR = 1 / ZOOM_IN_FACTOR
 const MIN_SCALE_RATIO = 0.05

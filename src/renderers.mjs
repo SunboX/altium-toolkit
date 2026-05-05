@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 export { BomTableRenderer } from './ui/BomTableRenderer.mjs'
 export { PcbArcUtils } from './ui/PcbArcUtils.mjs'
 export { PcbEdgeFacingGlyphNormalizer } from './ui/PcbEdgeFacingGlyphNormalizer.mjs'

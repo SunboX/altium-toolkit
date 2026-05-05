@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { AltiumLayoutParser } from './AltiumLayoutParser.mjs'
 import { PcbOutlineRecovery } from './PcbOutlineRecovery.mjs'
 import { ParserUtils } from './ParserUtils.mjs'

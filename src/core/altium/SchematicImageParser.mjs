@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { OleCompoundDocument } from '../ole/OleCompoundDocument.mjs'
 import { ParserUtils } from './ParserUtils.mjs'
 

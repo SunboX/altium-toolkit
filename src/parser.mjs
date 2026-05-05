@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 export { BinaryReader } from './core/BinaryReader.mjs'
 export { OleCompoundDocument } from './core/ole/OleCompoundDocument.mjs'
 export { OleConstants } from './core/ole/OleConstants.mjs'

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import { AsciiRecordParser } from './AsciiRecordParser.mjs'
 import { ParserUtils } from './ParserUtils.mjs'
 import { SchematicTextParser } from './SchematicTextParser.mjs'

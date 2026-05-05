@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Static FTP hosting serves raw browser modules, so this parser import must
 // resolve through one vendored browser file instead of a bare package
 // specifier.

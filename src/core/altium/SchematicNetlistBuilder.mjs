@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 /**
  * Builds a normalized single-sheet schematic net model from recovered
  * geometry and named connectivity markers.
