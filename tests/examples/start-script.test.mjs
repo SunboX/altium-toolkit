@@ -13,16 +13,16 @@ import { fileURLToPath } from 'node:url'
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
 /**
- * Verifies npm start serves the local Arduino example page.
+ * Verifies the configured start script target serves the local Arduino example page.
  */
-test('npm start serves the Arduino Uno example page', async (t) => {
+test('start script target serves the Arduino Uno example page', async (t) => {
     const packageJson = JSON.parse(
         await readFile(resolve(REPO_ROOT, 'package.json'), 'utf8')
     )
 
     assert.equal(packageJson.scripts.start, 'node examples/server.mjs')
 
-    const child = spawn('npm', ['start'], {
+    const child = spawn(process.execPath, ['examples/server.mjs'], {
         cwd: REPO_ROOT,
         env: {
             ...process.env,
