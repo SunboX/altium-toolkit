@@ -36,6 +36,11 @@ body {
     background: var(--page);
 }
 
+html.is-svg-panning,
+html.is-svg-panning body {
+    overflow: hidden;
+}
+
 a {
     color: var(--blue);
     text-decoration-thickness: 0.08em;
@@ -225,6 +230,18 @@ h1 {
     max-width: 100%;
     overflow: auto;
     padding: clamp(1rem, 3vw, 1.5rem);
+}
+
+.schematic-svg,
+.pcb-svg {
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+}
+
+.schematic-svg.is-panning,
+.pcb-svg.is-panning {
+    cursor: grabbing;
 }
 
 .empty-state,

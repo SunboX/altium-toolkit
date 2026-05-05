@@ -6,6 +6,7 @@ import {
     SchematicSvgRenderer
 } from '../../src/index.mjs'
 import { PcbThreeSceneRenderer } from './PcbThreeSceneRenderer.mjs'
+import { SvgViewportController } from './SvgViewportController.mjs'
 
 const SOURCE_PROJECT_URL =
     'https://github.com/Mehdi-KHALFALLAH/My-Arduino-UNO-Design'
@@ -34,6 +35,7 @@ class ArduinoUnoExample {
     #documentModel = null
     #elements
     #sourceDocumentModels = new Map()
+    #svgViewportController = null
     #threeRenderer = null
 
     /**
@@ -86,6 +88,7 @@ class ArduinoUnoExample {
         this.#setStatus('Parsing ' + file.name + '...', 'busy')
 
         try {
+            this.#disposeSvgViewportController()
             this.#disposeThreeRenderer()
             const arrayBuffer = await file.arrayBuffer()
             this.#documentModel = AltiumParser.parseArrayBuffer(
@@ -105,6 +108,7 @@ class ArduinoUnoExample {
             this.#syncTabs()
             this.#render()
         } catch (error) {
+            this.#disposeSvgViewportController()
             this.#disposeThreeRenderer()
             this.#documentModel = null
             this.#setStatus(this.#formatError(error), 'error')
@@ -117,6 +121,7 @@ class ArduinoUnoExample {
      * @returns {Promise<void>}
      */
     async #loadSourceDocuments() {
+        this.#disposeSvgViewportController()
         this.#disposeThreeRenderer()
         this.#documentModel = null
         this.#activeView = 'schematic'
@@ -232,6 +237,7 @@ class ArduinoUnoExample {
      * @returns {void}
      */
     #render() {
+        this.#disposeSvgViewportController()
         this.#disposeThreeRenderer()
         const documentModel = this.#getActiveDocumentModel()
         if (!documentModel) {
@@ -251,9 +257,34 @@ class ArduinoUnoExample {
         this.#elements.output.innerHTML =
             renderers[this.#activeView]?.() || this.#renderEmptyState()
 
-        if (this.#activeView === '3d') {
+        if (this.#activeView === 'schematic') {
+            this.#mountSvgViewport('.schematic-svg')
+        } else if (this.#activeView === 'pcb') {
+            this.#mountSvgViewport('.pcb-svg')
+        } else if (this.#activeView === '3d') {
             this.#mountThreeScene(documentModel)
         }
+    }
+
+    /**
+     * Mounts pan and zoom controls on the active SVG renderer output.
+     * @param {string} selector
+     * @returns {void}
+     */
+    #mountSvgViewport(selector) {
+        const svgElement = this.#elements.output.querySelector(selector)
+        if (!svgElement) return
+
+        this.#svgViewportController = new SvgViewportController(svgElement)
+    }
+
+    /**
+     * Releases the active SVG viewport controller when the view changes.
+     * @returns {void}
+     */
+    #disposeSvgViewportController() {
+        this.#svgViewportController?.dispose()
+        this.#svgViewportController = null
     }
 
     /**

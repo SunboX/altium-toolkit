@@ -82,6 +82,27 @@ test('Arduino Three.js control script avoids dataset camel-casing for 3d attribu
 })
 
 /**
+ * Verifies schematic and PCB SVG output is wired to a pan/zoom controller.
+ */
+test('Arduino example wires SVG pan and zoom for schematic and PCB views', async () => {
+    const script = await readFile(
+        resolve(REPO_ROOT, 'examples/arduino-uno/example.mjs'),
+        'utf8'
+    )
+    const controller = await readFile(
+        resolve(REPO_ROOT, 'examples/arduino-uno/SvgViewportController.mjs'),
+        'utf8'
+    )
+
+    assert.match(script, /SvgViewportController/)
+    assert.match(script, /#mountSvgViewport\('\.schematic-svg'\)/)
+    assert.match(script, /#mountSvgViewport\('\.pcb-svg'\)/)
+    assert.match(controller, /addEventListener\('wheel'/)
+    assert.match(controller, /addEventListener\('mousedown'/)
+    assert.match(controller, /setAttribute\(\s*'viewBox'/)
+})
+
+/**
  * Verifies the example constrains the 3D scene within narrow viewports.
  */
 test('Arduino example constrains the Three.js layout to the viewport width', async () => {
