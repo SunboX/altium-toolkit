@@ -25,6 +25,9 @@ shape, and renderer output can be reused by other browser or Node-based tools.
 
 ## Install
 
+The package is published on npm as
+[`altium-toolkit`](https://www.npmjs.com/package/altium-toolkit).
+
 ```bash
 npm install altium-toolkit
 ```
