@@ -28,7 +28,7 @@
     ],
     "scripts": {
         "start": "node examples/server.mjs",
-        "test": "node --test tests",
+        "test": "node --test tests/*.test.mjs tests/**/*.test.mjs",
         "format": "prettier --write .",
         "check:format": "prettier --check ."
     },
