@@ -10,8 +10,10 @@ Altium Toolkit is an ESM JavaScript library for parsing native Altium
 schematic and PCB documents and rendering deterministic, non-interactive
 outputs from the recovered model.
 
-The package was extracted from ECAD Forge so parser behavior, normalized model
-shape, and renderer output can be reused by other browser or Node-based tools.
+The package was extracted from [ECAD Forge](https://ecadforge.app/), where it
+is used for browser-based Altium document parsing and deterministic render
+output. Its parser behavior, normalized model shape, and renderer output can be
+reused by other browser or Node-based tools.
 
 ## Features
 
