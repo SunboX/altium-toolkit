@@ -1,5 +1,5 @@
 {
-    "name": "@sunbox/altium-toolkit",
+    "name": "altium-toolkit",
     "version": "0.1.0",
     "description": "Altium document parsing and non-interactive rendering utilities",
     "license": "GPL-3.0-or-later",

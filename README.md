@@ -26,7 +26,7 @@ shape, and renderer output can be reused by other browser or Node-based tools.
 ## Install
 
 ```bash
-npm install git+ssh://git@github.com/SunboX/altium-toolkit.git
+npm install altium-toolkit
 ```
 
 ## Usage
@@ -38,7 +38,7 @@ import {
     PcbSvgRenderer,
     BomTableRenderer,
     PcbScene3dBuilder
-} from '@sunbox/altium-toolkit'
+} from 'altium-toolkit'
 
 const documentModel = AltiumParser.parseArrayBuffer(file.name, arrayBuffer)
 
@@ -51,7 +51,7 @@ const sceneDescription = PcbScene3dBuilder.build(documentModel)
 Optional renderer CSS is available through:
 
 ```js
-import '@sunbox/altium-toolkit/styles/altium-renderers.css'
+import 'altium-toolkit/styles/altium-renderers.css'
 ```
 
 ## Documentation

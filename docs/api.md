@@ -8,21 +8,21 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 ## Entrypoints
 
-`@sunbox/altium-toolkit` exports the supported parser, renderer, and 3D
+`altium-toolkit` exports the supported parser, renderer, and 3D
 scene-description classes from one entrypoint.
 
 Specialized entrypoints are also available:
 
-- `@sunbox/altium-toolkit/parser`
-- `@sunbox/altium-toolkit/renderers`
-- `@sunbox/altium-toolkit/scene3d`
-- `@sunbox/altium-toolkit/workers/altium-parser.worker.mjs`
-- `@sunbox/altium-toolkit/styles/altium-renderers.css`
+- `altium-toolkit/parser`
+- `altium-toolkit/renderers`
+- `altium-toolkit/scene3d`
+- `altium-toolkit/workers/altium-parser.worker.mjs`
+- `altium-toolkit/styles/altium-renderers.css`
 
 ## Parser
 
 ```js
-import { AltiumParser } from '@sunbox/altium-toolkit/parser'
+import { AltiumParser } from 'altium-toolkit/parser'
 
 const documentModel = AltiumParser.parseArrayBuffer(fileName, arrayBuffer)
 ```
@@ -39,7 +39,7 @@ import {
     SchematicSvgRenderer,
     PcbSvgRenderer,
     BomTableRenderer
-} from '@sunbox/altium-toolkit/renderers'
+} from 'altium-toolkit/renderers'
 ```
 
 - `SchematicSvgRenderer.render(documentModel)` returns schematic SVG markup.
@@ -57,7 +57,7 @@ import {
     PcbScene3dModelRegistry,
     PcbScene3dScenePreparator,
     PcbScene3dSummaryRenderer
-} from '@sunbox/altium-toolkit/scene3d'
+} from 'altium-toolkit/scene3d'
 ```
 
 - `PcbScene3dBuilder.build(documentModel, options)` returns procedural board,
