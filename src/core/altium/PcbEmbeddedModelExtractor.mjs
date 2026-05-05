@@ -1,0 +1,501 @@
+// Static FTP hosting serves raw browser modules, so this parser import must
+// resolve through one vendored browser file instead of a bare package
+// specifier.
+import { unzlibSync } from 'fflate'
+import { PrintableTextDecoder } from './PrintableTextDecoder.mjs'
+
+/**
+ * Extracts embedded 3D model payloads and component-body placement metadata
+ * from PCB compound-document streams.
+ */
+export class PcbEmbeddedModelExtractor {
+    /**
+     * Extracts embedded model payloads and component-body placements from one
+     * stream map.
+     * @param {Map<string, Uint8Array>} streams
+     * @returns {{ models: { id: string, checksum: number, name: string, format: string, payloadText: string, sourceStream: string, transform: { rotationDeg: { x: number, y: number, z: number }, dzMil: number } }[], componentBodies: { sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null }[] }}
+     */
+    static extractFromStreams(streams) {
+        const modelMetadataRecords =
+            PcbEmbeddedModelExtractor.#parseModelMetadataStream(
+                streams.get('Models/Data')
+            )
+        const models = modelMetadataRecords
+            .map((record, index) =>
+                PcbEmbeddedModelExtractor.#normalizeEmbeddedModel(
+                    record,
+                    streams.get('Models/' + index),
+                    'Models/' + index
+                )
+            )
+            .filter(Boolean)
+        const componentBodies =
+            PcbEmbeddedModelExtractor.#dedupeComponentBodies([
+                ...PcbEmbeddedModelExtractor.#parseComponentBodyStream(
+                    streams.get('ComponentBodies6/Data'),
+                    'ComponentBodies6/Data'
+                ),
+                ...PcbEmbeddedModelExtractor.#parseComponentBodyStream(
+                    streams.get('ShapeBasedComponentBodies6/Data'),
+                    'ShapeBasedComponentBodies6/Data'
+                )
+            ])
+
+        return {
+            models,
+            componentBodies
+        }
+    }
+
+    /**
+     * Parses the length-prefixed `Models/Data` metadata stream.
+     * @param {Uint8Array | undefined} bytes
+     * @returns {Record<string, string | string[]>[]}
+     */
+    static #parseModelMetadataStream(bytes) {
+        if (!(bytes instanceof Uint8Array) || !bytes.byteLength) {
+            return []
+        }
+
+        const view = new DataView(
+            bytes.buffer,
+            bytes.byteOffset,
+            bytes.byteLength
+        )
+        const records = []
+        let offset = 0
+
+        while (offset + 4 <= bytes.byteLength) {
+            const recordLength = view.getUint32(offset, true)
+            offset += 4
+
+            if (recordLength <= 0 || offset + recordLength > bytes.byteLength) {
+                break
+            }
+
+            const fields = PcbEmbeddedModelExtractor.#parseFieldRecordBytes(
+                bytes.subarray(offset, offset + recordLength)
+            )
+            offset += recordLength
+
+            if (
+                PcbEmbeddedModelExtractor.#getField(fields, 'ID') ||
+                PcbEmbeddedModelExtractor.#getField(fields, 'NAME')
+            ) {
+                records.push(fields)
+            }
+        }
+
+        return records
+    }
+
+    /**
+     * Parses one component-body printable stream into model-placement records.
+     * @param {Uint8Array | undefined} bytes
+     * @param {string} sourceStream
+     * @returns {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null }[]}
+     */
+    static #parseComponentBodyStream(bytes, sourceStream) {
+        if (!(bytes instanceof Uint8Array) || !bytes.byteLength) {
+            return []
+        }
+
+        const arrayBuffer = bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength
+        )
+
+        return PrintableTextDecoder.extractRunBytes(arrayBuffer)
+            .map((runBytes) =>
+                PcbEmbeddedModelExtractor.#parseFieldRecordBytes(runBytes)
+            )
+            .map((fields) =>
+                PcbEmbeddedModelExtractor.#normalizeComponentBody(
+                    fields,
+                    sourceStream
+                )
+            )
+            .filter(Boolean)
+    }
+
+    /**
+     * Parses one printable field record without requiring a specific leading
+     * marker such as `|RECORD=` or `|KIND=`.
+     * @param {Uint8Array} bytes
+     * @returns {Record<string, string | string[]>}
+     */
+    static #parseFieldRecordBytes(bytes) {
+        const fields = {}
+        const text = PrintableTextDecoder.decodeBytes(bytes)
+            .replaceAll('\u0000', '')
+            .trim()
+
+        for (const segment of text.split('|')) {
+            const trimmedSegment = segment.trim()
+            if (!trimmedSegment) {
+                continue
+            }
+
+            const separatorIndex = trimmedSegment.indexOf('=')
+            if (separatorIndex === -1) {
+                continue
+            }
+
+            const key = trimmedSegment.slice(0, separatorIndex).trim()
+            const value = trimmedSegment.slice(separatorIndex + 1).trim()
+
+            if (!key) {
+                continue
+            }
+
+            PcbEmbeddedModelExtractor.#appendFieldValue(fields, key, value)
+        }
+
+        return fields
+    }
+
+    /**
+     * Normalizes one embedded model metadata record and its payload stream.
+     * @param {Record<string, string | string[]>} fields
+     * @param {Uint8Array | undefined} bytes
+     * @param {string} sourceStream
+     * @returns {{ id: string, checksum: number, name: string, format: string, payloadText: string, sourceStream: string, transform: { rotationDeg: { x: number, y: number, z: number }, dzMil: number } } | null}
+     */
+    static #normalizeEmbeddedModel(fields, bytes, sourceStream) {
+        if (!(bytes instanceof Uint8Array) || !bytes.byteLength) {
+            return null
+        }
+
+        const id = PcbEmbeddedModelExtractor.#getField(fields, 'ID')
+        const name = PcbEmbeddedModelExtractor.#getField(fields, 'NAME')
+        const checksum = PcbEmbeddedModelExtractor.#normalizeChecksum(
+            PcbEmbeddedModelExtractor.#parseIntegerField(fields, 'CHECKSUM')
+        )
+
+        if (!id || !name || checksum === null) {
+            return null
+        }
+
+        const payloadBytes =
+            PcbEmbeddedModelExtractor.#inflateModelPayload(bytes)
+        const payloadText = new TextDecoder('utf-8').decode(payloadBytes).trim()
+
+        if (!payloadText) {
+            return null
+        }
+
+        return {
+            id,
+            checksum,
+            name,
+            format: PcbEmbeddedModelExtractor.#resolveModelFormat(
+                name,
+                payloadText
+            ),
+            payloadText,
+            sourceStream,
+            transform: {
+                rotationDeg: {
+                    x:
+                        PcbEmbeddedModelExtractor.#parseNumberField(
+                            fields,
+                            'ROTX'
+                        ) || 0,
+                    y:
+                        PcbEmbeddedModelExtractor.#parseNumberField(
+                            fields,
+                            'ROTY'
+                        ) || 0,
+                    z:
+                        PcbEmbeddedModelExtractor.#parseNumberField(
+                            fields,
+                            'ROTZ'
+                        ) || 0
+                },
+                dzMil:
+                    PcbEmbeddedModelExtractor.#parseMilLikeField(
+                        fields,
+                        'DZ'
+                    ) || 0
+            }
+        }
+    }
+
+    /**
+     * Normalizes one component-body record into model-placement metadata.
+     * @param {Record<string, string | string[]>} fields
+     * @param {string} sourceStream
+     * @returns {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null } | null}
+     */
+    static #normalizeComponentBody(fields, sourceStream) {
+        const modelId = PcbEmbeddedModelExtractor.#getField(fields, 'MODELID')
+        const name = PcbEmbeddedModelExtractor.#getField(fields, 'MODEL.NAME')
+
+        if (!modelId && !name) {
+            return null
+        }
+
+        return {
+            sourceStream,
+            layer: PcbEmbeddedModelExtractor.#getField(fields, 'V7_LAYER'),
+            identifier: PcbEmbeddedModelExtractor.#decodeIdentifier(
+                PcbEmbeddedModelExtractor.#getField(fields, 'IDENTIFIER')
+            ),
+            modelId,
+            checksum: PcbEmbeddedModelExtractor.#normalizeChecksum(
+                PcbEmbeddedModelExtractor.#parseIntegerField(
+                    fields,
+                    'MODEL.CHECKSUM'
+                )
+            ),
+            embedded: /^TRUE$/i.test(
+                PcbEmbeddedModelExtractor.#getField(fields, 'MODEL.EMBED')
+            ),
+            name,
+            positionMil: {
+                x:
+                    PcbEmbeddedModelExtractor.#parseMilLikeField(
+                        fields,
+                        'MODEL.2D.X'
+                    ) || 0,
+                y:
+                    PcbEmbeddedModelExtractor.#parseMilLikeField(
+                        fields,
+                        'MODEL.2D.Y'
+                    ) || 0
+            },
+            rotationDeg:
+                PcbEmbeddedModelExtractor.#parseNumberField(
+                    fields,
+                    'MODEL.2D.ROTATION'
+                ) || 0,
+            modelRotationDeg: {
+                x:
+                    PcbEmbeddedModelExtractor.#parseNumberField(
+                        fields,
+                        'MODEL.3D.ROTX'
+                    ) || 0,
+                y:
+                    PcbEmbeddedModelExtractor.#parseNumberField(
+                        fields,
+                        'MODEL.3D.ROTY'
+                    ) || 0,
+                z:
+                    PcbEmbeddedModelExtractor.#parseNumberField(
+                        fields,
+                        'MODEL.3D.ROTZ'
+                    ) || 0
+            },
+            dzMil:
+                PcbEmbeddedModelExtractor.#parseMilLikeField(
+                    fields,
+                    'MODEL.3D.DZ'
+                ) || 0,
+            overallHeightMil: PcbEmbeddedModelExtractor.#parseMilLikeField(
+                fields,
+                'OVERALLHEIGHT'
+            ),
+            standoffHeightMil: PcbEmbeddedModelExtractor.#parseMilLikeField(
+                fields,
+                'STANDOFFHEIGHT'
+            )
+        }
+    }
+
+    /**
+     * Inflates one zlib model payload and falls back to the raw bytes when the
+     * stream is already plain text.
+     * @param {Uint8Array} bytes
+     * @returns {Uint8Array}
+     */
+    static #inflateModelPayload(bytes) {
+        try {
+            return Uint8Array.from(unzlibSync(bytes))
+        } catch {
+            return bytes
+        }
+    }
+
+    /**
+     * Deduplicates shape-based body records shared across body streams.
+     * @param {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null }[]} componentBodies
+     * @returns {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null }[]}
+     */
+    static #dedupeComponentBodies(componentBodies) {
+        const uniqueBodies = new Map()
+
+        for (const componentBody of componentBodies) {
+            const key = [
+                componentBody.modelId,
+                componentBody.checksum,
+                componentBody.name,
+                componentBody.positionMil.x,
+                componentBody.positionMil.y,
+                componentBody.rotationDeg,
+                componentBody.modelRotationDeg.x,
+                componentBody.modelRotationDeg.y,
+                componentBody.modelRotationDeg.z,
+                componentBody.dzMil
+            ].join('\u0000')
+
+            if (!uniqueBodies.has(key)) {
+                uniqueBodies.set(key, componentBody)
+            }
+        }
+
+        return [...uniqueBodies.values()]
+    }
+
+    /**
+     * Resolves one model format from metadata and payload text.
+     * @param {string} name
+     * @param {string} payloadText
+     * @returns {string}
+     */
+    static #resolveModelFormat(name, payloadText) {
+        const normalizedName = String(name || '').toLowerCase()
+
+        if (
+            normalizedName.endsWith('.step') ||
+            normalizedName.endsWith('.stp') ||
+            payloadText.startsWith('ISO-10303-21')
+        ) {
+            return 'step'
+        }
+
+        if (
+            normalizedName.endsWith('.wrl') ||
+            normalizedName.endsWith('.vrml')
+        ) {
+            return 'wrl'
+        }
+
+        return 'unknown'
+    }
+
+    /**
+     * Returns the latest meaningful field value from one parsed field map.
+     * @param {Record<string, string | string[]>} fields
+     * @param {string} key
+     * @returns {string}
+     */
+    static #getField(fields, key) {
+        const raw = fields[key]
+        const values = Array.isArray(raw) ? raw : [raw]
+
+        return (
+            values
+                .map((value) => String(value || '').trim())
+                .findLast((value) => value.length > 0) || ''
+        )
+    }
+
+    /**
+     * Appends one field value while preserving duplicate keys.
+     * @param {Record<string, string | string[]>} fields
+     * @param {string} key
+     * @param {string} value
+     * @returns {void}
+     */
+    static #appendFieldValue(fields, key, value) {
+        if (!(key in fields)) {
+            fields[key] = value
+            return
+        }
+
+        const previous = fields[key]
+        if (Array.isArray(previous)) {
+            previous.push(value)
+            return
+        }
+
+        fields[key] = [previous, value]
+    }
+
+    /**
+     * Parses one floating-point field.
+     * @param {Record<string, string | string[]>} fields
+     * @param {string} key
+     * @returns {number | null}
+     */
+    static #parseNumberField(fields, key) {
+        const raw = PcbEmbeddedModelExtractor.#getField(fields, key)
+        const match = raw.match(/-?\d+(?:\.\d+)?(?:E[+-]?\d+)?/i)
+
+        if (!match) {
+            return null
+        }
+
+        const parsed = Number(match[0])
+        return Number.isFinite(parsed) ? parsed : null
+    }
+
+    /**
+     * Parses one integer-like field.
+     * @param {Record<string, string | string[]>} fields
+     * @param {string} key
+     * @returns {number | null}
+     */
+    static #parseIntegerField(fields, key) {
+        const parsed = PcbEmbeddedModelExtractor.#parseNumberField(fields, key)
+        if (!Number.isFinite(parsed)) {
+            return null
+        }
+
+        return Math.trunc(parsed)
+    }
+
+    /**
+     * Parses one mil-like field from text or 1/10000 mil integer storage.
+     * @param {Record<string, string | string[]>} fields
+     * @param {string} key
+     * @returns {number | null}
+     */
+    static #parseMilLikeField(fields, key) {
+        const raw = PcbEmbeddedModelExtractor.#getField(fields, key)
+        const parsed = PcbEmbeddedModelExtractor.#parseNumberField(fields, key)
+
+        if (!Number.isFinite(parsed)) {
+            return null
+        }
+
+        return /mil/i.test(raw) ? parsed : parsed / 10000
+    }
+
+    /**
+     * Normalizes one signed or unsigned 32-bit checksum to its unsigned form.
+     * @param {number | null} checksum
+     * @returns {number | null}
+     */
+    static #normalizeChecksum(checksum) {
+        if (!Number.isInteger(checksum)) {
+            return null
+        }
+
+        return checksum >>> 0
+    }
+
+    /**
+     * Decodes one comma-separated identifier byte list.
+     * @param {string} rawIdentifier
+     * @returns {string}
+     */
+    static #decodeIdentifier(rawIdentifier) {
+        const trimmed = String(rawIdentifier || '').trim()
+
+        if (!trimmed) {
+            return ''
+        }
+
+        if (!/^\d+(?:,\d+)*$/.test(trimmed)) {
+            return trimmed
+        }
+
+        return String.fromCharCode(
+            ...trimmed
+                .split(',')
+                .map((value) => Number.parseInt(value, 10))
+                .filter(Number.isInteger)
+        )
+    }
+}

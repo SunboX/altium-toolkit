@@ -1,0 +1,8 @@
+import './altium-parser/schematic-basics.mjs'
+import './altium-parser/schematic-symbols.mjs'
+import './altium-parser/schematic-layout.mjs'
+import './altium-parser/schematic-regressions.mjs'
+import './altium-parser/pcb-relic.mjs'
+import './altium-parser/schematic-parity.mjs'
+import './altium-parser/schematic-images.mjs'
+import './altium-parser/schematic-nets.mjs'

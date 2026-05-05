@@ -1,0 +1,352 @@
+.altium-renderer-empty {
+    min-height: 18rem;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    color: var(--altium-renderer-muted, #405662);
+    background: var(--altium-renderer-surface, #fffaf5);
+    border: 1px solid var(--altium-renderer-border, rgba(95, 112, 124, 0.14));
+    border-radius: 8px;
+    padding: 2rem;
+}
+
+.svg-panel {
+    display: grid;
+    gap: 1rem;
+    color: var(--altium-renderer-text, #22343b);
+}
+
+.svg-panel__header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+.svg-panel__header h3,
+.pcb-legend h4,
+.bom-panel__header h3,
+.altium-3d-summary__header h3 {
+    margin: 0;
+}
+
+.svg-panel__header p,
+.pcb-legend p,
+.bom-panel__header p,
+.altium-3d-summary__header p {
+    margin: 0.35rem 0 0;
+    color: var(--altium-renderer-muted, #405662);
+}
+
+.schematic-svg,
+.pcb-svg {
+    width: 100%;
+    min-height: 36rem;
+    display: block;
+    border-radius: 8px;
+    background: var(--altium-renderer-canvas, #f7f4ef);
+    border: 1px solid var(--altium-renderer-border, rgba(95, 112, 124, 0.14));
+}
+
+.schematic-svg {
+    --schematic-default-ink-color: #0091ac;
+    --schematic-accent-ink-color: #14c5e6;
+    --schematic-text-color: #121b22;
+    --schematic-sheet-label-color: #405662;
+    --schematic-power-color: #a84a12;
+    --schematic-port-color: #f28724;
+    --schematic-alert-color: #da2f70;
+    --schematic-fill-color: #f4dec7;
+    --schematic-note-fill-color: #efe4d1;
+    --schematic-fill-light-color: #fffaf5;
+    --schematic-pin-marker-fill: #edf4f3;
+    --schematic-note-border-color: #8a725c;
+    --schematic-sheet-backdrop-fill: rgba(253, 251, 248, 0.96);
+    --schematic-sheet-backdrop-stroke: rgba(95, 112, 124, 0.12);
+    --schematic-sheet-frame-stroke: rgba(95, 112, 124, 0.48);
+    --schematic-node-fill: rgba(15, 116, 108, 0.9);
+}
+
+.sheet-backdrop {
+    fill: var(--schematic-sheet-backdrop-fill);
+    stroke: var(--schematic-sheet-backdrop-stroke);
+}
+
+.sheet-frame,
+.sheet-zone-separator,
+.sheet-title-block rect,
+.sheet-title-block line {
+    fill: none;
+    stroke: var(--schematic-sheet-frame-stroke);
+    stroke-width: 1;
+}
+
+.sheet-title-label,
+.sheet-title-value,
+.sheet-zone-label {
+    font-family: Arial, sans-serif;
+}
+
+.sheet-title-label {
+    font-size: 6px;
+}
+
+.sheet-title-value {
+    font-size: 9px;
+    font-weight: 600;
+}
+
+.sheet-zone-label {
+    font-size: 8px;
+    font-weight: 500;
+}
+
+.schematic-pin-line,
+.schematic-port rect,
+.schematic-port polygon,
+.schematic-cross line,
+.schematic-power-port line {
+    stroke-width: 1;
+}
+
+.schematic-power-port-label {
+    font-family: 'Times New Roman', serif;
+}
+
+.schematic-node circle,
+.schematic-authored-junction {
+    fill: var(--schematic-node-fill);
+}
+
+.pcb-svg {
+    --pcb-board-fill: #d8e8e4;
+    --pcb-board-stroke: #0f746c;
+    --pcb-surface-copper-fill: rgba(199, 109, 61, 0.15);
+    --pcb-subsurface-copper-fill: rgba(114, 84, 62, 0.06);
+    --pcb-surface-fill: rgba(199, 109, 61, 0.34);
+    --pcb-subsurface-fill: rgba(114, 84, 62, 0.08);
+    --pcb-surface-track-color: rgba(199, 82, 45, 0.88);
+    --pcb-subsurface-track-color: rgba(112, 84, 62, 0.2);
+    --pcb-copper-fill: rgba(196, 118, 70, 0.24);
+    --pcb-copper-solid-fill: rgba(196, 118, 70, 0.78);
+    --pcb-track-color: #c7522d;
+    --pcb-via-ring-fill: rgba(232, 236, 233, 0.92);
+    --pcb-via-hole-fill: #0f746c;
+    --pcb-footprint-fill: rgba(247, 230, 117, 0.14);
+    --pcb-footprint-track-color: rgba(237, 172, 36, 1);
+    --pcb-component-top-fill: rgba(244, 219, 198, 0.92);
+    --pcb-component-bottom-fill: rgba(15, 116, 108, 0.84);
+    --pcb-component-stroke: rgba(110, 64, 38, 0.28);
+    --pcb-component-text: #22343b;
+    background:
+        radial-gradient(
+            circle at top,
+            rgba(255, 255, 255, 0.72),
+            transparent 44%
+        ),
+        linear-gradient(180deg, #f7f4ef 0%, #f0ece4 100%);
+}
+
+.pcb-layout {
+    display: grid;
+    grid-template-columns: minmax(180px, 220px) 1fr;
+    gap: 1rem;
+    align-items: start;
+}
+
+.pcb-legend {
+    padding: 1rem;
+    border-radius: 8px;
+    background: var(--altium-renderer-surface, rgba(255, 255, 255, 0.72));
+    border: 1px solid var(--altium-renderer-border, rgba(95, 112, 124, 0.14));
+}
+
+.pcb-legend ul {
+    margin: 0.8rem 0 0;
+    padding-left: 1rem;
+    color: var(--altium-renderer-muted, #405662);
+}
+
+.board-outline {
+    fill: var(--pcb-board-fill);
+    stroke: var(--pcb-board-stroke);
+    stroke-width: 18;
+}
+
+.board-outline--stroke {
+    fill: none;
+    stroke-linejoin: round;
+}
+
+.pcb-polygon,
+.pcb-fill {
+    stroke: none;
+}
+
+.pcb-track,
+.pcb-arc,
+.pcb-footprint-track,
+.pcb-footprint-arc {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.pcb-copper--surface .pcb-polygon {
+    fill: var(--pcb-surface-copper-fill);
+}
+
+.pcb-copper--subsurface .pcb-polygon {
+    fill: var(--pcb-subsurface-copper-fill);
+}
+
+.pcb-copper--surface .pcb-fill {
+    fill: var(--pcb-surface-fill);
+}
+
+.pcb-copper--subsurface .pcb-fill {
+    fill: var(--pcb-subsurface-fill);
+}
+
+.pcb-copper--surface .pcb-track,
+.pcb-copper--surface .pcb-arc {
+    stroke: var(--pcb-surface-track-color);
+}
+
+.pcb-copper--subsurface .pcb-track,
+.pcb-copper--subsurface .pcb-arc {
+    stroke: var(--pcb-subsurface-track-color);
+}
+
+.pcb-copper--subsurface {
+    opacity: 0.45;
+}
+
+.pcb-via__pad,
+.pcb-pad__ring {
+    fill: var(--pcb-via-ring-fill);
+}
+
+.pcb-via__hole,
+.pcb-pad__hole,
+.pcb-pad__hole--slot {
+    fill: var(--pcb-via-hole-fill);
+}
+
+.pcb-pad--smd .pcb-pad__ring {
+    fill: var(--pcb-copper-solid-fill);
+}
+
+.pcb-footprint-fill {
+    fill: var(--pcb-footprint-fill);
+}
+
+.pcb-footprint-track,
+.pcb-footprint-arc {
+    stroke: var(--pcb-footprint-track-color);
+}
+
+.pcb-component__body {
+    fill: var(--pcb-component-top-fill);
+    stroke: var(--pcb-component-stroke);
+    stroke-width: 3;
+}
+
+.pcb-component--bottom .pcb-component__body {
+    fill: var(--pcb-component-bottom-fill);
+}
+
+.pcb-component text {
+    font-size: 29px;
+    text-anchor: middle;
+    fill: var(--pcb-component-text);
+    font-weight: 700;
+}
+
+.bom-panel {
+    display: grid;
+    gap: 1rem;
+    color: var(--altium-renderer-text, #22343b);
+}
+
+.bom-table {
+    width: 100%;
+    border-collapse: collapse;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--altium-renderer-surface, rgba(255, 255, 255, 0.7));
+}
+
+.bom-table th,
+.bom-table td {
+    padding: 0.8rem 0.9rem;
+    border-bottom: 1px solid
+        var(--altium-renderer-border, rgba(95, 112, 124, 0.12));
+    text-align: left;
+    vertical-align: top;
+}
+
+.bom-table th {
+    color: var(--altium-renderer-muted, #405662);
+    font-size: 0.86rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.altium-3d-summary {
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 8px;
+    color: var(--altium-renderer-text, #22343b);
+    background: var(--altium-renderer-surface, rgba(255, 255, 255, 0.72));
+    border: 1px solid var(--altium-renderer-border, rgba(95, 112, 124, 0.14));
+}
+
+.altium-3d-summary--empty {
+    color: var(--altium-renderer-muted, #405662);
+}
+
+.altium-3d-summary__stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin: 0;
+}
+
+.altium-3d-summary__stats div {
+    padding: 0.85rem;
+    border-radius: 8px;
+    background: var(--altium-renderer-panel, rgba(255, 255, 255, 0.68));
+    border: 1px solid var(--altium-renderer-border, rgba(95, 112, 124, 0.12));
+}
+
+.altium-3d-summary__stats dt {
+    color: var(--altium-renderer-muted, #405662);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.altium-3d-summary__stats dd {
+    margin: 0.35rem 0 0;
+    font-weight: 700;
+}
+
+@media (max-width: 1024px) {
+    .pcb-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 760px) {
+    .schematic-svg,
+    .pcb-svg {
+        min-height: 26rem;
+    }
+
+    .altium-3d-summary__stats {
+        grid-template-columns: 1fr;
+    }
+}

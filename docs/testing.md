@@ -1,0 +1,19 @@
+# Testing
+
+Run the complete suite:
+
+```bash
+npm test
+```
+
+The tests cover:
+
+- Binary and OLE helpers
+- Printable and binary Altium parser recovery
+- Obfuscated fake schematic and PCB fixture shards
+- Schematic SVG, PCB SVG, BOM HTML, and static 3D summary renderers
+- Non-interactive PCB 3D scene-description builders and model registry logic
+
+Fixture data must remain repo-owned and obfuscated. Do not add native provided
+Altium files, real customer identifiers, real vendor identifiers, or
+source-descriptive fixture names.
