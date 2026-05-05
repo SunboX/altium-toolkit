@@ -12,7 +12,9 @@
         <script type="importmap">
             {
                 "imports": {
-                    "fflate": "../../node_modules/fflate/esm/browser.js"
+                    "fflate": "../../node_modules/fflate/esm/browser.js",
+                    "three": "../../node_modules/three/build/three.module.js",
+                    "three/addons/": "../../node_modules/three/examples/jsm/"
                 }
             }
         </script>
@@ -46,19 +48,8 @@
 
             <section class="workspace" aria-label="Arduino Uno design example">
                 <aside class="control-panel">
-                    <div class="board-preview" aria-hidden="true">
-                        <span class="chip chip--usb"></span>
-                        <span class="chip chip--mcu"></span>
-                        <span class="chip chip--dip"></span>
-                        <span class="header-pin header-pin--top"></span>
-                        <span class="header-pin header-pin--bottom"></span>
-                        <span class="trace trace--one"></span>
-                        <span class="trace trace--two"></span>
-                        <span class="trace trace--three"></span>
-                    </div>
-
                     <label class="file-picker" for="document-file">
-                        <span>Load Altium document</span>
+                        <span>Load local Altium document</span>
                         <input
                             id="document-file"
                             type="file"
@@ -67,7 +58,7 @@
                     </label>
 
                     <p id="status" class="status" role="status">
-                        Select a local `.SchDoc` or `.PcbDoc` file.
+                        Loading credited source documents from GitHub...
                     </p>
 
                     <dl class="source-facts">
@@ -81,7 +72,9 @@
                         </div>
                         <div>
                             <dt>Data flow</dt>
-                            <dd>Local file parsing only</dd>
+                            <dd>
+                                Auto-fetch source documents or load local files
+                            </dd>
                         </div>
                     </dl>
                 </aside>
@@ -119,11 +112,20 @@
                             <button
                                 class="tab"
                                 type="button"
+                                data-view="3d"
+                                role="tab"
+                                aria-selected="false"
+                            >
+                                3D
+                            </button>
+                            <button
+                                class="tab"
+                                type="button"
                                 data-view="summary"
                                 role="tab"
                                 aria-selected="false"
                             >
-                                3D Summary
+                                Summary
                             </button>
                             <button
                                 class="tab"
@@ -139,12 +141,12 @@
 
                     <div id="output" class="output" role="tabpanel">
                         <section class="empty-state">
-                            <h2>No document loaded</h2>
+                            <h2>Loading credited source documents</h2>
                             <p>
-                                The example keeps source project files outside
-                                this repository. Use files downloaded from the
-                                credited project or another local Altium
-                                document.
+                                The example fetches Mehdi KHALFALLAH's public
+                                Arduino Uno schematic and PCB documents from
+                                GitHub at runtime. The Altium files are not
+                                redistributed in this repository.
                             </p>
                         </section>
                     </div>

@@ -24,12 +24,14 @@
         "AGENTS.md"
     ],
     "scripts": {
+        "start": "node examples/server.mjs",
         "test": "node --test tests",
         "format": "prettier --write .",
         "check:format": "prettier --check ."
     },
     "dependencies": {
-        "fflate": "^0.8.2"
+        "fflate": "^0.8.2",
+        "three": "^0.183.2"
     },
     "devDependencies": {
         "prettier": "^3.4.2"

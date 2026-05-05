@@ -60,7 +60,14 @@ import '@sunbox/altium-toolkit/styles/altium-renderers.css'
 - [Arduino Uno Altium example](examples/arduino-uno/) based on Mehdi
   KHALFALLAH's public
   [My-Arduino-UNO-Design](https://github.com/Mehdi-KHALFALLAH/My-Arduino-UNO-Design)
-  project.
+  project. The example fetches credited source documents from
+  `raw.githubusercontent.com` at runtime and does not redistribute them.
+
+Run the local example server with:
+
+```bash
+npm start
+```
 
 ## Test
 
