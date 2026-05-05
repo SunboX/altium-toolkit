@@ -1,7 +1,22 @@
 {
     "name": "altium-toolkit",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Altium document parsing and non-interactive rendering utilities",
+    "keywords": [
+        "altium",
+        "altium-designer",
+        "schdoc",
+        "pcbdoc",
+        "ecad",
+        "eda",
+        "pcb",
+        "schematic",
+        "parser",
+        "renderer",
+        "svg",
+        "bom",
+        "3d"
+    ],
     "license": "GPL-3.0-or-later",
     "type": "module",
     "main": "./src/index.mjs",
