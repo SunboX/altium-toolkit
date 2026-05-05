@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Arduino Uno Altium Example | Altium Toolkit</title>
+        <link
+            rel="icon"
+            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231f7a68'/%3E%3Cpath d='M4 5h8v6H4z' fill='%23fffaf3'/%3E%3Cpath d='M5 8h6' stroke='%23c35f35' stroke-width='1.5'/%3E%3C/svg%3E"
+        />
+        <link rel="stylesheet" href="./styles.css" />
+        <script type="importmap">
+            {
+                "imports": {
+                    "fflate": "../../node_modules/fflate/esm/browser.js"
+                }
+            }
+        </script>
+        <script type="module" src="./example.mjs"></script>
+    </head>
+    <body>
+        <main class="app-shell">
+            <header class="app-header">
+                <div>
+                    <p class="eyebrow">Altium Toolkit example</p>
+                    <h1>Arduino Uno design viewer</h1>
+                    <p class="credit">
+                        Based on the public My-Arduino-UNO-Design Altium project
+                        by
+                        <a
+                            href="https://github.com/Mehdi-KHALFALLAH/My-Arduino-UNO-Design"
+                            target="_blank"
+                            rel="noreferrer"
+                            >Mehdi KHALFALLAH</a
+                        >. All credit for that Altium project belongs to him.
+                    </p>
+                </div>
+                <a
+                    class="source-link"
+                    href="https://github.com/Mehdi-KHALFALLAH/My-Arduino-UNO-Design"
+                    target="_blank"
+                    rel="noreferrer"
+                    >Source project</a
+                >
+            </header>
+
+            <section class="workspace" aria-label="Arduino Uno design example">
+                <aside class="control-panel">
+                    <div class="board-preview" aria-hidden="true">
+                        <span class="chip chip--usb"></span>
+                        <span class="chip chip--mcu"></span>
+                        <span class="chip chip--dip"></span>
+                        <span class="header-pin header-pin--top"></span>
+                        <span class="header-pin header-pin--bottom"></span>
+                        <span class="trace trace--one"></span>
+                        <span class="trace trace--two"></span>
+                        <span class="trace trace--three"></span>
+                    </div>
+
+                    <label class="file-picker" for="document-file">
+                        <span>Load Altium document</span>
+                        <input
+                            id="document-file"
+                            type="file"
+                            accept=".SchDoc,.PcbDoc,.schdoc,.pcbdoc"
+                        />
+                    </label>
+
+                    <p id="status" class="status" role="status">
+                        Select a local `.SchDoc` or `.PcbDoc` file.
+                    </p>
+
+                    <dl class="source-facts">
+                        <div>
+                            <dt>Reference</dt>
+                            <dd>Arduino Uno recreated in Altium Designer</dd>
+                        </div>
+                        <div>
+                            <dt>Creator</dt>
+                            <dd>Mehdi KHALFALLAH</dd>
+                        </div>
+                        <div>
+                            <dt>Data flow</dt>
+                            <dd>Local file parsing only</dd>
+                        </div>
+                    </dl>
+                </aside>
+
+                <section class="viewer-panel" aria-label="Rendered output">
+                    <div class="viewer-toolbar">
+                        <div class="tabs" role="tablist" aria-label="Views">
+                            <button
+                                class="tab is-active"
+                                type="button"
+                                data-view="schematic"
+                                role="tab"
+                                aria-selected="true"
+                            >
+                                Schematic
+                            </button>
+                            <button
+                                class="tab"
+                                type="button"
+                                data-view="pcb"
+                                role="tab"
+                                aria-selected="false"
+                            >
+                                PCB
+                            </button>
+                            <button
+                                class="tab"
+                                type="button"
+                                data-view="bom"
+                                role="tab"
+                                aria-selected="false"
+                            >
+                                BOM
+                            </button>
+                            <button
+                                class="tab"
+                                type="button"
+                                data-view="summary"
+                                role="tab"
+                                aria-selected="false"
+                            >
+                                3D Summary
+                            </button>
+                            <button
+                                class="tab"
+                                type="button"
+                                data-view="metadata"
+                                role="tab"
+                                aria-selected="false"
+                            >
+                                Metadata
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="output" class="output" role="tabpanel">
+                        <section class="empty-state">
+                            <h2>No document loaded</h2>
+                            <p>
+                                The example keeps source project files outside
+                                this repository. Use files downloaded from the
+                                credited project or another local Altium
+                                document.
+                            </p>
+                        </section>
+                    </div>
+                </section>
+            </section>
+        </main>
+    </body>
+</html>

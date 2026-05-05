@@ -55,6 +55,13 @@ import '@sunbox/altium-toolkit/styles/altium-renderers.css'
 - [Testing](docs/testing.md)
 - [Scope](spec/library-scope.md)
 
+## Examples
+
+- [Arduino Uno Altium example](examples/arduino-uno/) based on Mehdi
+  KHALFALLAH's public
+  [My-Arduino-UNO-Design](https://github.com/Mehdi-KHALFALLAH/My-Arduino-UNO-Design)
+  project.
+
 ## Test
 
 ```bash

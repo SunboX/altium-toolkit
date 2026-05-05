@@ -16,6 +16,7 @@
     "files": [
         "src",
         "docs",
+        "examples",
         "spec",
         "LICENSE",
         "NOTICE",
