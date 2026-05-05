@@ -44,7 +44,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "git+ssh://git@github.com/SunboX/altium-toolkit.git"
+        "url": "git+https://github.com/SunboX/altium-toolkit.git"
     },
     "bugs": {
         "url": "https://github.com/SunboX/altium-toolkit/issues"
