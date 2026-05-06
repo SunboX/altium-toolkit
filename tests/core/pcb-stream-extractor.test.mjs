@@ -55,6 +55,7 @@ class PcbStreamTestFactory {
         const viaStream = PcbStreamTestFactory.#createViaStream()
         const fillStream = PcbStreamTestFactory.#createFillStream()
         const padStream = PcbStreamTestFactory.#createPadStream()
+        const regionStream = PcbStreamTestFactory.#createRegionStream()
 
         streams.set('Board6/Data', PcbStreamTestFactory.createBoardStream())
         streams.set(
@@ -75,6 +76,8 @@ class PcbStreamTestFactory {
         streams.set('Fills6/Data', fillStream.dataBytes)
         streams.set('Pads6/Header', padStream.headerBytes)
         streams.set('Pads6/Data', padStream.dataBytes)
+        streams.set('Regions6/Header', regionStream.headerBytes)
+        streams.set('Regions6/Data', regionStream.dataBytes)
 
         return streams
     }
@@ -94,6 +97,9 @@ class PcbStreamTestFactory {
         dataView.setUint8(0, 1)
         dataView.setUint32(1, 60, true)
         dataView.setUint8(payloadOffset, 33)
+        dataView.setUint16(payloadOffset + 3, 16, true)
+        dataView.setUint16(payloadOffset + 5, 26, true)
+        dataView.setUint16(payloadOffset + 7, 6, true)
         PcbStreamTestFactory.#writeMil(dataView, payloadOffset + 13, 420)
         PcbStreamTestFactory.#writeMil(dataView, payloadOffset + 17, 360)
         PcbStreamTestFactory.#writeMil(dataView, payloadOffset + 21, 48)
@@ -119,6 +125,9 @@ class PcbStreamTestFactory {
         dataView.setUint8(0, 4)
         dataView.setUint32(1, 49, true)
         dataView.setUint8(payloadOffset, 1)
+        dataView.setUint16(payloadOffset + 3, 13, true)
+        dataView.setUint16(payloadOffset + 5, 23, true)
+        dataView.setUint16(payloadOffset + 7, 3, true)
         PcbStreamTestFactory.#writeMil(dataView, payloadOffset + 13, 1000)
         PcbStreamTestFactory.#writeMil(dataView, payloadOffset + 17, 2000)
         PcbStreamTestFactory.#writeMil(dataView, payloadOffset + 21, 1500)
@@ -139,6 +148,9 @@ class PcbStreamTestFactory {
         const dataView = new DataView(dataBytes.buffer)
 
         headerView.setUint32(0, 1, true)
+        dataView.setUint16(8, 14, true)
+        dataView.setUint16(10, 24, true)
+        dataView.setUint16(12, 4, true)
         PcbStreamTestFactory.#writeMil(dataView, 18, 500)
         PcbStreamTestFactory.#writeMil(dataView, 22, 250)
         PcbStreamTestFactory.#writeMil(dataView, 26, 24)
@@ -158,6 +170,9 @@ class PcbStreamTestFactory {
         const dataView = new DataView(dataBytes.buffer)
 
         headerView.setUint32(0, 1, true)
+        dataView.setUint16(8, 15, true)
+        dataView.setUint16(10, 25, true)
+        dataView.setUint16(12, 5, true)
         PcbStreamTestFactory.#writeMil(dataView, 18, 400)
         PcbStreamTestFactory.#writeMil(dataView, 22, 150)
         PcbStreamTestFactory.#writeMil(dataView, 26, 460)
@@ -178,6 +193,9 @@ class PcbStreamTestFactory {
         const payloadView = new DataView(mainPayload.buffer)
 
         headerView.setUint32(0, 1, true)
+        payloadView.setUint16(3, 17, true)
+        payloadView.setUint16(5, 0xffff, true)
+        payloadView.setUint16(7, 7, true)
         PcbStreamTestFactory.#writeMil(payloadView, 13, 320)
         PcbStreamTestFactory.#writeMil(payloadView, 17, 260)
         PcbStreamTestFactory.#writeMil(payloadView, 21, 180)
@@ -204,6 +222,63 @@ class PcbStreamTestFactory {
                 new Uint8Array(0)
             ])
         }
+    }
+
+    /**
+     * Creates one synthetic region stream pair.
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static #createRegionStream() {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+        const properties = new TextEncoder().encode(
+            'KIND=0|ISBOARDCUTOUT=FALSE|ISSHAPEBASED=FALSE'
+        )
+        const contentLength = 18 + 4 + properties.byteLength + 4 + 4 * 16
+        const dataBytes = new Uint8Array(5 + contentLength)
+        const dataView = new DataView(dataBytes.buffer)
+        let offset = 0
+
+        headerView.setUint32(0, 1, true)
+        dataView.setUint8(offset, 11)
+        offset += 1
+        dataView.setUint32(offset, contentLength, true)
+        offset += 4
+        dataView.setUint8(offset, 1)
+        offset += 1
+        dataView.setUint8(offset, 4)
+        offset += 1
+        dataView.setUint8(offset, 0)
+        offset += 1
+        dataView.setUint16(offset, 18, true)
+        offset += 2
+        dataView.setUint16(offset, 28, true)
+        offset += 2
+        dataView.setUint16(offset, 8, true)
+        offset += 2
+        offset += 5
+        dataView.setUint16(offset, 0, true)
+        offset += 2
+        offset += 2
+        dataView.setUint32(offset, properties.byteLength, true)
+        offset += 4
+        dataBytes.set(properties, offset)
+        offset += properties.byteLength
+        dataView.setUint32(offset, 4, true)
+        offset += 4
+        for (const [x, y] of [
+            [50, 60],
+            [90, 60],
+            [90, 120],
+            [50, 120]
+        ]) {
+            dataView.setFloat64(offset, x * 10000, true)
+            offset += 8
+            dataView.setFloat64(offset, y * 10000, true)
+            offset += 8
+        }
+
+        return { headerBytes, dataBytes }
     }
 
     /**
@@ -265,6 +340,7 @@ test('PcbStreamExtractor extracts printable and binary PCB streams', () => {
         'Fills6/Data',
         'Pads6/Data',
         'Polygons6/Data',
+        'Regions6/Data',
         'Tracks6/Data',
         'Vias6/Data'
     ])
@@ -275,6 +351,9 @@ test('PcbStreamExtractor extracts printable and binary PCB streams', () => {
             x2: 1500,
             y2: 2000,
             width: 8,
+            componentIndex: 3,
+            netIndex: 13,
+            polygonIndex: 23,
             layerCode: 1,
             layerId: 1
         }
@@ -284,7 +363,10 @@ test('PcbStreamExtractor extracts printable and binary PCB streams', () => {
             x: 500,
             y: 250,
             diameter: 24,
-            holeDiameter: 12
+            holeDiameter: 12,
+            componentIndex: 4,
+            netIndex: 14,
+            polygonIndex: 24
         }
     ])
     assert.deepEqual(extracted.binaryPrimitives.fills, [
@@ -293,6 +375,9 @@ test('PcbStreamExtractor extracts printable and binary PCB streams', () => {
             y1: 150,
             x2: 460,
             y2: 210,
+            componentIndex: 5,
+            netIndex: 15,
+            polygonIndex: 25,
             layerCode: 256,
             layerId: 0
         }
@@ -305,6 +390,9 @@ test('PcbStreamExtractor extracts printable and binary PCB streams', () => {
             startAngle: 90,
             endAngle: 180,
             width: 6,
+            componentIndex: 6,
+            netIndex: 16,
+            polygonIndex: 26,
             layerCode: 33,
             layerId: 33
         }
@@ -332,7 +420,35 @@ test('PcbStreamExtractor extracts printable and binary PCB streams', () => {
             roundedRectShapeTop: null,
             cornerRadiusTop: null,
             offsetTopX: 0,
-            offsetTopY: 0
+            offsetTopY: 0,
+            componentIndex: 7,
+            netIndex: 17,
+            polygonIndex: null
+        }
+    ])
+    assert.deepEqual(extracted.binaryPrimitives.regions, [
+        {
+            layerId: 1,
+            layerCode: 1,
+            netIndex: 18,
+            polygonIndex: 28,
+            componentIndex: 8,
+            kind: 0,
+            isKeepout: false,
+            isBoardCutout: false,
+            isShapeBased: false,
+            points: [
+                { x: 50, y: 60 },
+                { x: 90, y: 60 },
+                { x: 90, y: 120 },
+                { x: 50, y: 120 }
+            ],
+            holes: [],
+            properties: {
+                KIND: '0',
+                ISBOARDCUTOUT: 'FALSE',
+                ISSHAPEBASED: 'FALSE'
+            }
         }
     ])
     assert.deepEqual(extracted.embeddedModels, {

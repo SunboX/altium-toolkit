@@ -41,7 +41,7 @@ export class PcbStreamExtractor {
     /**
      * Extracts PCB content directly from one OLE-backed PcbDoc buffer.
      * @param {ArrayBuffer} arrayBuffer
-     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], binaryPrimitives: { fills: { x1: number, y1: number, x2: number, y2: number, layerCode: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode: number, layerId: number }[], vias: { x: number, y: number, diameter: number, holeDiameter: number }[], pads: { x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean }[] }, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } } | null}
+     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], binaryPrimitives: { fills: { x1: number, y1: number, x2: number, y2: number, layerCode: number, componentIndex?: number | null }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode: number, componentIndex?: number | null }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode: number, layerId: number, componentIndex?: number | null }[], vias: { x: number, y: number, diameter: number, holeDiameter: number, componentIndex?: number | null }[], pads: { x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean, componentIndex?: number | null }[] }, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } } | null}
      */
     static extractFromArrayBuffer(arrayBuffer) {
         if (!PcbStreamExtractor.isCompoundDocument(arrayBuffer)) {
@@ -63,7 +63,7 @@ export class PcbStreamExtractor {
      * Extracts stream-scoped printable records and known binary primitives from
      * a stream map.
      * @param {Map<string, Uint8Array>} streams
-     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], binaryPrimitives: { fills: { x1: number, y1: number, x2: number, y2: number, layerCode: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode: number, layerId: number }[], vias: { x: number, y: number, diameter: number, holeDiameter: number }[], pads: { x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean }[] }, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } }}
+     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], binaryPrimitives: { fills: { x1: number, y1: number, x2: number, y2: number, layerCode: number, componentIndex?: number | null }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode: number, componentIndex?: number | null }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode: number, layerId: number, componentIndex?: number | null }[], vias: { x: number, y: number, diameter: number, holeDiameter: number, componentIndex?: number | null }[], pads: { x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean, componentIndex?: number | null }[] }, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } }}
      */
     static extractFromStreams(streams) {
         const records = []
@@ -74,7 +74,11 @@ export class PcbStreamExtractor {
             tracks: [],
             arcs: [],
             vias: [],
-            pads: []
+            pads: [],
+            texts: [],
+            regions: [],
+            shapeBasedRegions: [],
+            boardRegions: []
         }
 
         for (const [name, bytes] of streams.entries()) {
@@ -109,6 +113,21 @@ export class PcbStreamExtractor {
         const fillDataBytes = streams.get('Fills6/Data')
         const padHeaderBytes = streams.get('Pads6/Header')
         const padDataBytes = streams.get('Pads6/Data')
+        const textHeaderBytes =
+            streams.get('Texts6/Header') || streams.get('Texts/Header')
+        const textDataBytes =
+            streams.get('Texts6/Data') || streams.get('Texts/Data')
+        const textStreamName = streams.has('Texts6/Data')
+            ? 'Texts6/Data'
+            : 'Texts/Data'
+        const regionHeaderBytes = streams.get('Regions6/Header')
+        const regionDataBytes = streams.get('Regions6/Data')
+        const shapeBasedRegionHeaderBytes = streams.get(
+            'ShapeBasedRegions6/Header'
+        )
+        const shapeBasedRegionDataBytes = streams.get('ShapeBasedRegions6/Data')
+        const boardRegionHeaderBytes = streams.get('BoardRegions/Header')
+        const boardRegionDataBytes = streams.get('BoardRegions/Data')
 
         if (arcHeaderBytes && arcDataBytes) {
             binaryPrimitives.arcs = PcbBinaryPrimitiveParser.parseArcStream(
@@ -160,6 +179,50 @@ export class PcbStreamExtractor {
             }
         }
 
+        if (textHeaderBytes && textDataBytes) {
+            binaryPrimitives.texts = PcbBinaryPrimitiveParser.parseTextStream(
+                textHeaderBytes,
+                textDataBytes
+            )
+            if (binaryPrimitives.texts.length) {
+                usedStreamNames.add(textStreamName)
+            }
+        }
+
+        if (regionHeaderBytes && regionDataBytes) {
+            binaryPrimitives.regions =
+                PcbBinaryPrimitiveParser.parseRegionStream(
+                    regionHeaderBytes,
+                    regionDataBytes
+                )
+            if (binaryPrimitives.regions.length) {
+                usedStreamNames.add('Regions6/Data')
+            }
+        }
+
+        if (shapeBasedRegionHeaderBytes && shapeBasedRegionDataBytes) {
+            binaryPrimitives.shapeBasedRegions =
+                PcbBinaryPrimitiveParser.parseRegionStream(
+                    shapeBasedRegionHeaderBytes,
+                    shapeBasedRegionDataBytes,
+                    { shapeBased: true }
+                )
+            if (binaryPrimitives.shapeBasedRegions.length) {
+                usedStreamNames.add('ShapeBasedRegions6/Data')
+            }
+        }
+
+        if (boardRegionHeaderBytes && boardRegionDataBytes) {
+            binaryPrimitives.boardRegions =
+                PcbBinaryPrimitiveParser.parseRegionStream(
+                    boardRegionHeaderBytes,
+                    boardRegionDataBytes
+                )
+            if (binaryPrimitives.boardRegions.length) {
+                usedStreamNames.add('BoardRegions/Data')
+            }
+        }
+
         const embeddedModels =
             PcbEmbeddedModelExtractor.extractFromStreams(streams)
 
@@ -191,7 +254,11 @@ export class PcbStreamExtractor {
                     binaryPrimitives.tracks.length +
                     binaryPrimitives.vias.length +
                     binaryPrimitives.fills.length +
-                    binaryPrimitives.pads.length
+                    binaryPrimitives.pads.length +
+                    binaryPrimitives.texts.length +
+                    binaryPrimitives.regions.length +
+                    binaryPrimitives.shapeBasedRegions.length +
+                    binaryPrimitives.boardRegions.length
             }
         }
     }

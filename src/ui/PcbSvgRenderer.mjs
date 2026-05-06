@@ -5,6 +5,8 @@
 import { PcbArcUtils } from './PcbArcUtils.mjs'
 import { PcbEdgeFacingGlyphNormalizer } from './PcbEdgeFacingGlyphNormalizer.mjs'
 import { PcbFootprintPrimitiveSelector } from './PcbFootprintPrimitiveSelector.mjs'
+import { PcbRegionPrimitiveRenderer } from './PcbRegionPrimitiveRenderer.mjs'
+import { PcbTextPrimitiveRenderer } from './PcbTextPrimitiveRenderer.mjs'
 import { SchematicSvgUtils } from './SchematicSvgUtils.mjs'
 /**
  * Renders normalized PCB models into HTML and SVG markup.
@@ -15,7 +17,7 @@ export class PcbSvgRenderer {
     static #GENERIC_DETAIL_SEARCH_HALF_EXTENT = 240
     /**
      * Renders a normalized PCB model into HTML and SVG markup.
-     * @param {{ summary: { title?: string }, pcb?: { boardOutline: { segments: Array<Record<string, number | string>>, minX: number, minY: number, widthMil: number, heightMil: number }, layers: { name: string }[], primitiveLayers?: { layerId: number, name: string }[], polygons?: { layer?: string, segments: Array<Record<string, number | string>> }[], fills?: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks?: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], vias?: { x: number, y: number, diameter: number, holeDiameter: number }[], pads?: { x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number, holeDiameter?: number, shapeTop?: number, shapeMid?: number, shapeBottom?: number, rotation?: number, isPlated?: boolean }[], components: { designator: string, x: number, y: number, rotation: number, layer: string, pattern: string }[] } }} documentModel
+     * @param {{ summary: { title?: string }, pcb?: { boardOutline: { segments: Array<Record<string, number | string>>, minX: number, minY: number, widthMil: number, heightMil: number }, layers: { name: string }[], primitiveLayers?: { layerId: number, name: string }[], polygons?: { layer?: string, segments: Array<Record<string, number | string>> }[], fills?: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks?: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], vias?: { x: number, y: number, diameter: number, holeDiameter: number }[], pads?: { x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number, holeDiameter?: number, shapeTop?: number, shapeMid?: number, shapeBottom?: number, rotation?: number, isPlated?: boolean }[], texts?: { text: string, x: number, y: number, height?: number, rotation?: number, layerId?: number, visible?: boolean }[], components: { designator: string, x: number, y: number, rotation: number, layer: string, pattern: string }[] } }} documentModel
      * @returns {string}
      */
     static render(documentModel) {
@@ -28,14 +30,25 @@ export class PcbSvgRenderer {
         const fills = pcb.fills || []
         const tracks = pcb.tracks || []
         const arcs = pcb.arcs || []
+        const regions = pcb.regions || []
+        const shapeBasedRegions = pcb.shapeBasedRegions || []
+        const renderedRegions = shapeBasedRegions.length
+            ? shapeBasedRegions
+            : regions
         const vias = pcb.vias || []
         const pads = pcb.pads || []
         const components = pcb.components.slice(0, 260)
+        const texts = PcbTextPrimitiveRenderer.select(
+            pcb.primitiveLayers || [],
+            pcb.texts || [],
+            'top'
+        )
         const copperGroups = PcbSvgRenderer.#splitCopperPrimitives(
             polygons,
             fills,
             tracks,
-            arcs
+            arcs,
+            renderedRegions
         )
         const footprintPrimitives = PcbEdgeFacingGlyphNormalizer.normalize(
             PcbFootprintPrimitiveSelector.select(
@@ -43,6 +56,7 @@ export class PcbSvgRenderer {
                 fills,
                 tracks,
                 arcs,
+                renderedRegions,
                 'top'
             ),
             outline
@@ -70,6 +84,11 @@ export class PcbSvgRenderer {
                 ...copperGroups.surface.arcs,
                 ...copperGroups.subsurface.arcs,
                 ...footprintPrimitives.arcs
+            ],
+            [
+                ...copperGroups.surface.regions,
+                ...copperGroups.subsurface.regions,
+                ...footprintPrimitives.regions
             ],
             vias,
             pads
@@ -151,6 +170,11 @@ export class PcbSvgRenderer {
                     )
                 )
                 .join('')
+        const regionMarkup = (regionList, visibilityClass) =>
+            PcbRegionPrimitiveRenderer.buildMarkup(
+                regionList,
+                'pcb-region pcb-region--' + visibilityClass
+            )
         const viaMarkup = vias
             .map((via) => {
                 const ringRadius = Math.max((via.diameter || 0) / 2, 1)
@@ -222,6 +246,11 @@ export class PcbSvgRenderer {
         const footprintArcMarkup = footprintPrimitives.arcs
             .map((arc) => PcbArcUtils.buildMarkup(arc, 'pcb-footprint-arc'))
             .join('')
+        const footprintRegionMarkup = PcbRegionPrimitiveRenderer.buildMarkup(
+            footprintPrimitives.regions,
+            'pcb-footprint-region'
+        )
+        const textMarkup = PcbTextPrimitiveRenderer.render(texts)
 
         const componentMarkup = components
             .map((component) => {
@@ -260,13 +289,7 @@ export class PcbSvgRenderer {
                     SchematicSvgUtils.formatNumber(component.rotation) +
                     ')">' +
                     bodyMarkup +
-                    '<text x="0" y="' +
-                    SchematicSvgUtils.formatNumber(
-                        bodyGeometry.height * -0.75
-                    ) +
-                    '">' +
-                    SchematicSvgUtils.escapeHtml(component.designator) +
-                    '</text></g>'
+                    '</g>'
                 )
             })
             .join('')
@@ -302,12 +325,14 @@ export class PcbSvgRenderer {
             '<g class="pcb-copper pcb-copper--subsurface">' +
             polygonMarkup(copperGroups.subsurface.polygons, 'subsurface') +
             fillMarkup(copperGroups.subsurface.fills, 'subsurface') +
+            regionMarkup(copperGroups.subsurface.regions, 'subsurface') +
             trackMarkup(copperGroups.subsurface.tracks, 'subsurface') +
             arcMarkup(copperGroups.subsurface.arcs, 'subsurface') +
             '</g>' +
             '<g class="pcb-copper pcb-copper--surface">' +
             polygonMarkup(copperGroups.surface.polygons, 'surface') +
             fillMarkup(copperGroups.surface.fills, 'surface') +
+            regionMarkup(copperGroups.surface.regions, 'surface') +
             trackMarkup(copperGroups.surface.tracks, 'surface') +
             arcMarkup(copperGroups.surface.arcs, 'surface') +
             padMarkup +
@@ -318,6 +343,12 @@ export class PcbSvgRenderer {
             footprintFillMarkup +
             footprintTrackMarkup +
             footprintArcMarkup +
+            footprintRegionMarkup +
+            '</g>' +
+            '<g class="pcb-texts" clip-path="url(#' +
+            clipPathId +
+            ')">' +
+            textMarkup +
             '</g>' +
             '<path class="board-outline board-outline--stroke" d="' +
             SchematicSvgUtils.escapeHtml(path) +
@@ -382,6 +413,7 @@ export class PcbSvgRenderer {
      * @param {{ x1: number, y1: number, x2: number, y2: number }[]} fills
      * @param {{ x1: number, y1: number, x2: number, y2: number }[]} tracks
      * @param {{ x: number, y: number, radius: number, width?: number }[]} arcs
+     * @param {{ points?: { x: number, y: number }[], holes?: { x: number, y: number }[][] }[]} regions
      * @param {{ x: number, y: number, diameter: number }[]} vias
      * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number, holeDiameter?: number }[]} pads
      * @returns {string}
@@ -393,6 +425,7 @@ export class PcbSvgRenderer {
         fills,
         tracks,
         arcs,
+        regions,
         vias,
         pads
     ) {
@@ -422,6 +455,10 @@ export class PcbSvgRenderer {
 
         for (const arc of arcs) {
             PcbArcUtils.pushExtents(xs, ys, arc)
+        }
+
+        for (const region of regions) {
+            PcbRegionPrimitiveRenderer.pushExtents(xs, ys, region)
         }
 
         for (const via of vias) {
@@ -667,7 +704,7 @@ export class PcbSvgRenderer {
      * Returns true when one component already has authored local geometry from
      * selected top-side documentation layers.
      * @param {{ x: number, y: number, pattern: string }} component
-     * @param {{ fills: { x1: number, y1: number, x2: number, y2: number }[], tracks: { x1: number, y1: number, x2: number, y2: number }[], arcs: { x: number, y: number, radius: number, width?: number }[] }} footprintPrimitives
+     * @param {{ fills: { x1: number, y1: number, x2: number, y2: number }[], tracks: { x1: number, y1: number, x2: number, y2: number }[], arcs: { x: number, y: number, radius: number, width?: number }[], regions?: { points?: { x: number, y: number }[], holes?: { x: number, y: number }[][] }[] }} footprintPrimitives
      * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number, rotation?: number, offsetTopX?: number, offsetTopY?: number, holeDiameter?: number }[]} pads
      * @returns {boolean}
      */
@@ -683,6 +720,9 @@ export class PcbSvgRenderer {
             ) ||
             (footprintPrimitives.arcs || []).some((arc) =>
                 PcbArcUtils.intersectsBounds(arc, bounds)
+            ) ||
+            (footprintPrimitives.regions || []).some((region) =>
+                PcbRegionPrimitiveRenderer.intersectsBounds(region, bounds)
             ) ||
             (pads || []).some((pad) =>
                 PcbSvgRenderer.#padIntersectsBounds(pad, bounds)
@@ -778,9 +818,10 @@ export class PcbSvgRenderer {
      * @param {{ x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[]} fills
      * @param {{ x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[]} tracks
      * @param {{ x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[]} arcs
-     * @returns {{ surface: { polygons: { layer?: string, segments: Array<Record<string, number | string>> }[], fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[] }, subsurface: { polygons: { layer?: string, segments: Array<Record<string, number | string>> }[], fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[] } }}
+     * @param {{ points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[]} regions
+     * @returns {{ surface: { polygons: { layer?: string, segments: Array<Record<string, number | string>> }[], fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], regions: { points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[] }, subsurface: { polygons: { layer?: string, segments: Array<Record<string, number | string>> }[], fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], regions: { points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[] } }}
      */
-    static #splitCopperPrimitives(polygons, fills, tracks, arcs) {
+    static #splitCopperPrimitives(polygons, fills, tracks, arcs, regions) {
         const copperFills = fills.filter((fill) =>
             PcbSvgRenderer.#isCopperLayerId(fill.layerId)
         )
@@ -790,12 +831,17 @@ export class PcbSvgRenderer {
         const copperArcs = arcs.filter((arc) =>
             PcbSvgRenderer.#isCopperLayerId(arc.layerId)
         )
+        const copperRegions = regions.filter((region) =>
+            PcbSvgRenderer.#isCopperLayerId(region.layerId)
+        )
         const surfaceTrackLayerCode =
             PcbSvgRenderer.#resolveSurfaceLayerCode(copperTracks)
         const surfaceFillLayerCode =
             PcbSvgRenderer.#resolveSurfaceLayerCode(copperFills)
         const surfaceArcLayerCode =
             PcbSvgRenderer.#resolveSurfaceLayerCode(copperArcs)
+        const surfaceRegionLayerCode =
+            PcbSvgRenderer.#resolveSurfaceLayerCode(copperRegions)
 
         return {
             surface: {
@@ -810,6 +856,9 @@ export class PcbSvgRenderer {
                 ),
                 arcs: copperArcs.filter(
                     (arc) => arc.layerCode === surfaceArcLayerCode
+                ),
+                regions: copperRegions.filter(
+                    (region) => region.layerCode === surfaceRegionLayerCode
                 )
             },
             subsurface: {
@@ -824,6 +873,9 @@ export class PcbSvgRenderer {
                 ),
                 arcs: copperArcs.filter(
                     (arc) => arc.layerCode !== surfaceArcLayerCode
+                ),
+                regions: copperRegions.filter(
+                    (region) => region.layerCode !== surfaceRegionLayerCode
                 )
             }
         }

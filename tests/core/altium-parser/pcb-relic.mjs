@@ -26,6 +26,7 @@ test('parseAltiumArrayBuffer parses an embedded fake PcbDoc relic', async () => 
     assert.deepEqual(documentModel.pcb.vias, [])
     assert.equal(documentModel.bom.length, 1)
     assert.deepEqual(documentModel.pcb.components[0], {
+        componentIndex: 0,
         designator: 'PORT1',
         x: 900,
         y: 350,

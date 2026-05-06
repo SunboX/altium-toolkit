@@ -19,10 +19,10 @@ export class PcbEdgeFacingGlyphNormalizer {
      * Normalizes repeated edge-facing documentation glyphs so their opening
      * stays on the board edge even when the authored primitive cluster is
      * mirrored inward.
-     * @param {{ fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[] }} footprintPrimitives
+     * @param {{ fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], regions?: { points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[] }} footprintPrimitives
      * @param {{ minX: number, minY: number, widthMil: number, heightMil: number }} outline
      * @param {{ preferMarkers?: boolean }} [options]
-     * @returns {{ fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[] }}
+     * @returns {{ fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], regions: { points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[] }}
      */
     static normalize(footprintPrimitives, outline, options = {}) {
         const normalizedTracks = (footprintPrimitives?.tracks || []).map(
@@ -61,16 +61,17 @@ export class PcbEdgeFacingGlyphNormalizer {
         return {
             fills: footprintPrimitives?.fills || [],
             tracks: normalizedTracks,
-            arcs: normalizedArcs
+            arcs: normalizedArcs,
+            regions: footprintPrimitives?.regions || []
         }
     }
 
     /**
      * Normalizes glyphs using only the nearest board edge so 3D silkscreen
      * detail does not overreact to nearby circular markers on other features.
-     * @param {{ fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[] }} footprintPrimitives
+     * @param {{ fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], regions?: { points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[] }} footprintPrimitives
      * @param {{ minX: number, minY: number, widthMil: number, heightMil: number }} outline
-     * @returns {{ fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[] }}
+     * @returns {{ fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], regions: { points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[] }}
      */
     static normalizeForBoardEdge(footprintPrimitives, outline) {
         return PcbEdgeFacingGlyphNormalizer.normalize(

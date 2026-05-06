@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { PcbGeometryFlipper } from './PcbGeometryFlipper.mjs'
 import { PcbOutlineRasterizer } from './PcbOutlineRasterizer.mjs'
 
 /**
@@ -92,81 +93,11 @@ export class PcbOutlineRecovery {
     /**
      * Mirrors one normalized PCB model vertically so the SVG matches the
      * authored top-view orientation.
-     * @param {{ boardOutline: { minX: number, minY: number, widthMil: number, heightMil: number, segments: Array<Record<string, number | string>> }, polygons?: { layer?: string, segments: Array<Record<string, number | string>> }[], fills?: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks?: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], vias?: { x: number, y: number, diameter: number, holeDiameter: number }[], pads?: { x: number, y: number, rotation?: number, holeRotation?: number | null }[], components?: { designator: string, x: number, y: number, rotation: number, layer: string, pattern: string }[] }} pcb
-     * @returns {{ boardOutline: { minX: number, minY: number, widthMil: number, heightMil: number, segments: Array<Record<string, number | string>> }, polygons: { layer?: string, segments: Array<Record<string, number | string>> }[], fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], vias: { x: number, y: number, diameter: number, holeDiameter: number }[], pads: { x: number, y: number, rotation?: number, holeRotation?: number | null }[], components: { designator: string, x: number, y: number, rotation: number, layer: string, pattern: string }[] }}
+     * @param {{ boardOutline: { minX: number, minY: number, widthMil: number, heightMil: number, segments: Array<Record<string, number | string>> }, polygons?: { layer?: string, segments: Array<Record<string, number | string>> }[], fills?: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks?: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], vias?: { x: number, y: number, diameter: number, holeDiameter: number }[], pads?: { x: number, y: number, rotation?: number, holeRotation?: number | null }[], texts?: { x: number, y: number, rotation?: number }[], components?: { designator: string, x: number, y: number, rotation: number, layer: string, pattern: string }[] }} pcb
+     * @returns {{ boardOutline: { minX: number, minY: number, widthMil: number, heightMil: number, segments: Array<Record<string, number | string>> }, polygons: { layer?: string, segments: Array<Record<string, number | string>> }[], fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], vias: { x: number, y: number, diameter: number, holeDiameter: number }[], pads: { x: number, y: number, rotation?: number, holeRotation?: number | null }[], texts: { x: number, y: number, rotation?: number }[], components: { designator: string, x: number, y: number, rotation: number, layer: string, pattern: string }[] }}
      */
     static flipGeometryVertically(pcb) {
-        const outline = pcb?.boardOutline
-        const maxY =
-            Number(outline?.minY || 0) + Number(outline?.heightMil || 0)
-        const mirrorY = (value) =>
-            Number(outline?.minY || 0) + maxY - Number(value || 0)
-
-        return {
-            ...pcb,
-            boardOutline: {
-                ...outline,
-                segments: (outline?.segments || []).map((segment) =>
-                    PcbOutlineRecovery.#flipSegment(segment, mirrorY)
-                )
-            },
-            polygons: (pcb?.polygons || []).map((polygon) => ({
-                ...polygon,
-                segments: (polygon.segments || []).map((segment) =>
-                    PcbOutlineRecovery.#flipSegment(segment, mirrorY)
-                )
-            })),
-            fills: (pcb?.fills || []).map((fill) => {
-                const y1 = mirrorY(fill.y1)
-                const y2 = mirrorY(fill.y2)
-
-                return {
-                    ...fill,
-                    y1: Math.min(y1, y2),
-                    y2: Math.max(y1, y2)
-                }
-            }),
-            tracks: (pcb?.tracks || []).map((track) => ({
-                ...track,
-                y1: mirrorY(track.y1),
-                y2: mirrorY(track.y2)
-            })),
-            arcs: (pcb?.arcs || []).map((arc) => ({
-                ...arc,
-                y: mirrorY(arc.y),
-                startAngle: PcbOutlineRecovery.#normalizeAngle(
-                    360 - Number(arc.startAngle || 0)
-                ),
-                endAngle: PcbOutlineRecovery.#normalizeAngle(
-                    360 - Number(arc.endAngle || 0)
-                )
-            })),
-            vias: (pcb?.vias || []).map((via) => ({
-                ...via,
-                y: mirrorY(via.y)
-            })),
-            pads: (pcb?.pads || []).map((pad) => ({
-                ...pad,
-                y: mirrorY(pad.y),
-                rotation: PcbOutlineRecovery.#normalizeAngle(
-                    360 - Number(pad.rotation || 0)
-                ),
-                holeRotation:
-                    pad?.holeRotation === null ||
-                    pad?.holeRotation === undefined
-                        ? (pad?.holeRotation ?? null)
-                        : PcbOutlineRecovery.#normalizeAngle(
-                              360 - Number(pad.holeRotation || 0)
-                          )
-            })),
-            components: (pcb?.components || []).map((component) => ({
-                ...component,
-                y: mirrorY(component.y),
-                rotation: PcbOutlineRecovery.#normalizeAngle(
-                    360 - Number(component.rotation || 0)
-                )
-            }))
-        }
+        return PcbGeometryFlipper.flipGeometryVertically(pcb)
     }
 
     /**
@@ -914,44 +845,5 @@ export class PcbOutlineRecovery {
         }
 
         return delta
-    }
-
-    /**
-     * Mirrors one outline or polygon segment across the board Y axis.
-     * @param {Record<string, number | string>} segment
-     * @param {(value: number) => number} mirrorY
-     * @returns {Record<string, number | string>}
-     */
-    static #flipSegment(segment, mirrorY) {
-        if (segment.type !== 'arc') {
-            return {
-                ...segment,
-                y1: mirrorY(Number(segment.y1 || 0)),
-                y2: mirrorY(Number(segment.y2 || 0))
-            }
-        }
-
-        const startAngle = Number(segment.startAngle || 0)
-        const endAngle = Number(segment.endAngle || 0)
-
-        return {
-            ...segment,
-            y1: mirrorY(Number(segment.y1 || 0)),
-            y2: mirrorY(Number(segment.y2 || 0)),
-            cy: mirrorY(Number(segment.cy || 0)),
-            startAngle: PcbOutlineRecovery.#normalizeAngle(360 - startAngle),
-            endAngle: PcbOutlineRecovery.#normalizeAngle(360 - endAngle)
-        }
-    }
-
-    /**
-     * Normalizes one circular angle into the [0, 360) range.
-     * @param {number} angle
-     * @returns {number}
-     */
-    static #normalizeAngle(angle) {
-        const normalized = Number(angle || 0) % 360
-
-        return normalized < 0 ? normalized + 360 : normalized
     }
 }

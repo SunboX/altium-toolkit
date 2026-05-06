@@ -186,7 +186,8 @@
 }
 
 .pcb-polygon,
-.pcb-fill {
+.pcb-fill,
+.pcb-region {
     stroke: none;
 }
 
@@ -207,11 +208,13 @@
     fill: var(--pcb-subsurface-copper-fill);
 }
 
-.pcb-copper--surface .pcb-fill {
+.pcb-copper--surface .pcb-fill,
+.pcb-copper--surface .pcb-region {
     fill: var(--pcb-surface-fill);
 }
 
-.pcb-copper--subsurface .pcb-fill {
+.pcb-copper--subsurface .pcb-fill,
+.pcb-copper--subsurface .pcb-region {
     fill: var(--pcb-subsurface-fill);
 }
 
@@ -244,7 +247,8 @@
     fill: var(--pcb-copper-solid-fill);
 }
 
-.pcb-footprint-fill {
+.pcb-footprint-fill,
+.pcb-footprint-region {
     fill: var(--pcb-footprint-fill);
 }
 
@@ -263,11 +267,12 @@
     fill: var(--pcb-component-bottom-fill);
 }
 
-.pcb-component text {
+.pcb-text {
     font-size: 29px;
-    text-anchor: middle;
     fill: var(--pcb-component-text);
     font-weight: 700;
+    font-family: Arial, sans-serif;
+    pointer-events: none;
 }
 
 .bom-panel {

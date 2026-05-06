@@ -104,7 +104,7 @@ test('renderPcbSvg renders board outline, copper primitives, and placements', ()
     })
 
     assert.match(markup, /<svg/)
-    assert.match(markup, /U1/)
+    assert.doesNotMatch(markup, />U1<\/text>/)
     assert.match(markup, /Top Layer/)
     assert.match(markup, /board-outline/)
     assert.match(markup, /pcb-polygon/)
@@ -115,6 +115,71 @@ test('renderPcbSvg renders board outline, copper primitives, and placements', ()
     assert.match(markup, /pcb-pad__hole/)
     assert.match(markup, /pcb-pad__hole--slot/)
     assert.match(markup, /pcb-pad pcb-pad--shaped/)
+})
+
+/**
+ * Verifies PCB renderer draws authored text primitives and leaves hidden text
+ * out of the SVG.
+ */
+test('renderPcbSvg renders authored PCB text primitives', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Marked board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 1000,
+                heightMil: 500,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 1000, y2: 0 },
+                    { type: 'line', x1: 1000, y1: 0, x2: 1000, y2: 500 },
+                    { type: 'line', x1: 1000, y1: 500, x2: 0, y2: 500 },
+                    { type: 'line', x1: 0, y1: 500, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [{ name: 'Top Layer' }],
+            primitiveLayers: [{ layerId: 33, name: 'Top Overlay' }],
+            polygons: [],
+            fills: [],
+            tracks: [],
+            arcs: [],
+            vias: [],
+            pads: [],
+            texts: [
+                {
+                    text: 'PCB-ID',
+                    x: 180,
+                    y: 240,
+                    height: 32,
+                    rotation: 0,
+                    layerId: 33
+                },
+                {
+                    text: 'HIDDEN-ID',
+                    x: 220,
+                    y: 260,
+                    height: 32,
+                    rotation: 0,
+                    layerId: 33,
+                    visible: false
+                }
+            ],
+            components: [
+                {
+                    designator: 'U1',
+                    x: 200,
+                    y: 250,
+                    rotation: 0,
+                    layer: 'TOP',
+                    pattern: 'QFN'
+                }
+            ]
+        }
+    })
+
+    assert.match(markup, /class="pcb-text[^"]*"[^>]*>PCB-ID<\/text>/)
+    assert.doesNotMatch(markup, /HIDDEN-ID/)
+    assert.doesNotMatch(markup, />U1<\/text>/)
 })
 
 /**
@@ -526,7 +591,7 @@ test('renderPcbSvg renders authored footprint detail for top-side packages', () 
         markup,
         /class="pcb-component pcb-component--top"[^>]*><rect/
     )
-    assert.match(markup, /U1/)
+    assert.doesNotMatch(markup, />U1<\/text>/)
 })
 
 /**
@@ -586,7 +651,7 @@ test('renderPcbSvg renders authored footprint arcs for rounded package outlines'
         markup,
         /class="pcb-component pcb-component--top"[^>]*><rect class="pcb-component__body"/
     )
-    assert.match(markup, />J3<\/text>/)
+    assert.doesNotMatch(markup, />J3<\/text>/)
 })
 
 /**
@@ -786,8 +851,7 @@ test('renderPcbSvg omits synthetic bodies for pad-defined packages', () => {
         markup,
         /class="pcb-component pcb-component--top"[^>]*><rect class="pcb-component__body"/
     )
-    assert.doesNotMatch(markup, /dominant-baseline="middle">L1<\/text>/)
-    assert.match(markup, />L1<\/text>/)
+    assert.doesNotMatch(markup, />L1<\/text>/)
 })
 
 /**
@@ -878,7 +942,7 @@ test('renderPcbSvg omits synthetic bodies for large unknown packages with author
         markup,
         /class="pcb-component pcb-component--top"[^>]*><rect class="pcb-component__body"/
     )
-    assert.match(markup, />U9<\/text>/)
+    assert.doesNotMatch(markup, />U9<\/text>/)
 })
 
 /**
@@ -1090,17 +1154,15 @@ test('renderer stylesheet excludes ECAD Forge app-shell selectors', async () => 
 })
 
 /**
- * Verifies PCB viewer designators use the reduced in-view font size.
+ * Verifies PCB viewer authored text uses the reduced in-view font size.
  */
-test('pcb viewer stylesheet reduces component text by one point', async () => {
+test('pcb viewer stylesheet reduces board text by one point', async () => {
     const cssPath = new URL(
         '../../../src/styles/altium-renderers.css',
         import.meta.url
     )
     const css = await readFile(cssPath, 'utf8')
-    const pcbComponentTextBlock = css.match(
-        /\.pcb-component text\s*\{[^}]*\}/
-    )?.[0]
+    const pcbComponentTextBlock = css.match(/\.pcb-text\s*\{[^}]*\}/)?.[0]
 
     assert.ok(pcbComponentTextBlock)
     assert.match(pcbComponentTextBlock, /font-size:\s*29px;/)

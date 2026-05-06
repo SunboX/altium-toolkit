@@ -52,7 +52,8 @@ test('PcbFootprintPrimitiveSelector prioritizes overlay layers per board side', 
     assert.deepEqual(top, {
         fills: [],
         tracks: [{ x1: 1, y1: 2, x2: 3, y2: 4, width: 5, layerId: 33 }],
-        arcs: []
+        arcs: [],
+        regions: []
     })
     assert.deepEqual(bottom, {
         fills: [],
@@ -67,7 +68,8 @@ test('PcbFootprintPrimitiveSelector prioritizes overlay layers per board side', 
                 width: 4,
                 layerId: 34
             }
-        ]
+        ],
+        regions: []
     })
 })
 
@@ -97,11 +99,43 @@ test('PcbFootprintPrimitiveSelector falls back to assembly layers when overlay i
     assert.deepEqual(top, {
         fills: [{ x1: 10, y1: 20, x2: 30, y2: 40, layerId: 35 }],
         tracks: [],
-        arcs: []
+        arcs: [],
+        regions: []
     })
     assert.deepEqual(bottom, {
         fills: [],
         tracks: [{ x1: 1, y1: 2, x2: 3, y2: 4, width: 5, layerId: 36 }],
-        arcs: []
+        arcs: [],
+        regions: []
+    })
+})
+
+test('PcbFootprintPrimitiveSelector includes documentation regions', () => {
+    const primitiveLayers = [{ layerId: 33, name: 'Top Overlay' }]
+    const regions = [
+        {
+            points: [
+                { x: 10, y: 20 },
+                { x: 30, y: 20 },
+                { x: 30, y: 40 }
+            ],
+            layerId: 33
+        }
+    ]
+
+    const top = PcbFootprintPrimitiveSelector.select(
+        primitiveLayers,
+        [],
+        [],
+        [],
+        regions,
+        'top'
+    )
+
+    assert.deepEqual(top, {
+        fills: [],
+        tracks: [],
+        arcs: [],
+        regions
     })
 })

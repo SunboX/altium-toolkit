@@ -13,12 +13,23 @@ export class PcbFootprintPrimitiveSelector {
      * @param {{ x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[]} fills
      * @param {{ x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[]} tracks
      * @param {{ x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[]} arcs
+     * @param {{ points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[] | 'top' | 'bottom'} [regionsOrSide]
      * @param {'top' | 'bottom'} [side]
-     * @returns {{ fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[] }}
+     * @returns {{ fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], regions: { points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[] }}
      */
-    static select(primitiveLayers, fills, tracks, arcs, side = 'top') {
+    static select(
+        primitiveLayers,
+        fills,
+        tracks,
+        arcs,
+        regionsOrSide = [],
+        side = 'top'
+    ) {
+        const requestedSide =
+            typeof regionsOrSide === 'string' ? regionsOrSide : side
+        const regions = Array.isArray(regionsOrSide) ? regionsOrSide : []
         const prioritizedLayerMatchers =
-            PcbFootprintPrimitiveSelector.#resolveLayerMatchers(side)
+            PcbFootprintPrimitiveSelector.#resolveLayerMatchers(requestedSide)
 
         for (const matchesLayerName of prioritizedLayerMatchers) {
             const layerIds = new Set(
@@ -41,12 +52,21 @@ export class PcbFootprintPrimitiveSelector {
             const layerArcs = (arcs || []).filter((arc) =>
                 layerIds.has(arc.layerId)
             )
+            const layerRegions = regions.filter((region) =>
+                layerIds.has(region.layerId)
+            )
 
-            if (layerFills.length || layerTracks.length || layerArcs.length) {
+            if (
+                layerFills.length ||
+                layerTracks.length ||
+                layerArcs.length ||
+                layerRegions.length
+            ) {
                 return {
                     fills: layerFills,
                     tracks: layerTracks,
-                    arcs: layerArcs
+                    arcs: layerArcs,
+                    regions: layerRegions
                 }
             }
         }
@@ -54,7 +74,8 @@ export class PcbFootprintPrimitiveSelector {
         return {
             fills: [],
             tracks: [],
-            arcs: []
+            arcs: [],
+            regions: []
         }
     }
 

@@ -25,6 +25,9 @@ class PcbBinaryPrimitiveTestFactory {
         dataView.setUint8(0, 4)
         dataView.setUint32(1, 49, true)
         dataView.setUint8(payloadOffset, 68)
+        dataView.setUint16(payloadOffset + 3, 17, true)
+        dataView.setUint16(payloadOffset + 5, 23, true)
+        dataView.setUint16(payloadOffset + 7, 3, true)
         PcbBinaryPrimitiveTestFactory.#writeMil(
             dataView,
             payloadOffset + 13,
@@ -65,6 +68,9 @@ class PcbBinaryPrimitiveTestFactory {
         const dataView = new DataView(dataBytes.buffer)
 
         headerView.setUint32(0, 1, true)
+        dataView.setUint16(8, 18, true)
+        dataView.setUint16(10, 24, true)
+        dataView.setUint16(12, 4, true)
         PcbBinaryPrimitiveTestFactory.#writeMil(dataView, 18, 11235.2291)
         PcbBinaryPrimitiveTestFactory.#writeMil(dataView, 22, 9079.5466)
         PcbBinaryPrimitiveTestFactory.#writeMil(dataView, 26, 23.622)
@@ -84,6 +90,9 @@ class PcbBinaryPrimitiveTestFactory {
         const dataView = new DataView(dataBytes.buffer)
 
         headerView.setUint32(0, 1, true)
+        dataView.setUint16(8, 19, true)
+        dataView.setUint16(10, 25, true)
+        dataView.setUint16(12, 5, true)
         PcbBinaryPrimitiveTestFactory.#writeMil(dataView, 18, 11039.3046)
         PcbBinaryPrimitiveTestFactory.#writeMil(dataView, 22, 8902.9081)
         PcbBinaryPrimitiveTestFactory.#writeMil(dataView, 26, 11049.1471)
@@ -109,6 +118,9 @@ class PcbBinaryPrimitiveTestFactory {
         dataView.setUint8(0, 1)
         dataView.setUint32(1, 60, true)
         dataView.setUint8(payloadOffset, 33)
+        dataView.setUint16(payloadOffset + 3, 20, true)
+        dataView.setUint16(payloadOffset + 5, 26, true)
+        dataView.setUint16(payloadOffset + 7, 6, true)
         PcbBinaryPrimitiveTestFactory.#writeMil(
             dataView,
             payloadOffset + 13,
@@ -142,6 +154,9 @@ class PcbBinaryPrimitiveTestFactory {
         const payloadView = new DataView(mainPayload.buffer)
 
         headerView.setUint32(0, 1, true)
+        payloadView.setUint16(3, 21, true)
+        payloadView.setUint16(5, 0xffff, true)
+        payloadView.setUint16(7, 7, true)
         PcbBinaryPrimitiveTestFactory.#writeMil(payloadView, 13, 9869.0874)
         PcbBinaryPrimitiveTestFactory.#writeMil(payloadView, 17, 7795.586)
         PcbBinaryPrimitiveTestFactory.#writeMil(payloadView, 21, 244.0945)
@@ -185,6 +200,9 @@ class PcbBinaryPrimitiveTestFactory {
         const extensionView = new DataView(extensionPayload.buffer)
 
         headerView.setUint32(0, 1, true)
+        mainView.setUint16(3, 22, true)
+        mainView.setUint16(5, 0xffff, true)
+        mainView.setUint16(7, 8, true)
         PcbBinaryPrimitiveTestFactory.#writeMil(mainView, 13, 10199.796)
         PcbBinaryPrimitiveTestFactory.#writeMil(mainView, 17, 7756.2159)
         PcbBinaryPrimitiveTestFactory.#writeMil(mainView, 21, 125.9843)
@@ -219,6 +237,92 @@ class PcbBinaryPrimitiveTestFactory {
                     extensionPayload
                 ])
         }
+    }
+
+    /**
+     * Creates a one-region stream pair with one rectangular cutout hole.
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static createRegionStream() {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+        const properties = new TextEncoder().encode(
+            'KIND=0|ISBOARDCUTOUT=FALSE|ISSHAPEBASED=FALSE'
+        )
+        const contentLength =
+            18 + 4 + properties.byteLength + 4 + 4 * 16 + 4 + 4 * 16
+        const dataBytes = new Uint8Array(5 + contentLength)
+        const dataView = new DataView(dataBytes.buffer)
+        let offset = 0
+
+        headerView.setUint32(0, 1, true)
+        dataView.setUint8(offset, 11)
+        offset += 1
+        dataView.setUint32(offset, contentLength, true)
+        offset += 4
+        dataView.setUint8(offset, 37)
+        offset += 1
+        dataView.setUint8(offset, 4)
+        offset += 1
+        dataView.setUint8(offset, 0)
+        offset += 1
+        dataView.setUint16(offset, 31, true)
+        offset += 2
+        dataView.setUint16(offset, 41, true)
+        offset += 2
+        dataView.setUint16(offset, 9, true)
+        offset += 2
+        offset += 5
+        dataView.setUint16(offset, 1, true)
+        offset += 2
+        offset += 2
+        dataView.setUint32(offset, properties.byteLength, true)
+        offset += 4
+        dataBytes.set(properties, offset)
+        offset += properties.byteLength
+        offset = PcbBinaryPrimitiveTestFactory.#writeRegionVertices(
+            dataView,
+            offset,
+            [
+                [100, 200],
+                [300, 200],
+                [300, 400],
+                [100, 400]
+            ]
+        )
+        offset = PcbBinaryPrimitiveTestFactory.#writeRegionVertices(
+            dataView,
+            offset,
+            [
+                [140, 240],
+                [180, 240],
+                [180, 280],
+                [140, 280]
+            ]
+        )
+
+        return { headerBytes, dataBytes }
+    }
+
+    /**
+     * Writes one length-prefixed list of double-coordinate region vertices.
+     * @param {DataView} dataView
+     * @param {number} offset
+     * @param {number[][]} vertices
+     * @returns {number}
+     */
+    static #writeRegionVertices(dataView, offset, vertices) {
+        dataView.setUint32(offset, vertices.length, true)
+        offset += 4
+
+        for (const [x, y] of vertices) {
+            dataView.setFloat64(offset, x * 10000, true)
+            offset += 8
+            dataView.setFloat64(offset, y * 10000, true)
+            offset += 8
+        }
+
+        return offset
     }
 
     /**
@@ -278,6 +382,9 @@ test('PcbBinaryPrimitiveParser decodes track streams', () => {
                 x2: 1500,
                 y2: 2000,
                 width: 10,
+                componentIndex: 3,
+                netIndex: 17,
+                polygonIndex: 23,
                 layerCode: 68,
                 layerId: 68
             }
@@ -299,7 +406,10 @@ test('PcbBinaryPrimitiveParser decodes via streams', () => {
                 x: 11235.2291,
                 y: 9079.5466,
                 diameter: 23.622,
-                holeDiameter: 11.811
+                holeDiameter: 11.811,
+                componentIndex: 4,
+                netIndex: 18,
+                polygonIndex: 24
             }
         ]
     )
@@ -320,6 +430,9 @@ test('PcbBinaryPrimitiveParser decodes fill streams', () => {
                 y1: 8902.9081,
                 x2: 11049.1471,
                 y2: 8916.6876,
+                componentIndex: 5,
+                netIndex: 19,
+                polygonIndex: 25,
                 layerCode: 256,
                 layerId: 33
             }
@@ -344,6 +457,9 @@ test('PcbBinaryPrimitiveParser decodes arc streams', () => {
                 startAngle: 90,
                 endAngle: 180,
                 width: 6,
+                componentIndex: 6,
+                netIndex: 20,
+                polygonIndex: 26,
                 layerCode: 33,
                 layerId: 33
             }
@@ -383,7 +499,10 @@ test('PcbBinaryPrimitiveParser decodes pad streams', () => {
                 roundedRectShapeTop: null,
                 cornerRadiusTop: null,
                 offsetTopX: 0,
-                offsetTopY: 0
+                offsetTopY: 0,
+                componentIndex: 7,
+                netIndex: 21,
+                polygonIndex: null
             }
         ]
     )
@@ -422,7 +541,55 @@ test('PcbBinaryPrimitiveParser decodes extended pad streams', () => {
                 roundedRectShapeTop: 1,
                 cornerRadiusTop: 0,
                 offsetTopX: 0,
-                offsetTopY: 0
+                offsetTopY: 0,
+                componentIndex: 8,
+                netIndex: 22,
+                polygonIndex: null
+            }
+        ]
+    )
+})
+
+/**
+ * Verifies region records decode Altium contour geometry and native ownership
+ * links without component-specific inference.
+ */
+test('PcbBinaryPrimitiveParser decodes region streams', () => {
+    const { headerBytes, dataBytes } =
+        PcbBinaryPrimitiveTestFactory.createRegionStream()
+
+    assert.deepEqual(
+        PcbBinaryPrimitiveParser.parseRegionStream(headerBytes, dataBytes),
+        [
+            {
+                layerId: 37,
+                layerCode: 37,
+                netIndex: 31,
+                polygonIndex: 41,
+                componentIndex: 9,
+                kind: 0,
+                isKeepout: false,
+                isBoardCutout: false,
+                isShapeBased: false,
+                points: [
+                    { x: 100, y: 200 },
+                    { x: 300, y: 200 },
+                    { x: 300, y: 400 },
+                    { x: 100, y: 400 }
+                ],
+                holes: [
+                    [
+                        { x: 140, y: 240 },
+                        { x: 180, y: 240 },
+                        { x: 180, y: 280 },
+                        { x: 140, y: 280 }
+                    ]
+                ],
+                properties: {
+                    KIND: '0',
+                    ISBOARDCUTOUT: 'FALSE',
+                    ISSHAPEBASED: 'FALSE'
+                }
             }
         ]
     )
