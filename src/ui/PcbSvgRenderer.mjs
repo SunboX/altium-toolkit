@@ -4,7 +4,9 @@
 
 import { PcbArcUtils } from './PcbArcUtils.mjs'
 import { PcbEdgeFacingGlyphNormalizer } from './PcbEdgeFacingGlyphNormalizer.mjs'
+import { PcbEmbeddedFontFaceRenderer } from './PcbEmbeddedFontFaceRenderer.mjs'
 import { PcbFootprintPrimitiveSelector } from './PcbFootprintPrimitiveSelector.mjs'
+import { PcbCopperPrimitiveSplitter } from './PcbCopperPrimitiveSplitter.mjs'
 import { PcbRegionPrimitiveRenderer } from './PcbRegionPrimitiveRenderer.mjs'
 import { PcbTextPrimitiveRenderer } from './PcbTextPrimitiveRenderer.mjs'
 import { SchematicSvgUtils } from './SchematicSvgUtils.mjs'
@@ -43,7 +45,7 @@ export class PcbSvgRenderer {
             pcb.texts || [],
             'top'
         )
-        const copperGroups = PcbSvgRenderer.#splitCopperPrimitives(
+        const copperGroups = PcbCopperPrimitiveSplitter.split(
             polygons,
             fills,
             tracks,
@@ -251,6 +253,9 @@ export class PcbSvgRenderer {
             'pcb-footprint-region'
         )
         const textMarkup = PcbTextPrimitiveRenderer.render(texts)
+        const fontFaceMarkup = PcbEmbeddedFontFaceRenderer.buildMarkup(
+            pcb.embeddedFonts || []
+        )
 
         const componentMarkup = components
             .map((component) => {
@@ -311,7 +316,9 @@ export class PcbSvgRenderer {
             '<svg class="pcb-svg" viewBox="' +
             SchematicSvgUtils.escapeHtml(viewBox) +
             '" preserveAspectRatio="xMidYMid meet" aria-label="PCB view">' +
-            '<defs><clipPath id="' +
+            '<defs>' +
+            fontFaceMarkup +
+            '<clipPath id="' +
             clipPathId +
             '"><path d="' +
             SchematicSvgUtils.escapeHtml(path) +
@@ -812,101 +819,6 @@ export class PcbSvgRenderer {
     }
 
     /**
-     * Splits recovered copper primitives into the default top-facing surface
-     * view and de-emphasized buried layers.
-     * @param {{ layer?: string, segments: Array<Record<string, number | string>> }[]} polygons
-     * @param {{ x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[]} fills
-     * @param {{ x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[]} tracks
-     * @param {{ x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[]} arcs
-     * @param {{ points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[]} regions
-     * @returns {{ surface: { polygons: { layer?: string, segments: Array<Record<string, number | string>> }[], fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], regions: { points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[] }, subsurface: { polygons: { layer?: string, segments: Array<Record<string, number | string>> }[], fills: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], regions: { points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[] } }}
-     */
-    static #splitCopperPrimitives(polygons, fills, tracks, arcs, regions) {
-        const copperFills = fills.filter((fill) =>
-            PcbSvgRenderer.#isCopperLayerId(fill.layerId)
-        )
-        const copperTracks = tracks.filter((track) =>
-            PcbSvgRenderer.#isCopperLayerId(track.layerId)
-        )
-        const copperArcs = arcs.filter((arc) =>
-            PcbSvgRenderer.#isCopperLayerId(arc.layerId)
-        )
-        const copperRegions = regions.filter((region) =>
-            PcbSvgRenderer.#isCopperLayerId(region.layerId)
-        )
-        const surfaceTrackLayerCode =
-            PcbSvgRenderer.#resolveSurfaceLayerCode(copperTracks)
-        const surfaceFillLayerCode =
-            PcbSvgRenderer.#resolveSurfaceLayerCode(copperFills)
-        const surfaceArcLayerCode =
-            PcbSvgRenderer.#resolveSurfaceLayerCode(copperArcs)
-        const surfaceRegionLayerCode =
-            PcbSvgRenderer.#resolveSurfaceLayerCode(copperRegions)
-
-        return {
-            surface: {
-                polygons: polygons.filter((polygon) =>
-                    PcbSvgRenderer.#isSurfacePolygon(polygon)
-                ),
-                fills: copperFills.filter(
-                    (fill) => fill.layerCode === surfaceFillLayerCode
-                ),
-                tracks: copperTracks.filter(
-                    (track) => track.layerCode === surfaceTrackLayerCode
-                ),
-                arcs: copperArcs.filter(
-                    (arc) => arc.layerCode === surfaceArcLayerCode
-                ),
-                regions: copperRegions.filter(
-                    (region) => region.layerCode === surfaceRegionLayerCode
-                )
-            },
-            subsurface: {
-                polygons: polygons.filter(
-                    (polygon) => !PcbSvgRenderer.#isSurfacePolygon(polygon)
-                ),
-                fills: copperFills.filter(
-                    (fill) => fill.layerCode !== surfaceFillLayerCode
-                ),
-                tracks: copperTracks.filter(
-                    (track) => track.layerCode !== surfaceTrackLayerCode
-                ),
-                arcs: copperArcs.filter(
-                    (arc) => arc.layerCode !== surfaceArcLayerCode
-                ),
-                regions: copperRegions.filter(
-                    (region) => region.layerCode !== surfaceRegionLayerCode
-                )
-            }
-        }
-    }
-
-    /**
-     * Returns the default visible layer code from one primitive family.
-     * @param {{ layerCode?: number }[]} primitives
-     * @returns {number | null}
-     */
-    static #resolveSurfaceLayerCode(primitives) {
-        const layerCodes = primitives
-            .map((primitive) => primitive.layerCode)
-            .filter((layerCode) => Number.isFinite(layerCode))
-        return layerCodes.length ? Math.min(...layerCodes) : null
-    }
-
-    /**
-     * Returns true when one polygon belongs to the top-facing copper view.
-     * @param {{ layer?: string }} polygon
-     * @returns {boolean}
-     */
-    static #isSurfacePolygon(polygon) {
-        return (
-            String(polygon.layer || '')
-                .trim()
-                .toUpperCase() === 'TOP'
-        )
-    }
-
-    /**
      * Returns true when one track intersects a component-local search box.
      * @param {{ x1: number, y1: number, x2: number, y2: number }} track
      * @param {{ minX: number, maxX: number, minY: number, maxY: number }} bounds
@@ -944,15 +856,5 @@ export class PcbSvgRenderer {
             maxY < bounds.minY ||
             minY > bounds.maxY
         )
-    }
-
-    /**
-     * Returns true when one decoded primitive layer belongs to the copper
-     * stack instead of a mechanical or annotation layer.
-     * @param {number | undefined} layerId
-     * @returns {boolean}
-     */
-    static #isCopperLayerId(layerId) {
-        return Number.isInteger(layerId) && layerId >= 1 && layerId <= 32
     }
 }

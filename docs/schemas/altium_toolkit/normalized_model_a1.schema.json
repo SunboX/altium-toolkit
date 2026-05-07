@@ -1,0 +1,547 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "urn:altium-toolkit:normalized-model:a1",
+    "$comment": "SPDX-FileCopyrightText: 2026 André Fiedler; SPDX-License-Identifier: CC-BY-SA-4.0",
+    "title": "Altium Toolkit Normalized Model A1",
+    "description": "Root contract for normalized models emitted by Altium Toolkit parser entrypoints.",
+    "type": "object",
+    "required": [
+        "schema",
+        "kind",
+        "fileType",
+        "fileName",
+        "summary",
+        "diagnostics",
+        "bom"
+    ],
+    "properties": {
+        "schema": {
+            "const": "urn:altium-toolkit:normalized-model:a1"
+        },
+        "kind": {
+            "enum": ["schematic", "pcb", "pcb-library", "project"]
+        },
+        "fileType": {
+            "enum": ["SchDoc", "PcbDoc", "PcbLib", "PrjPcb"]
+        },
+        "fileName": {
+            "type": "string"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": {
+                "type": ["number", "string", "boolean", "null"]
+            }
+        },
+        "diagnostics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["severity", "message"],
+                "properties": {
+                    "severity": {
+                        "enum": ["info", "warning"]
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                },
+                "additionalProperties": true
+            }
+        },
+        "schematic": {
+            "type": "object"
+        },
+        "pcb": {
+            "type": "object",
+            "properties": {
+                "components": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbComponent"
+                    }
+                },
+                "embeddedFonts": {
+                    "$ref": "#/$defs/embeddedFonts"
+                },
+                "rawRecords": {
+                    "$ref": "#/$defs/rawRecords"
+                },
+                "layerSubstacks": {
+                    "$ref": "#/$defs/layerSubstacks"
+                },
+                "boardRegionContexts": {
+                    "$ref": "#/$defs/boardRegionContexts"
+                },
+                "componentPrimitives": {
+                    "type": "array",
+                    "items": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/$defs/componentPrimitiveGroup"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "componentPrimitiveGroups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/componentPrimitiveGroup"
+                    }
+                },
+                "texts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbText"
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbLibrary": {
+            "type": "object",
+            "properties": {
+                "embeddedFonts": {
+                    "$ref": "#/$defs/embeddedFonts"
+                },
+                "footprints": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "rawRecords": {
+                                "$ref": "#/$defs/rawRecords"
+                            }
+                        },
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "project": {
+            "type": "object"
+        },
+        "bom": {
+            "type": "array",
+            "items": {
+                "type": "object"
+            }
+        }
+    },
+    "oneOf": [
+        {
+            "required": ["schematic"],
+            "properties": {
+                "kind": {
+                    "const": "schematic"
+                },
+                "fileType": {
+                    "const": "SchDoc"
+                }
+            }
+        },
+        {
+            "required": ["pcb"],
+            "properties": {
+                "kind": {
+                    "const": "pcb"
+                },
+                "fileType": {
+                    "const": "PcbDoc"
+                }
+            }
+        },
+        {
+            "required": ["pcbLibrary"],
+            "properties": {
+                "kind": {
+                    "const": "pcb-library"
+                },
+                "fileType": {
+                    "const": "PcbLib"
+                }
+            }
+        },
+        {
+            "required": ["project"],
+            "properties": {
+                "kind": {
+                    "const": "project"
+                },
+                "fileType": {
+                    "const": "PrjPcb"
+                }
+            }
+        }
+    ],
+    "$defs": {
+        "rawRecords": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "registryId",
+                    "source",
+                    "sourceStream",
+                    "family",
+                    "type",
+                    "recordIndex",
+                    "offset",
+                    "byteLength",
+                    "encoding",
+                    "supported",
+                    "parsed",
+                    "rawBase64"
+                ],
+                "properties": {
+                    "registryId": {
+                        "type": "string"
+                    },
+                    "source": {
+                        "enum": ["pcbdoc", "pcblib"]
+                    },
+                    "sourceStorage": {
+                        "type": "string"
+                    },
+                    "sourceStream": {
+                        "type": "string"
+                    },
+                    "headerStream": {
+                        "type": "string"
+                    },
+                    "family": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "typeId": {
+                        "type": ["number", "null"]
+                    },
+                    "recordIndex": {
+                        "type": "number"
+                    },
+                    "offset": {
+                        "type": "number"
+                    },
+                    "byteLength": {
+                        "type": "number"
+                    },
+                    "payloadByteLength": {
+                        "type": ["number", "null"]
+                    },
+                    "encoding": {
+                        "type": "string"
+                    },
+                    "supported": {
+                        "type": "boolean"
+                    },
+                    "parsed": {
+                        "type": "boolean"
+                    },
+                    "rawBase64": {
+                        "type": "string"
+                    }
+                },
+                "additionalProperties": true
+            }
+        },
+        "pcbComponent": {
+            "type": "object",
+            "required": [
+                "componentIndex",
+                "designator",
+                "x",
+                "y",
+                "layer",
+                "pattern",
+                "rotation",
+                "source",
+                "description",
+                "height"
+            ],
+            "properties": {
+                "componentIndex": {
+                    "type": "number"
+                },
+                "designator": {
+                    "type": "string"
+                },
+                "baseDesignator": {
+                    "type": "string"
+                },
+                "displayDesignator": {
+                    "type": "string"
+                },
+                "designatorSource": {
+                    "const": "Texts6/Data"
+                },
+                "uniqueId": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "parameterSource": {
+                    "const": "PrimitiveParameters/Data"
+                },
+                "x": {
+                    "type": "number"
+                },
+                "y": {
+                    "type": "number"
+                },
+                "layer": {
+                    "type": "string"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "rotation": {
+                    "type": "number"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": ["number", "null"]
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbText": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string"
+                },
+                "textSource": {
+                    "const": "WideStrings6/Data"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "isDesignator": {
+                    "type": "boolean"
+                },
+                "componentIndex": {
+                    "type": ["number", "null"]
+                },
+                "embeddedFontIndex": {
+                    "type": "number"
+                },
+                "fontMetrics": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": ["number", "string", "boolean", "null"]
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "layerSubstacks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["index", "fieldFamily", "id", "name"],
+                "properties": {
+                    "index": {
+                        "type": "number"
+                    },
+                    "fieldFamily": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "isFlex": {
+                        "type": ["boolean", "null"]
+                    },
+                    "showTopDielectric": {
+                        "type": ["boolean", "null"]
+                    },
+                    "showBottomDielectric": {
+                        "type": ["boolean", "null"]
+                    },
+                    "serviceStackup": {
+                        "type": ["boolean", "null"]
+                    },
+                    "usedByPrimitives": {
+                        "type": ["boolean", "null"]
+                    },
+                    "rawStackupType": {
+                        "type": "string"
+                    }
+                },
+                "additionalProperties": true
+            }
+        },
+        "boardRegionContexts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "regionIndex",
+                    "name",
+                    "layerStackId",
+                    "substackIndex",
+                    "substackName",
+                    "isFlex",
+                    "locked3d",
+                    "bendingLineCount"
+                ],
+                "properties": {
+                    "regionIndex": {
+                        "type": "number"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "layerStackId": {
+                        "type": "string"
+                    },
+                    "substackIndex": {
+                        "type": ["number", "null"]
+                    },
+                    "substackName": {
+                        "type": "string"
+                    },
+                    "isFlex": {
+                        "type": ["boolean", "null"]
+                    },
+                    "locked3d": {
+                        "type": "boolean"
+                    },
+                    "bendingLineCount": {
+                        "type": "number"
+                    }
+                },
+                "additionalProperties": true
+            }
+        },
+        "embeddedFonts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "index",
+                    "name",
+                    "style",
+                    "fileName",
+                    "sourceStream",
+                    "format",
+                    "mimeType",
+                    "byteCount",
+                    "compressedByteCount",
+                    "payloadBase64",
+                    "metrics"
+                ],
+                "properties": {
+                    "index": {
+                        "type": "number"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "style": {
+                        "type": "string"
+                    },
+                    "fileName": {
+                        "type": "string"
+                    },
+                    "sourceStream": {
+                        "type": "string"
+                    },
+                    "format": {
+                        "enum": ["truetype", "opentype", "unknown"]
+                    },
+                    "mimeType": {
+                        "type": "string"
+                    },
+                    "byteCount": {
+                        "type": "number"
+                    },
+                    "compressedByteCount": {
+                        "type": "number"
+                    },
+                    "payloadBase64": {
+                        "type": "string"
+                    },
+                    "metrics": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": ["number", "string", "boolean", "null"]
+                        }
+                    }
+                },
+                "additionalProperties": true
+            }
+        },
+        "componentPrimitiveGroup": {
+            "type": "object",
+            "required": [
+                "componentIndex",
+                "designator",
+                "pads",
+                "tracks",
+                "arcs",
+                "fills",
+                "vias",
+                "regions",
+                "shapeBasedRegions",
+                "texts",
+                "componentBodies"
+            ],
+            "properties": {
+                "componentIndex": {
+                    "type": "number"
+                },
+                "designator": {
+                    "type": "string"
+                },
+                "pads": {
+                    "type": "array"
+                },
+                "tracks": {
+                    "type": "array"
+                },
+                "arcs": {
+                    "type": "array"
+                },
+                "fills": {
+                    "type": "array"
+                },
+                "vias": {
+                    "type": "array"
+                },
+                "regions": {
+                    "type": "array"
+                },
+                "shapeBasedRegions": {
+                    "type": "array"
+                },
+                "texts": {
+                    "type": "array"
+                },
+                "componentBodies": {
+                    "type": "array"
+                }
+            },
+            "additionalProperties": true
+        }
+    },
+    "additionalProperties": true
+}

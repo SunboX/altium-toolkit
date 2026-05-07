@@ -4,7 +4,11 @@
 
 import { AsciiRecordParser } from './AsciiRecordParser.mjs'
 import { PcbBinaryPrimitiveParser } from './PcbBinaryPrimitiveParser.mjs'
+import { PcbEmbeddedFontExtractor } from './PcbEmbeddedFontExtractor.mjs'
 import { PcbEmbeddedModelExtractor } from './PcbEmbeddedModelExtractor.mjs'
+import { PcbPrimitiveParameterParser } from './PcbPrimitiveParameterParser.mjs'
+import { PcbRawRecordRegistry } from './PcbRawRecordRegistry.mjs'
+import { PcbWideStringTableParser } from './PcbWideStringTableParser.mjs'
 import { OleCompoundDocument } from '../ole/OleCompoundDocument.mjs'
 import { OleConstants } from '../ole/OleConstants.mjs'
 
@@ -41,7 +45,7 @@ export class PcbStreamExtractor {
     /**
      * Extracts PCB content directly from one OLE-backed PcbDoc buffer.
      * @param {ArrayBuffer} arrayBuffer
-     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], binaryPrimitives: { fills: { x1: number, y1: number, x2: number, y2: number, layerCode: number, componentIndex?: number | null }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode: number, componentIndex?: number | null }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode: number, layerId: number, componentIndex?: number | null }[], vias: { x: number, y: number, diameter: number, holeDiameter: number, componentIndex?: number | null }[], pads: { x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean, componentIndex?: number | null }[] }, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } } | null}
+     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], binaryPrimitives: Record<string, object[]>, primitiveParameters: object, wideStrings: object, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number, primitiveParameterGroupCount: number, wideStringCount: number } } | null}
      */
     static extractFromArrayBuffer(arrayBuffer) {
         if (!PcbStreamExtractor.isCompoundDocument(arrayBuffer)) {
@@ -63,7 +67,7 @@ export class PcbStreamExtractor {
      * Extracts stream-scoped printable records and known binary primitives from
      * a stream map.
      * @param {Map<string, Uint8Array>} streams
-     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], binaryPrimitives: { fills: { x1: number, y1: number, x2: number, y2: number, layerCode: number, componentIndex?: number | null }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode: number, componentIndex?: number | null }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode: number, layerId: number, componentIndex?: number | null }[], vias: { x: number, y: number, diameter: number, holeDiameter: number, componentIndex?: number | null }[], pads: { x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean, componentIndex?: number | null }[] }, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } }}
+     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], binaryPrimitives: Record<string, object[]>, primitiveParameters: object, wideStrings: object, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number, primitiveParameterGroupCount: number, wideStringCount: number } }}
      */
     static extractFromStreams(streams) {
         const records = []
@@ -83,6 +87,10 @@ export class PcbStreamExtractor {
 
         for (const [name, bytes] of streams.entries()) {
             if (!name.endsWith('/Data')) {
+                continue
+            }
+
+            if (PcbStreamExtractor.#isBinarySidecarDataStream(name)) {
                 continue
             }
 
@@ -128,6 +136,20 @@ export class PcbStreamExtractor {
         const shapeBasedRegionDataBytes = streams.get('ShapeBasedRegions6/Data')
         const boardRegionHeaderBytes = streams.get('BoardRegions/Header')
         const boardRegionDataBytes = streams.get('BoardRegions/Data')
+        const primitiveParameters = PcbPrimitiveParameterParser.parse(
+            streams.get('PrimitiveParameters/Data')
+        )
+        const wideStrings = PcbWideStringTableParser.parse(
+            streams.get('WideStrings6/Data')
+        )
+
+        if (primitiveParameters.groups.length) {
+            usedStreamNames.add('PrimitiveParameters/Data')
+        }
+
+        if (wideStrings.entries.length) {
+            usedStreamNames.add('WideStrings6/Data')
+        }
 
         if (arcHeaderBytes && arcDataBytes) {
             binaryPrimitives.arcs = PcbBinaryPrimitiveParser.parseArcStream(
@@ -182,7 +204,8 @@ export class PcbStreamExtractor {
         if (textHeaderBytes && textDataBytes) {
             binaryPrimitives.texts = PcbBinaryPrimitiveParser.parseTextStream(
                 textHeaderBytes,
-                textDataBytes
+                textDataBytes,
+                { wideStrings }
             )
             if (binaryPrimitives.texts.length) {
                 usedStreamNames.add(textStreamName)
@@ -225,6 +248,14 @@ export class PcbStreamExtractor {
 
         const embeddedModels =
             PcbEmbeddedModelExtractor.extractFromStreams(streams)
+        const embeddedFonts =
+            PcbEmbeddedFontExtractor.extractFromStreams(streams)
+        const rawRecords = PcbRawRecordRegistry.collectPcbDocRecords(
+            streams,
+            binaryPrimitives
+        )
+
+        rawRecords.forEach((record) => usedStreamNames.add(record.sourceStream))
 
         if (
             embeddedModels.models.length ||
@@ -239,16 +270,30 @@ export class PcbStreamExtractor {
             )
         }
 
+        if (embeddedFonts.fonts.length) {
+            embeddedFonts.fonts.forEach((font) =>
+                usedStreamNames.add(font.sourceStream)
+            )
+        }
+
         return {
             records,
             streamNames: [...usedStreamNames].sort((left, right) =>
                 left.localeCompare(right)
             ),
             binaryPrimitives,
+            primitiveParameters,
+            wideStrings,
             embeddedModels,
+            embeddedFonts,
+            rawRecords,
             diagnostics: {
                 printableRecordCount: records.length,
                 printableStreamCount: printableStreamNames.size,
+                embeddedFontCount: embeddedFonts.fonts.length,
+                rawRecordCount: rawRecords.length,
+                primitiveParameterGroupCount: primitiveParameters.groups.length,
+                wideStringCount: wideStrings.entries.length,
                 binaryPrimitiveCount:
                     binaryPrimitives.arcs.length +
                     binaryPrimitives.tracks.length +
@@ -272,6 +317,17 @@ export class PcbStreamExtractor {
         return bytes.buffer.slice(
             bytes.byteOffset,
             bytes.byteOffset + bytes.byteLength
+        )
+    }
+
+    /**
+     * Returns true for binary sidecar streams with printable-looking payloads.
+     * @param {string} name
+     * @returns {boolean}
+     */
+    static #isBinarySidecarDataStream(name) {
+        return (
+            name === 'PrimitiveParameters/Data' || name === 'WideStrings6/Data'
         )
     }
 }

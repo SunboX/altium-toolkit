@@ -17,9 +17,17 @@ reused by other browser or Node-based tools.
 
 ## Features
 
-- Parse standalone native `.SchDoc` and `.PcbDoc` files from `ArrayBuffer`
-- Recover schematic records, PCB outlines, placements, primitives, embedded
-  schematic images, and embedded PCB STEP payload metadata
+- Parse standalone native `.SchDoc`, `.PcbDoc`, `.PcbLib`, and `.PrjPcb` files from
+  `ArrayBuffer`
+- Recover schematic records, PCB outlines, placements, PCB library footprints,
+  project document references, variants, parameters, primitives, embedded
+  schematic images, component annotations from PrimitiveParameters/Text streams,
+  embedded PCB STEP payload metadata, and embedded PCB/PcbLib font payloads with
+  basic text metrics
+- Preserve raw PCB primitive records through a read-only record registry so
+  unsupported or partially decoded stream data remains inspectable
+- Emit versioned normalized model roots with a machine-readable JSON Schema
+  contract
 - Render schematic SVG, PCB SVG, and grouped BOM HTML
 - Build non-interactive PCB 3D scene-description data for host applications
 - Render a static 3D board summary
@@ -41,14 +49,18 @@ import {
     AltiumParser,
     SchematicSvgRenderer,
     PcbSvgRenderer,
+    preparePcbSideResolvedRenderModel,
     BomTableRenderer,
     PcbScene3dBuilder
 } from 'altium-toolkit'
 
 const documentModel = AltiumParser.parseArrayBuffer(file.name, arrayBuffer)
+const backRenderModel = preparePcbSideResolvedRenderModel(documentModel, {
+    side: 'back'
+})
 
 const schematicMarkup = SchematicSvgRenderer.render(documentModel)
-const pcbMarkup = PcbSvgRenderer.render(documentModel)
+const pcbMarkup = PcbSvgRenderer.render(backRenderModel)
 const bomMarkup = BomTableRenderer.render(documentModel.bom || [])
 const sceneDescription = PcbScene3dBuilder.build(documentModel)
 ```
@@ -63,6 +75,7 @@ import 'altium-toolkit/styles/altium-renderers.css'
 
 - [API](docs/api.md)
 - [Model Format](docs/model-format.md)
+- [Normalized Model Schema](docs/schemas/altium_toolkit/normalized_model_a1.schema.json)
 - [Testing](docs/testing.md)
 - [Scope](spec/library-scope.md)
 

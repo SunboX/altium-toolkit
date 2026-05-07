@@ -6,6 +6,11 @@ export { BomTableRenderer } from './ui/BomTableRenderer.mjs'
 export { PcbArcUtils } from './ui/PcbArcUtils.mjs'
 export { PcbEdgeFacingGlyphNormalizer } from './ui/PcbEdgeFacingGlyphNormalizer.mjs'
 export { PcbFootprintPrimitiveSelector } from './ui/PcbFootprintPrimitiveSelector.mjs'
+export {
+    PcbSideResolvedRenderModel,
+    isCopperPrimitive,
+    preparePcbSideResolvedRenderModel
+} from './ui/PcbSideResolvedRenderModel.mjs'
 export { PcbSvgRenderer } from './ui/PcbSvgRenderer.mjs'
 export { SchematicColorResolver } from './ui/SchematicColorResolver.mjs'
 export { SchematicContentLayout } from './ui/SchematicContentLayout.mjs'

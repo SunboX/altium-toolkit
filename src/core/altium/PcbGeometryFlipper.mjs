@@ -168,7 +168,35 @@ export class PcbGeometryFlipper {
             ),
             holes: (region.holes || []).map((hole) =>
                 PcbGeometryFlipper.#flipRegionPoints(hole, mirrorY)
-            )
+            ),
+            ...(Array.isArray(region.bendingLines)
+                ? {
+                      bendingLines: PcbGeometryFlipper.#flipBendingLines(
+                          region.bendingLines,
+                          mirrorY
+                      )
+                  }
+                : {})
+        }))
+    }
+
+    /**
+     * Mirrors board-region bending-line endpoints across the board Y axis.
+     * @param {{ y1?: number | null, y2?: number | null }[]} bendingLines
+     * @param {(value: number) => number} mirrorY
+     * @returns {object[]}
+     */
+    static #flipBendingLines(bendingLines, mirrorY) {
+        return bendingLines.map((line) => ({
+            ...line,
+            y1:
+                line.y1 === null || line.y1 === undefined
+                    ? (line.y1 ?? null)
+                    : mirrorY(line.y1),
+            y2:
+                line.y2 === null || line.y2 === undefined
+                    ? (line.y2 ?? null)
+                    : mirrorY(line.y2)
         }))
     }
 

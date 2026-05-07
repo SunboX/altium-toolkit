@@ -12,7 +12,11 @@ import { SchematicDirectiveParser } from './SchematicDirectiveParser.mjs'
 import { SchematicPinParser } from './SchematicPinParser.mjs'
 import { SchematicPrimitiveParser } from './SchematicPrimitiveParser.mjs'
 import { AltiumLayoutParser } from './AltiumLayoutParser.mjs'
+import { NormalizedModelSchema } from './NormalizedModelSchema.mjs'
 import { PcbModelParser } from './PcbModelParser.mjs'
+import { PcbLibModelParser } from './PcbLibModelParser.mjs'
+import { PcbLibStreamExtractor } from './PcbLibStreamExtractor.mjs'
+import { PrjPcbModelParser } from './PrjPcbModelParser.mjs'
 import { PcbStreamExtractor } from './PcbStreamExtractor.mjs'
 import { SchematicMultipartOwnerMatcher } from './SchematicMultipartOwnerMatcher.mjs'
 import { SchematicSheetStyleResolver } from './SchematicSheetStyleResolver.mjs'
@@ -21,6 +25,7 @@ import { SchematicJunctionParser } from './SchematicJunctionParser.mjs'
 import { SchematicBusEntryParser } from './SchematicBusEntryParser.mjs'
 import { SchematicImageParser } from './SchematicImageParser.mjs'
 import { SchematicNetlistBuilder } from './SchematicNetlistBuilder.mjs'
+import { SchematicComponentTextResolver } from './SchematicComponentTextResolver.mjs'
 const {
     countMatchingKeys,
     getDisplayText,
@@ -54,7 +59,7 @@ export class AltiumParser {
      * Parses a native Altium buffer into a normalized viewer model.
      * @param {string} fileName
      * @param {ArrayBuffer} arrayBuffer
-     * @returns {{ kind: 'schematic' | 'pcb', fileType: 'SchDoc' | 'PcbDoc', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], schematic?: Record<string, unknown>, pcb?: Record<string, unknown>, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
+     * @returns {{ schema: string, kind: 'schematic' | 'pcb' | 'pcb-library' | 'project', fileType: 'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], schematic?: Record<string, unknown>, pcb?: Record<string, unknown>, pcbLibrary?: Record<string, unknown>, project?: Record<string, unknown>, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
      */
     static parseArrayBuffer(fileName, arrayBuffer) {
         const records = AsciiRecordParser.parse(arrayBuffer)
@@ -71,6 +76,15 @@ export class AltiumParser {
                 pcbExtraction
             )
         }
+        if (fileType === 'PcbLib') {
+            return PcbLibModelParser.parse(
+                fileName,
+                PcbLibStreamExtractor.extractFromArrayBuffer(arrayBuffer)
+            )
+        }
+        if (fileType === 'PrjPcb') {
+            return PrjPcbModelParser.parse(fileName, arrayBuffer)
+        }
         throw new Error('Unsupported file type: ' + fileName)
     }
 
@@ -78,12 +92,14 @@ export class AltiumParser {
      * Chooses the format based on extension and content.
      * @param {string} fileName
      * @param {{ fields: Record<string, string | string[]> }[]} records
-     * @returns {'SchDoc' | 'PcbDoc'}
+     * @returns {'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb'}
      */
     static #sniffFileType(fileName, records) {
         const normalized = String(fileName || '').toLowerCase()
         if (normalized.endsWith('.schdoc')) return 'SchDoc'
         if (normalized.endsWith('.pcbdoc')) return 'PcbDoc'
+        if (normalized.endsWith('.pcblib')) return 'PcbLib'
+        if (normalized.endsWith('.prjpcb')) return 'PrjPcb'
 
         const hasSchematicHeader = records.some((record) =>
             getField(record.fields, 'HEADER').includes('Schematic')
@@ -386,7 +402,7 @@ export class AltiumParser {
                 y,
                 libReference,
                 designator:
-                    AltiumParser.#resolveComponentDesignator(
+                    SchematicComponentTextResolver.resolveDesignator(
                         ownerTexts,
                         anchoredTexts,
                         {
@@ -395,7 +411,7 @@ export class AltiumParser {
                             libReference
                         }
                     ) || 'U?',
-                value: AltiumParser.#resolveComponentValue(
+                value: SchematicComponentTextResolver.resolveValue(
                     ownerTexts,
                     anchoredTexts,
                     { x, y, libReference }
@@ -474,7 +490,7 @@ export class AltiumParser {
             })
         diagnostics.push(...netDiagnostics)
 
-        return {
+        return NormalizedModelSchema.attach({
             kind: 'schematic',
             fileType: 'SchDoc',
             fileName,
@@ -511,7 +527,7 @@ export class AltiumParser {
                 nets
             },
             bom
-        }
+        })
     }
 
     /**
@@ -521,21 +537,6 @@ export class AltiumParser {
      * @returns {string}
      */
     static #findNamedText(records, logicalName) {
-        const match = records.find(
-            (record) =>
-                getField(record.fields, 'Name').toLowerCase() ===
-                logicalName.toLowerCase()
-        )
-        return match ? getDisplayText(match.fields) : ''
-    }
-
-    /**
-     * Finds a related text value by name.
-     * @param {{ fields: Record<string, string | string[]> }[]} records
-     * @param {string} logicalName
-     * @returns {string}
-     */
-    static #findRelatedText(records, logicalName) {
         const match = records.find(
             (record) =>
                 getField(record.fields, 'Name').toLowerCase() ===
@@ -634,310 +635,6 @@ export class AltiumParser {
             (AltiumParser.#hasCoordinatePair(fields, 'Location') &&
                 AltiumParser.#hasCoordinatePair(fields, 'Corner'))
         )
-    }
-
-    /**
-     * Resolves a component designator from owner-linked text or nearby visible
-     * schematic labels when the owner link is missing.
-     * @param {{ fields: Record<string, string | string[]> }[]} ownerTexts
-     * @param {{ x: number, y: number, text: string, name: string }[]} texts
-     * @param {{ x: number, y: number, libReference: string }} component
-     * @returns {string}
-     */
-    static #resolveComponentDesignator(ownerTexts, texts, component) {
-        const ownerDesignator = AltiumParser.#findRelatedText(
-            ownerTexts,
-            'Designator'
-        )
-        if (AltiumParser.#isResolvedComponentText(ownerDesignator)) {
-            return ownerDesignator
-        }
-
-        return AltiumParser.#findNearbyComponentDesignator(texts, component)
-    }
-
-    /**
-     * Resolves a component value from owner-linked text or nearby visible
-     * schematic labels when the owner link still contains template placeholders.
-     * @param {{ fields: Record<string, string | string[]> }[]} ownerTexts
-     * @param {{ x: number, y: number, text: string, name: string }[]} texts
-     * @param {{ x: number, y: number, libReference: string }} component
-     * @returns {string}
-     */
-    static #resolveComponentValue(ownerTexts, texts, component) {
-        const ownerValue =
-            AltiumParser.#findRelatedText(ownerTexts, 'Comment') ||
-            AltiumParser.#findRelatedText(ownerTexts, 'VALUE')
-        if (AltiumParser.#isResolvedComponentText(ownerValue)) {
-            return ownerValue
-        }
-
-        return (
-            AltiumParser.#findNearbyComponentText(
-                texts,
-                component,
-                ['comment', 'value'],
-                '',
-                AltiumParser.#inferComponentValueHint(component.libReference)
-            ) || ownerValue
-        )
-    }
-
-    /**
-     * Finds the closest nearby designator text for one component.
-     * @param {{ x: number, y: number, text: string, name: string }[]} texts
-     * @param {{ x: number, y: number, libReference: string }} component
-     * @returns {string}
-     */
-    static #findNearbyComponentDesignator(texts, component) {
-        const expectedPrefix = AltiumParser.#inferComponentDesignatorPrefix(
-            component.libReference
-        )
-        const expectedValueHint = AltiumParser.#inferComponentValueHint(
-            component.libReference
-        )
-        const candidates = AltiumParser.#collectNearbyComponentTextCandidates(
-            texts,
-            component,
-            ['designator']
-        )
-        const scopedCandidates = expectedPrefix
-            ? candidates.filter((candidate) =>
-                  candidate.text
-                      .toUpperCase()
-                      .startsWith(expectedPrefix.toUpperCase())
-              )
-            : candidates
-        const usableCandidates = scopedCandidates.length
-            ? scopedCandidates
-            : candidates
-        const rankedCandidates = usableCandidates
-            .map((candidate) => ({
-                ...candidate,
-                score:
-                    candidate.distance +
-                    AltiumParser.#scoreAssociatedValueMismatch(
-                        texts,
-                        candidate,
-                        expectedValueHint
-                    )
-            }))
-            .sort((left, right) => left.score - right.score)
-
-        return rankedCandidates[0]?.text || ''
-    }
-
-    /**
-     * Finds the closest nearby visible text for one component.
-     * @param {{ x: number, y: number, text: string, name: string }[]} texts
-     * @param {{ x: number, y: number }} component
-     * @param {string[]} logicalNames
-     * @param {string} expectedPrefix
-     * @param {string} expectedTextHint
-     * @returns {string}
-     */
-    static #findNearbyComponentText(
-        texts,
-        component,
-        logicalNames,
-        expectedPrefix = '',
-        expectedTextHint = ''
-    ) {
-        const candidates = AltiumParser.#collectNearbyComponentTextCandidates(
-            texts,
-            component,
-            logicalNames
-        )
-        const prefixedCandidates = expectedPrefix
-            ? candidates.filter((candidate) =>
-                  candidate.text
-                      .toUpperCase()
-                      .startsWith(expectedPrefix.toUpperCase())
-              )
-            : candidates
-        const scopedCandidates = prefixedCandidates.length
-            ? prefixedCandidates
-            : candidates
-        const hintedCandidates = expectedTextHint
-            ? scopedCandidates.filter((candidate) =>
-                  AltiumParser.#normalizeTextMatch(candidate.text).includes(
-                      AltiumParser.#normalizeTextMatch(expectedTextHint)
-                  )
-              )
-            : scopedCandidates
-        const usableCandidates = hintedCandidates.length
-            ? hintedCandidates
-            : scopedCandidates
-
-        return usableCandidates.sort(
-            (left, right) => left.distance - right.distance
-        )[0]?.text
-    }
-
-    /**
-     * Collects nearby visible schematic text candidates around one component.
-     * @param {{ x: number, y: number, text: string, name: string }[]} texts
-     * @param {{ x: number, y: number }} component
-     * @param {string[]} logicalNames
-     * @returns {{ x: number, y: number, text: string, distance: number }[]}
-     */
-    static #collectNearbyComponentTextCandidates(
-        texts,
-        component,
-        logicalNames
-    ) {
-        const allowedNames = new Set(
-            logicalNames.map((name) => name.toLowerCase())
-        )
-
-        return texts
-            .filter((text) =>
-                allowedNames.has(
-                    String(text.name || '')
-                        .trim()
-                        .toLowerCase()
-                )
-            )
-            .map((text) => ({
-                x: text.x,
-                y: text.y,
-                text: text.text,
-                distance:
-                    Math.abs(text.x - component.x) +
-                    Math.abs(text.y - component.y)
-            }))
-            .filter(
-                (text) =>
-                    Math.abs(text.x - component.x) <= 80 &&
-                    Math.abs(text.y - component.y) <= 80
-            )
-    }
-
-    /**
-     * Penalizes a designator candidate when its nearby value text does not
-     * match the library-derived value hint.
-     * @param {{ x: number, y: number, text: string, name: string }[]} texts
-     * @param {{ x: number, y: number }} candidate
-     * @param {string} expectedValueHint
-     * @returns {number}
-     */
-    static #scoreAssociatedValueMismatch(texts, candidate, expectedValueHint) {
-        if (!expectedValueHint) {
-            return 0
-        }
-
-        const associatedValue = AltiumParser.#findNearbyComponentText(
-            texts,
-            candidate,
-            ['comment', 'value']
-        )
-        if (!associatedValue) {
-            return 0
-        }
-
-        return AltiumParser.#normalizeTextMatch(associatedValue).includes(
-            AltiumParser.#normalizeTextMatch(expectedValueHint)
-        )
-            ? -30
-            : 30
-    }
-
-    /**
-     * Returns true when a recovered owner-linked text is usable as a component
-     * display value.
-     * @param {string} value
-     * @returns {boolean}
-     */
-    static #isResolvedComponentText(value) {
-        const normalized = String(value || '').trim()
-
-        return Boolean(
-            normalized && normalized !== '*' && !normalized.startsWith('=')
-        )
-    }
-
-    /**
-     * Infers the visible designator prefix from a library reference.
-     * @param {string} libReference
-     * @returns {string}
-     */
-    static #inferComponentDesignatorPrefix(libReference) {
-        const normalized = String(libReference || '')
-            .trim()
-            .toUpperCase()
-
-        if (normalized.startsWith('RES/')) return 'R'
-        if (normalized.startsWith('CAP/')) return 'C'
-        if (normalized.startsWith('DIODE/')) return 'D'
-        if (normalized.startsWith('CON/')) return 'J'
-        if (normalized.startsWith('IC/')) return 'U'
-
-        return ''
-    }
-
-    /**
-     * Infers the visible value label from a library reference.
-     * @param {string} libReference
-     * @returns {string}
-     */
-    static #inferComponentValueHint(libReference) {
-        const segments = String(libReference || '')
-            .split('/')
-            .map((segment) => segment.trim())
-            .filter(Boolean)
-
-        for (let index = segments.length - 1; index >= 0; index -= 1) {
-            const segment = segments[index]
-
-            if (
-                AltiumParser.#isPackageLikeComponentSegment(segment) ||
-                /\s/.test(segment)
-            ) {
-                continue
-            }
-
-            if (
-                /^(?:\d+(?:\.\d+)?(?:R|K|M|UF|NF|PF)|1N[A-Z0-9-]+)$/i.test(
-                    segment
-                )
-            ) {
-                return segment
-            }
-
-            if (
-                /[A-Z]/i.test(segment) &&
-                /\d/.test(segment) &&
-                segment.length >= 6
-            ) {
-                return segment
-            }
-        }
-
-        return ''
-    }
-
-    /**
-     * Returns true when one library segment behaves like a package or rating
-     * rather than a user-facing value.
-     * @param {string} segment
-     * @returns {boolean}
-     */
-    static #isPackageLikeComponentSegment(segment) {
-        return /^(?:CE|\d{4}|SC\d+|SOD-\d+|\d+(?:\.\d+)?V|\d+(?:\.\d+)?[%％])$/i.test(
-            String(segment || '').trim()
-        )
-    }
-
-    /**
-     * Normalizes a text fragment for proximity matching.
-     * @param {string} value
-     * @returns {string}
-     */
-    static #normalizeTextMatch(value) {
-        return String(value || '')
-            .toUpperCase()
-            .replaceAll(/\s+/g, '')
-            .replaceAll('％', '%')
     }
 
     /**

@@ -83,6 +83,63 @@ class PcbStreamTestFactory {
     }
 
     /**
+     * Creates one PrimitiveParameters/Data stream with component parameters.
+     * @returns {Uint8Array}
+     */
+    static createPrimitiveParameterStream() {
+        return PcbStreamTestFactory.#createLengthPrefixedParameterRecords([
+            '|PRIMITIVEID=UID-C1|ID=Component#0|APPURTENANCE=System|VARIANTGUID=System|COUNT=0',
+            '|PRIMITIVEID=UID-C1|ID=Component#0|COUNT=2',
+            '|NAME=Manufacturer|VALUE=Acme',
+            '|NAME=MPN|VALUE=XYZ-1'
+        ])
+    }
+
+    /**
+     * Creates one WideStrings6/Data stream.
+     * @returns {Uint8Array}
+     */
+    static createWideStringStream() {
+        const textBytes = new Uint8Array(Buffer.from('J1_CH2\0', 'utf16le'))
+        const dataBytes = new Uint8Array(8 + textBytes.byteLength)
+        const dataView = new DataView(dataBytes.buffer)
+
+        dataView.setUint32(0, 6, true)
+        dataView.setUint32(4, textBytes.byteLength, true)
+        dataBytes.set(textBytes, 8)
+
+        return dataBytes
+    }
+
+    /**
+     * Creates one Texts6 stream pair with a WideStrings6-backed designator.
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static createWideStringTextStream() {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+        const payloadLength = 123
+        const dataBytes = new Uint8Array(5 + payloadLength)
+        const dataView = new DataView(dataBytes.buffer)
+        const payloadOffset = 5
+
+        headerView.setUint32(0, 1, true)
+        dataView.setUint8(0, 5)
+        dataView.setUint32(1, payloadLength, true)
+        dataView.setUint8(payloadOffset, 33)
+        dataView.setInt16(payloadOffset + 7, 2, true)
+        PcbStreamTestFactory.#writeMil(dataView, payloadOffset + 13, 120)
+        PcbStreamTestFactory.#writeMil(dataView, payloadOffset + 17, 140)
+        PcbStreamTestFactory.#writeMil(dataView, payloadOffset + 21, 10)
+        dataView.setUint16(payloadOffset + 25, 0, true)
+        dataView.setUint8(payloadOffset + 41, 1)
+        dataView.setUint8(payloadOffset + 43, 1)
+        dataView.setUint32(payloadOffset + 115, 6, true)
+
+        return { headerBytes, dataBytes }
+    }
+
+    /**
      * Creates one synthetic arc stream pair.
      * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
      */
@@ -325,6 +382,32 @@ class PcbStreamTestFactory {
 
         return dataBytes
     }
+
+    /**
+     * Encodes length-prefixed primitive parameter records.
+     * @param {string[]} records
+     * @returns {Uint8Array}
+     */
+    static #createLengthPrefixedParameterRecords(records) {
+        const encoder = new TextEncoder()
+        const encodedRecords = records.map((record) => encoder.encode(record))
+        const totalLength = encodedRecords.reduce(
+            (sum, record) => sum + 4 + record.byteLength,
+            0
+        )
+        const dataBytes = new Uint8Array(totalLength)
+        const dataView = new DataView(dataBytes.buffer)
+        let offset = 0
+
+        for (const record of encodedRecords) {
+            dataView.setUint32(offset, record.byteLength, true)
+            offset += 4
+            dataBytes.set(record, offset)
+            offset += record.byteLength
+        }
+
+        return dataBytes
+    }
 }
 
 /**
@@ -419,6 +502,14 @@ test('PcbStreamExtractor extracts printable and binary PCB streams', () => {
             shapeTop: 1,
             shapeMid: 1,
             shapeBottom: 1,
+            shapeTopName: 'round',
+            shapeMidName: 'round',
+            shapeBottomName: 'round',
+            padShapeNames: {
+                top: 'round',
+                middle: 'round',
+                bottom: 'round'
+            },
             rotation: 45,
             isPlated: true,
             holeShape: null,
@@ -467,4 +558,42 @@ test('PcbStreamExtractor extracts printable and binary PCB streams', () => {
         models: [],
         componentBodies: []
     })
+})
+
+/**
+ * Verifies binary sidecar streams are parsed explicitly instead of being
+ * recovered as generic printable records.
+ */
+test('PcbStreamExtractor extracts primitive parameters and WideStrings6 text', () => {
+    const streams = new Map()
+    const textStream = PcbStreamTestFactory.createWideStringTextStream()
+
+    streams.set(
+        'PrimitiveParameters/Data',
+        PcbStreamTestFactory.createPrimitiveParameterStream()
+    )
+    streams.set(
+        'WideStrings6/Data',
+        PcbStreamTestFactory.createWideStringStream()
+    )
+    streams.set('Texts6/Header', textStream.headerBytes)
+    streams.set('Texts6/Data', textStream.dataBytes)
+
+    const extracted = PcbStreamExtractor.extractFromStreams(streams)
+
+    assert.equal(extracted.records.length, 0)
+    assert.deepEqual(extracted.streamNames, [
+        'PrimitiveParameters/Data',
+        'Texts6/Data',
+        'WideStrings6/Data'
+    ])
+    assert.deepEqual(extracted.primitiveParameters.byPrimitiveId['UID-C1'], {
+        Manufacturer: 'Acme',
+        MPN: 'XYZ-1'
+    })
+    assert.equal(extracted.wideStrings.byIndex[6], 'J1_CH2')
+    assert.equal(extracted.binaryPrimitives.texts[0].text, 'J1_CH2')
+    assert.equal(extracted.binaryPrimitives.texts[0].role, 'designator')
+    assert.equal(extracted.diagnostics.primitiveParameterGroupCount, 1)
+    assert.equal(extracted.diagnostics.wideStringCount, 1)
 })

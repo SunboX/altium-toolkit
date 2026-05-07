@@ -118,6 +118,71 @@ test('renderPcbSvg renders board outline, copper primitives, and placements', ()
 })
 
 /**
+ * Verifies embedded PCB fonts are emitted as SVG font faces and applied to
+ * TrueType text primitives.
+ */
+test('renderPcbSvg embeds recovered PCB fonts for text rendering', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Font board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 500,
+                heightMil: 300,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 500, y2: 0 },
+                    { type: 'line', x1: 500, y1: 0, x2: 500, y2: 300 },
+                    { type: 'line', x1: 500, y1: 300, x2: 0, y2: 300 },
+                    { type: 'line', x1: 0, y1: 300, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [{ name: 'Top Overlay' }],
+            primitiveLayers: [{ layerId: 33, name: 'Top Overlay' }],
+            polygons: [],
+            fills: [],
+            tracks: [],
+            arcs: [],
+            vias: [],
+            pads: [],
+            embeddedFonts: [
+                {
+                    name: 'Synthetic Sans',
+                    style: 'Bold Italic',
+                    format: 'truetype',
+                    mimeType: 'font/ttf',
+                    payloadBase64: 'AAEAAA==',
+                    metrics: {
+                        weightClass: 700
+                    }
+                }
+            ],
+            texts: [
+                {
+                    text: 'FONT_MARK',
+                    x: 100,
+                    y: 150,
+                    height: 18,
+                    rotation: 0,
+                    layerId: 33,
+                    fontFamily: 'Synthetic Sans',
+                    fontWeight: 700,
+                    fontStyle: 'italic'
+                }
+            ],
+            components: []
+        }
+    })
+
+    assert.match(markup, /@font-face/)
+    assert.match(markup, /font-family: 'Synthetic Sans'/)
+    assert.match(markup, /src: url\('data:font\/ttf;base64,AAEAAA=='\)/)
+    assert.match(markup, /font-family="Synthetic Sans"/)
+    assert.match(markup, /font-weight="700"/)
+    assert.match(markup, /font-style="italic"/)
+})
+
+/**
  * Verifies PCB renderer draws authored text primitives and leaves hidden text
  * out of the SVG.
  */

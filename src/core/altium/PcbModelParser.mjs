@@ -3,7 +3,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { AltiumLayoutParser } from './AltiumLayoutParser.mjs'
+import { NormalizedModelSchema } from './NormalizedModelSchema.mjs'
+import { PcbBoardRegionSemanticsParser } from './PcbBoardRegionSemanticsParser.mjs'
+import { PcbComponentAnnotationNormalizer } from './PcbComponentAnnotationNormalizer.mjs'
+import { PcbComponentBodyPlacementNormalizer } from './PcbComponentBodyPlacementNormalizer.mjs'
+import { PcbComponentPrimitiveIndexer } from './PcbComponentPrimitiveIndexer.mjs'
 import { PcbOutlineRecovery } from './PcbOutlineRecovery.mjs'
+import { PcbRuleParser } from './PcbRuleParser.mjs'
 import { ParserUtils } from './ParserUtils.mjs'
 
 const {
@@ -27,8 +33,8 @@ export class PcbModelParser {
      * resolved primitive netName fields keyed by numeric netIndex values.
      * @param {string} fileName
      * @param {{ raw: string, fields: Record<string, string | string[]>, sourceStream?: string }[]} records
-     * @param {{ streamNames: string[], binaryPrimitives: { fills: { x1: number, y1: number, x2: number, y2: number, layerCode: number, layerId: number, componentIndex?: number | null }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode: number, layerId: number, componentIndex?: number | null }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode: number, layerId: number, componentIndex?: number | null }[], vias: { x: number, y: number, diameter: number, holeDiameter: number, componentIndex?: number | null }[], pads: { x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean, componentIndex?: number | null }[] }, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } } | null} pcbExtraction
-     * @returns {{ kind: 'pcb', fileType: 'PcbDoc', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], pcb: { boardOutline: { widthMil: number, heightMil: number, minX: number, minY: number, segments: Array<Record<string, number | string>> }, layers: { index: number, name: string, layerId: number | null }[], primitiveLayers: { layerId: number, name: string }[], components: { componentIndex: number, designator: string, x: number, y: number, layer: string, pattern: string, rotation: number, source: string, description: string, height: number | null }[], polygons: { layer: string, segments: Array<Record<string, number | string>> }[], fills: { x1: number, y1: number, x2: number, y2: number, layerCode: number, layerId: number, componentIndex?: number | null }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode: number, layerId: number, componentIndex?: number | null }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode: number, layerId: number, componentIndex?: number | null }[], vias: { x: number, y: number, diameter: number, holeDiameter: number, componentIndex?: number | null }[], pads: { x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean, componentIndex?: number | null }[] }, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
+     * @param {{ streamNames: string[], binaryPrimitives: Record<string, object[]>, primitiveParameters?: object, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } } | null} pcbExtraction
+     * @returns {{ schema: string, kind: 'pcb', fileType: 'PcbDoc', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], pcb: Record<string, unknown>, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
      */
     static parse(fileName, records, pcbExtraction = null) {
         const boardRecords = records.filter(
@@ -55,9 +61,15 @@ export class PcbModelParser {
                         /^V9_STACK_LAYER\d+_NAME$/
                     ) > 0
             )
-        const rawComponentRecords = PcbModelParser.#normalizeComponentRecords(
-            PcbModelParser.#selectComponentRecords(records)
-        )
+        const rawTextPrimitives = pcbExtraction?.binaryPrimitives?.texts || []
+        const rawComponentRecords =
+            PcbComponentAnnotationNormalizer.enrichComponents(
+                PcbModelParser.#normalizeComponentRecords(
+                    PcbModelParser.#selectComponentRecords(records)
+                ),
+                rawTextPrimitives,
+                pcbExtraction?.primitiveParameters
+            )
         const componentRecords = dedupeByDesignator(
             rawComponentRecords.map((component) =>
                 PcbModelParser.#publicComponentRecord(component)
@@ -74,12 +86,17 @@ export class PcbModelParser {
         const layers = AltiumLayoutParser.parseLayerStack(
             layerRecord?.fields || {}
         )
+        const layerSubstacks =
+            PcbBoardRegionSemanticsParser.parseLayerSubstacks(
+                boardRecords.map((record) => record.fields)
+            )
         const primitiveLayers = AltiumLayoutParser.parsePrimitiveLayerNames(
             boardRecords.map((record) => record.fields)
         )
         const nets = PcbModelParser.#parseNetRecords(records)
         const netNameByIndex = PcbModelParser.#buildNetNameMap(nets)
         const classes = PcbModelParser.#parseClassRecords(records)
+        const rules = PcbRuleParser.parse(records)
         const polygons = polygonRecords
             .map((record) => ({
                 layer: getField(record.fields, 'LAYER') || 'UNKNOWN',
@@ -115,13 +132,12 @@ export class PcbModelParser {
             pcbExtraction?.binaryPrimitives?.shapeBasedRegions || [],
             netNameByIndex
         )
-        const boardRegions = PcbModelParser.#annotatePrimitiveNetNames(
-            pcbExtraction?.binaryPrimitives?.boardRegions || [],
-            netNameByIndex
-        )
-        const texts = PcbModelParser.#normalizeTexts(
-            pcbExtraction?.binaryPrimitives?.texts || [],
-            rawComponentRecords
+        const boardRegions = PcbBoardRegionSemanticsParser.enrichBoardRegions(
+            PcbModelParser.#annotatePrimitiveNetNames(
+                pcbExtraction?.binaryPrimitives?.boardRegions || [],
+                netNameByIndex
+            ),
+            layerSubstacks
         )
         const extractedEmbeddedModels = Array.isArray(
             pcbExtraction?.embeddedModels?.models
@@ -133,6 +149,21 @@ export class PcbModelParser {
         )
             ? pcbExtraction.embeddedModels.componentBodies
             : []
+        const extractedEmbeddedFonts = Array.isArray(
+            pcbExtraction?.embeddedFonts?.fonts
+        )
+            ? pcbExtraction.embeddedFonts.fonts
+            : []
+        const rawRecords = Array.isArray(pcbExtraction?.rawRecords)
+            ? pcbExtraction.rawRecords
+            : []
+        const texts = PcbModelParser.#annotateTextFontMetrics(
+            PcbComponentAnnotationNormalizer.normalizeTexts(
+                rawTextPrimitives,
+                rawComponentRecords
+            ),
+            extractedEmbeddedFonts
+        )
         const recoveredOutline = PcbOutlineRecovery.recoverOutline({
             fallbackOutline: fallbackBoardOutline,
             components: componentRecords,
@@ -153,16 +184,28 @@ export class PcbModelParser {
             texts,
             components: componentRecords
         })
-        const componentBodies = PcbModelParser.#normalizeComponentBodies(
-            extractedComponentBodies,
-            boardOutline
-        )
+        const boardRegionContexts =
+            PcbBoardRegionSemanticsParser.buildBoardRegionContexts(
+                normalizedPcb.boardRegions
+            )
+        const boardRegionSummary =
+            PcbBoardRegionSemanticsParser.summarizeBoardRegions(
+                normalizedPcb.boardRegions
+            )
+        const componentBodies =
+            PcbComponentBodyPlacementNormalizer.normalizeComponentBodies(
+                extractedComponentBodies,
+                boardOutline
+            )
         const componentPrimitiveGroups =
-            PcbModelParser.#buildComponentPrimitiveGroups(
+            PcbComponentPrimitiveIndexer.buildGroups(
                 normalizedPcb.components,
                 normalizedPcb,
                 componentBodies
             )
+        const componentPrimitives = PcbComponentPrimitiveIndexer.indexGroups(
+            componentPrimitiveGroups
+        )
         const bom = PcbModelParser.#groupBomRows(
             componentRecords.map((component) => ({
                 designator: component.designator,
@@ -197,8 +240,36 @@ export class PcbModelParser {
                 severity: 'info',
                 message:
                     'Recovered ' + classes.length + ' PCB class definitions.'
+            },
+            {
+                severity: 'info',
+                message: 'Recovered ' + rules.length + ' PCB design rules.'
             }
         ]
+
+        if (boardRegionSummary.boardRegionCount) {
+            diagnostics.push({
+                severity: 'info',
+                message:
+                    'Recovered ' +
+                    boardRegionSummary.boardRegionCount +
+                    ' board planning ' +
+                    PcbModelParser.#plural(
+                        boardRegionSummary.boardRegionCount,
+                        'region',
+                        'regions'
+                    ) +
+                    ' and ' +
+                    boardRegionSummary.bendingLineCount +
+                    ' bending ' +
+                    PcbModelParser.#plural(
+                        boardRegionSummary.bendingLineCount,
+                        'line',
+                        'lines'
+                    ) +
+                    '.'
+            })
+        }
 
         if (pcbExtraction) {
             diagnostics.push({
@@ -243,6 +314,26 @@ export class PcbModelParser {
             })
         }
 
+        if (extractedEmbeddedFonts.length) {
+            diagnostics.push({
+                severity: 'info',
+                message:
+                    'Recovered ' +
+                    extractedEmbeddedFonts.length +
+                    ' embedded PCB font payloads.'
+            })
+        }
+
+        if (rawRecords.length) {
+            diagnostics.push({
+                severity: 'info',
+                message:
+                    'Preserved ' +
+                    rawRecords.length +
+                    ' raw PCB primitive records.'
+            })
+        }
+
         if (recoveredOutline.source === 'board-route') {
             diagnostics.push({
                 severity: 'info',
@@ -269,7 +360,7 @@ export class PcbModelParser {
             })
         }
 
-        return {
+        return NormalizedModelSchema.attach({
             kind: 'pcb',
             fileType: 'PcbDoc',
             fileName,
@@ -281,10 +372,16 @@ export class PcbModelParser {
                 bomRowCount: bom.length,
                 netCount: nets.length,
                 classCount: classes.length,
+                ruleCount: rules.length,
                 polygonCount: polygons.length,
                 trackCount: tracks.length,
                 arcCount: arcs.length,
                 viaCount: vias.length,
+                boardRegionCount: boardRegionSummary.boardRegionCount,
+                flexRegionCount: boardRegionSummary.flexRegionCount,
+                bendingLineCount: boardRegionSummary.bendingLineCount,
+                embeddedFontCount: extractedEmbeddedFonts.length,
+                rawRecordCount: rawRecords.length,
                 boardWidthMil: Math.round(boardOutline.widthMil),
                 boardHeightMil: Math.round(boardOutline.heightMil)
             },
@@ -292,9 +389,12 @@ export class PcbModelParser {
             pcb: {
                 boardOutline: normalizedPcb.boardOutline,
                 layers,
+                layerSubstacks,
+                boardRegionContexts,
                 primitiveLayers,
                 nets,
                 classes,
+                rules,
                 components: normalizedPcb.components,
                 polygons: normalizedPcb.polygons,
                 fills: normalizedPcb.fills,
@@ -307,11 +407,14 @@ export class PcbModelParser {
                 boardRegions: normalizedPcb.boardRegions,
                 texts: normalizedPcb.texts,
                 embeddedModels: extractedEmbeddedModels,
+                embeddedFonts: extractedEmbeddedFonts,
+                rawRecords,
                 componentBodies,
+                componentPrimitives,
                 componentPrimitiveGroups
             },
             bom
-        }
+        })
     }
 
     /**
@@ -339,13 +442,17 @@ export class PcbModelParser {
     /**
      * Normalizes component placement fields while preserving native index order.
      * @param {{ fields: Record<string, string | string[]> }[]} records
-     * @returns {{ componentIndex: number, designator: string, x: number, y: number, layer: string, pattern: string, rotation: number, source: string, description: string, height: number | null, nameOn: boolean, commentOn: boolean }[]}
+     * @returns {{ componentIndex: number, designator: string, uniqueId: string, x: number, y: number, layer: string, pattern: string, rotation: number, source: string, description: string, height: number | null, nameOn: boolean, commentOn: boolean }[]}
      */
     static #normalizeComponentRecords(records) {
         return records
             .map((record, index) => ({
                 componentIndex: index,
                 designator: getField(record.fields, 'SOURCEDESIGNATOR'),
+                uniqueId:
+                    getField(record.fields, 'UNIQUEID') ||
+                    getField(record.fields, 'UID') ||
+                    getField(record.fields, 'UNIQUEIDPRIMITIVEINFORMATION'),
                 x: parseNumericField(record.fields, 'X') || 0,
                 y: parseNumericField(record.fields, 'Y') || 0,
                 layer: getField(record.fields, 'LAYER') || 'TOP',
@@ -635,76 +742,6 @@ export class PcbModelParser {
     }
 
     /**
-     * Groups normalized primitives by their native component index.
-     * @param {{ componentIndex: number, designator: string }[]} components
-     * @param {{ fills?: object[], tracks?: object[], arcs?: object[], pads?: object[], texts?: object[] }} pcb
-     * @param {{ componentIndex?: number | null }[]} componentBodies
-     * @returns {{ componentIndex: number, designator: string, pads: object[], tracks: object[], arcs: object[], fills: object[], texts: object[], componentBodies: object[] }[]}
-     */
-    static #buildComponentPrimitiveGroups(components, pcb, componentBodies) {
-        return (components || []).map((component) => {
-            const componentIndex = Number(component.componentIndex)
-
-            return {
-                componentIndex,
-                designator: component.designator,
-                pads: PcbModelParser.#primitivesForComponent(
-                    pcb.pads,
-                    componentIndex
-                ),
-                tracks: PcbModelParser.#primitivesForComponent(
-                    pcb.tracks,
-                    componentIndex
-                ),
-                arcs: PcbModelParser.#primitivesForComponent(
-                    pcb.arcs,
-                    componentIndex
-                ),
-                fills: PcbModelParser.#primitivesForComponent(
-                    pcb.fills,
-                    componentIndex
-                ),
-                regions: PcbModelParser.#primitivesForComponent(
-                    pcb.regions,
-                    componentIndex
-                ),
-                shapeBasedRegions: PcbModelParser.#primitivesForComponent(
-                    pcb.shapeBasedRegions,
-                    componentIndex
-                ),
-                texts: (pcb.texts || []).filter(
-                    (text) => Number(text?.ownerIndex) === componentIndex
-                ),
-                componentBodies: PcbModelParser.#primitivesForComponent(
-                    componentBodies,
-                    componentIndex
-                )
-            }
-        })
-    }
-
-    /**
-     * Returns primitives linked to a component by native Altium index.
-     * @param {{ componentIndex?: number | null }[] | undefined} primitives
-     * @param {number} componentIndex
-     * @returns {object[]}
-     */
-    static #primitivesForComponent(primitives, componentIndex) {
-        return (primitives || []).filter((primitive) => {
-            const rawComponentIndex = primitive?.componentIndex
-            if (
-                rawComponentIndex === null ||
-                rawComponentIndex === undefined ||
-                rawComponentIndex === ''
-            ) {
-                return false
-            }
-
-            return Number(rawComponentIndex) === componentIndex
-        })
-    }
-
-    /**
      * Groups component placements into BOM rows.
      * @param {{ designator: string, pattern: string, source: string, value: string }[]} componentRecords
      * @returns {{ designators: string[], quantity: number, pattern: string, source: string, value: string }[]}
@@ -741,17 +778,82 @@ export class PcbModelParser {
     }
 
     /**
-     * Marks decoded PCB text primitives as visible or hidden based on their
-     * linked component display flags.
-     * @param {{ text: string, ownerIndex?: number | null, kind?: number, visibilityFlags?: number }[]} texts
-     * @param {{ designator: string, nameOn: boolean, commentOn: boolean }[]} components
+     * Adds embedded-font metric references to decoded TrueType text primitives.
+     * @param {{ fontFamily?: string, fontName?: string, fontStyle?: string, fontWeight?: number }[]} texts
+     * @param {{ index: number, name: string, style: string, metrics?: object }[]} embeddedFonts
      * @returns {object[]}
      */
-    static #normalizeTexts(texts, components) {
-        return (texts || []).map((text) => ({
-            ...text,
-            visible: PcbModelParser.#isVisibleText(text, components)
-        }))
+    static #annotateTextFontMetrics(texts, embeddedFonts) {
+        const fontsByKey = new Map()
+
+        for (const font of embeddedFonts || []) {
+            for (const key of PcbModelParser.#fontLookupKeys(font)) {
+                fontsByKey.set(key, font)
+            }
+        }
+
+        return (texts || []).map((text) => {
+            const family = text.fontFamily || text.fontName || ''
+            const style = PcbModelParser.#textFontStyleName(text)
+            const font =
+                fontsByKey.get(PcbModelParser.#fontLookupKey(family, style)) ||
+                fontsByKey.get(PcbModelParser.#fontLookupKey(family, ''))
+
+            return font
+                ? {
+                      ...text,
+                      embeddedFontIndex: font.index,
+                      fontMetrics: font.metrics || {}
+                  }
+                : text
+        })
+    }
+
+    /**
+     * Builds all lookup aliases for one embedded font.
+     * @param {{ name?: string, style?: string }} font
+     * @returns {string[]}
+     */
+    static #fontLookupKeys(font) {
+        return [
+            PcbModelParser.#fontLookupKey(font.name, font.style),
+            PcbModelParser.#fontLookupKey(font.name, '')
+        ]
+    }
+
+    /**
+     * Builds a normalized font lookup key.
+     * @param {string | undefined} family
+     * @param {string | undefined} style
+     * @returns {string}
+     */
+    static #fontLookupKey(family, style) {
+        return (
+            String(family || '')
+                .trim()
+                .toLowerCase() +
+            '\u0000' +
+            String(style || '')
+                .trim()
+                .toLowerCase()
+        )
+    }
+
+    /**
+     * Converts SVG-style text font flags into the embedded-font style label.
+     * @param {{ fontStyle?: string, fontWeight?: number }} text
+     * @returns {'Regular' | 'Bold' | 'Italic' | 'Bold Italic'}
+     */
+    static #textFontStyleName(text) {
+        const isBold = Number(text?.fontWeight || 0) >= 600
+        const isItalic =
+            String(text?.fontStyle || '').toLowerCase() === 'italic'
+
+        if (isBold && isItalic) return 'Bold Italic'
+        if (isBold) return 'Bold'
+        if (isItalic) return 'Italic'
+
+        return 'Regular'
     }
 
     /**
@@ -766,95 +868,21 @@ export class PcbModelParser {
             ...publicComponent
         } = component
 
+        if (!publicComponent.uniqueId) {
+            delete publicComponent.uniqueId
+        }
+
         return publicComponent
     }
 
     /**
-     * Returns true when one PCB text primitive should render in board view.
-     * @param {{ text: string, ownerIndex?: number | null, kind?: number, visibilityFlags?: number }} text
-     * @param {{ designator: string, nameOn: boolean, commentOn: boolean }[]} components
-     * @returns {boolean}
-     */
-    static #isVisibleText(text, components) {
-        if (!Number.isInteger(text?.ownerIndex)) {
-            return true
-        }
-
-        const component = components[Number(text.ownerIndex)]
-        if (!component) {
-            return (Number(text?.visibilityFlags || 0) & 1) === 0
-        }
-
-        if (
-            PcbModelParser.#normalizeText(text.text) ===
-            PcbModelParser.#normalizeText(component.designator)
-        ) {
-            return component.nameOn
-        }
-
-        if (Number(text?.kind) === 1) {
-            return component.commentOn
-        }
-
-        if ((Number(text?.visibilityFlags || 0) & 1) !== 0) {
-            return component.nameOn
-        }
-
-        return true
-    }
-
-    /**
-     * Normalizes text for display-flag comparisons.
-     * @param {unknown} text
+     * Chooses a singular or plural word based on a count.
+     * @param {number} count
+     * @param {string} singular
+     * @param {string} plural
      * @returns {string}
      */
-    static #normalizeText(text) {
-        return String(text || '')
-            .trim()
-            .toUpperCase()
-    }
-
-    /**
-     * Flips embedded component-body placements into the viewer coordinate
-     * system.
-     * @param {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null }[]} componentBodies
-     * @param {{ minY: number, heightMil: number }} boardOutline
-     * @returns {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null }[]}
-     */
-    static #normalizeComponentBodies(componentBodies, boardOutline) {
-        const maxY =
-            Number(boardOutline?.minY || 0) +
-            Number(boardOutline?.heightMil || 0)
-        const mirrorY = (value) =>
-            Number(boardOutline?.minY || 0) + maxY - Number(value || 0)
-
-        return componentBodies.map((componentBody) => ({
-            ...componentBody,
-            positionMil: {
-                x: Number(componentBody.positionMil?.x || 0),
-                y: mirrorY(componentBody.positionMil?.y || 0)
-            },
-            rotationDeg: PcbModelParser.#normalizeAngle(
-                360 - Number(componentBody.rotationDeg || 0)
-            ),
-            modelRotationDeg: {
-                x: Number(componentBody.modelRotationDeg?.x || 0),
-                y: Number(componentBody.modelRotationDeg?.y || 0),
-                z: PcbModelParser.#normalizeAngle(
-                    360 - Number(componentBody.modelRotationDeg?.z || 0)
-                )
-            }
-        }))
-    }
-
-    /**
-     * Normalizes one angle into the range [0, 360).
-     * @param {number} angle
-     * @returns {number}
-     */
-    static #normalizeAngle(angle) {
-        const normalized = Number(angle || 0) % 360
-
-        return normalized < 0 ? normalized + 360 : normalized
+    static #plural(count, singular, plural) {
+        return Number(count) === 1 ? singular : plural
     }
 }

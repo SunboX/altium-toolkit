@@ -34,7 +34,7 @@ export class PcbTextPrimitiveRenderer {
 
     /**
      * Renders selected PCB texts into SVG markup.
-     * @param {{ text: string, x: number, y: number, height?: number, rotation?: number, layerId?: number }[]} texts
+     * @param {{ text: string, x: number, y: number, height?: number, rotation?: number, layerId?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string }[]} texts
      * @returns {string}
      */
     static render(texts) {
@@ -45,7 +45,7 @@ export class PcbTextPrimitiveRenderer {
 
     /**
      * Renders one PCB text primitive.
-     * @param {{ text: string, x: number, y: number, height?: number, rotation?: number, layerId?: number }} text
+     * @param {{ text: string, x: number, y: number, height?: number, rotation?: number, layerId?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string }} text
      * @returns {string}
      */
     static #renderText(text) {
@@ -70,10 +70,44 @@ export class PcbTextPrimitiveRenderer {
             SchematicSvgUtils.formatNumber(rotation) +
             ')" font-size="' +
             SchematicSvgUtils.formatNumber(fontSize) +
-            '" text-anchor="start" dominant-baseline="alphabetic">' +
+            '"' +
+            PcbTextPrimitiveRenderer.#renderFontAttributes(text) +
+            ' text-anchor="start" dominant-baseline="alphabetic">' +
             content +
             '</text>'
         )
+    }
+
+    /**
+     * Renders optional SVG font attributes for TrueType text primitives.
+     * @param {{ fontFamily?: string, fontWeight?: number, fontStyle?: string }} text
+     * @returns {string}
+     */
+    static #renderFontAttributes(text) {
+        let attributes = ''
+
+        if (text.fontFamily && text.fontFamily !== 'Stroke') {
+            attributes +=
+                ' font-family="' +
+                SchematicSvgUtils.escapeHtml(text.fontFamily) +
+                '"'
+        }
+
+        if (text.fontWeight) {
+            attributes +=
+                ' font-weight="' +
+                SchematicSvgUtils.escapeHtml(String(text.fontWeight)) +
+                '"'
+        }
+
+        if (text.fontStyle && text.fontStyle !== 'normal') {
+            attributes +=
+                ' font-style="' +
+                SchematicSvgUtils.escapeHtml(text.fontStyle) +
+                '"'
+        }
+
+        return attributes
     }
 
     /**

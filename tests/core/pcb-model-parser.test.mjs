@@ -143,6 +143,8 @@ test('PcbModelParser keeps native component indexes through sparse records', () 
         })),
         [{ designator: 'R1', componentIndex: 1 }]
     )
+    assert.equal(documentModel.pcb.componentPrimitives[0], null)
+    assert.equal(documentModel.pcb.componentPrimitives[1].designator, 'R1')
 })
 
 /**
@@ -296,8 +298,28 @@ test('PcbModelParser exposes component primitive groups from native indexes', ()
             diagnostics: {
                 printableRecordCount: 3,
                 printableStreamCount: 1,
-                binaryPrimitiveCount: 5
-            }
+                binaryPrimitiveCount: 5,
+                rawRecordCount: 1
+            },
+            rawRecords: [
+                {
+                    registryId: 'pcbdoc:Tracks6/Data:0',
+                    source: 'pcbdoc',
+                    sourceStream: 'Tracks6/Data',
+                    headerStream: 'Tracks6/Header',
+                    family: 'tracks',
+                    type: 'track',
+                    typeId: 4,
+                    recordIndex: 0,
+                    offset: 0,
+                    byteLength: 54,
+                    payloadByteLength: 49,
+                    encoding: 'length-prefixed',
+                    supported: true,
+                    parsed: true,
+                    rawBase64: 'BA=='
+                }
+            ]
         }
     )
 
@@ -332,6 +354,40 @@ test('PcbModelParser exposes component primitive groups from native indexes', ()
             }
         ]
     )
+    assert.deepEqual(
+        documentModel.pcb.componentPrimitives.map((group) => ({
+            componentIndex: group.componentIndex,
+            designator: group.designator,
+            pads: group.pads.length,
+            tracks: group.tracks.length,
+            fills: group.fills.length,
+            vias: group.vias.length,
+            regions: group.regions.length,
+            texts: group.texts.map((text) => text.text)
+        })),
+        [
+            {
+                componentIndex: 0,
+                designator: 'R1',
+                pads: 0,
+                tracks: 1,
+                fills: 0,
+                vias: 0,
+                regions: 0,
+                texts: []
+            },
+            {
+                componentIndex: 1,
+                designator: 'J1',
+                pads: 1,
+                tracks: 0,
+                fills: 1,
+                vias: 0,
+                regions: 1,
+                texts: ['J1']
+            }
+        ]
+    )
     assert.deepEqual(documentModel.pcb.regions[0].points, [
         { x: 280, y: 350 },
         { x: 340, y: 350 },
@@ -355,6 +411,11 @@ test('PcbModelParser exposes component primitive groups from native indexes', ()
         netIndex: 8,
         polygonIndex: 9
     })
+    assert.equal(documentModel.summary.rawRecordCount, 1)
+    assert.equal(
+        documentModel.pcb.rawRecords[0].registryId,
+        'pcbdoc:Tracks6/Data:0'
+    )
 })
 
 /**
