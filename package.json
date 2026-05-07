@@ -1,6 +1,6 @@
 {
     "name": "@sunbox/altium-toolkit",
-    "version": "0.1.14",
+    "version": "0.1.15",
     "description": "Altium document parsing and non-interactive rendering utilities",
     "keywords": [
         "altium",
@@ -53,7 +53,7 @@
     },
     "dependencies": {
         "fflate": "^0.8.2",
-        "three": "^0.183.2"
+        "three": "^0.184.0"
     },
     "devDependencies": {
         "prettier": "^3.4.2"
