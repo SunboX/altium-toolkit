@@ -31,6 +31,10 @@
     "files": [
         "src",
         "docs",
+        "!docs/.superpowers",
+        "!docs/.superpowers/**",
+        "!docs/superpowers",
+        "!docs/superpowers/**",
         "examples",
         "spec",
         "LICENSE",

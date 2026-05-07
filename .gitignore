@@ -1,5 +1,9 @@
 node_modules/
 coverage/
 dist/
+.superpowers/
+superpowers/
+docs/.superpowers/
+docs/superpowers/
 .DS_Store
 npm-debug.log*
