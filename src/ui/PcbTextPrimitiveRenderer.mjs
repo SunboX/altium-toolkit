@@ -26,6 +26,7 @@ export class PcbTextPrimitiveRenderer {
             return (
                 text?.visible !== false &&
                 String(text?.text || '').trim() &&
+                !PcbTextPrimitiveRenderer.#isPlaceholderText(text) &&
                 Number.isInteger(layerId) &&
                 layerIds.has(layerId)
             )
@@ -238,5 +239,15 @@ export class PcbTextPrimitiveRenderer {
             .trim()
             .toUpperCase()
             .includes(needle)
+    }
+
+    /**
+     * Returns true for unresolved Altium component parameter placeholders.
+     * @param {{ text?: string }} text
+     * @returns {boolean}
+     */
+    static #isPlaceholderText(text) {
+        const value = String(text?.text || '').trim()
+        return value === 'Comment' || /^Designator\d*$/u.test(value)
     }
 }

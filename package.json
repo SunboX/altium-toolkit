@@ -1,6 +1,6 @@
 {
     "name": "@sunbox/altium-toolkit",
-    "version": "0.1.10",
+    "version": "0.1.13",
     "description": "Altium document parsing and non-interactive rendering utilities",
     "keywords": [
         "altium",

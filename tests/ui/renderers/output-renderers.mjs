@@ -248,6 +248,70 @@ test('renderPcbSvg renders authored PCB text primitives', () => {
 })
 
 /**
+ * Verifies Altium component-parameter placeholders do not render as authored
+ * board overlay labels.
+ */
+test('renderPcbSvg suppresses PCB comment placeholder text primitives', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Placeholder board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 1000,
+                heightMil: 500,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 1000, y2: 0 },
+                    { type: 'line', x1: 1000, y1: 0, x2: 1000, y2: 500 },
+                    { type: 'line', x1: 1000, y1: 500, x2: 0, y2: 500 },
+                    { type: 'line', x1: 0, y1: 500, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [{ name: 'Top Overlay' }],
+            primitiveLayers: [{ layerId: 33, name: 'Top Overlay' }],
+            polygons: [],
+            fills: [],
+            tracks: [],
+            arcs: [],
+            vias: [],
+            pads: [],
+            texts: [
+                {
+                    text: 'Comment',
+                    x: 180,
+                    y: 240,
+                    height: 32,
+                    rotation: 0,
+                    layerId: 33
+                },
+                {
+                    text: 'Designator1',
+                    x: 200,
+                    y: 250,
+                    height: 32,
+                    rotation: 0,
+                    layerId: 33,
+                    role: 'designator'
+                },
+                {
+                    text: 'BOARD-ID',
+                    x: 220,
+                    y: 260,
+                    height: 32,
+                    rotation: 0,
+                    layerId: 33
+                }
+            ],
+            components: []
+        }
+    })
+
+    assert.doesNotMatch(markup, />Comment<\/text>/)
+    assert.doesNotMatch(markup, />Designator1<\/text>/)
+    assert.match(markup, />BOARD-ID<\/text>/)
+})
+
+/**
  * Verifies rounded board-outline corners use the short wrapped SVG arc sweep
  * instead of flipping outward or inward at the page corners.
  */
