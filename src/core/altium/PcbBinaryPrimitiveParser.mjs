@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { PcbLayerIdCodec } from './PcbLayerIdCodec.mjs'
+
 /**
  * Decodes fixed-size binary PCB primitive streams recovered from OLE-backed
  * PcbDoc files.
@@ -115,7 +117,7 @@ export class PcbBinaryPrimitiveParser {
      * Decodes one fixed-size via stream.
      * @param {Uint8Array | ArrayBuffer} headerBytes
      * @param {Uint8Array | ArrayBuffer} dataBytes
-     * @returns {{ x: number, y: number, diameter: number, holeDiameter: number, componentIndex: number | null }[]}
+     * @returns {{ x: number, y: number, diameter: number, holeDiameter: number, componentIndex: number | null, layerCode: number | null, layerId: number | null, layerStartId: number | null, layerEndId: number | null }[]}
      */
     static parseViaStream(headerBytes, dataBytes) {
         return PcbBinaryPrimitiveParser.#sliceFixedRecords(
@@ -132,7 +134,11 @@ export class PcbBinaryPrimitiveParser {
                 12
             ),
             netIndex: PcbBinaryPrimitiveParser.#readLinkIndex(view, 8),
-            polygonIndex: PcbBinaryPrimitiveParser.#readLinkIndex(view, 10)
+            polygonIndex: PcbBinaryPrimitiveParser.#readLinkIndex(view, 10),
+            layerCode: view.getUint8(5) || null,
+            layerId: view.getUint8(5) || null,
+            layerStartId: view.getUint8(34) || null,
+            layerEndId: view.getUint8(35) || null
         }))
     }
 
@@ -244,7 +250,7 @@ export class PcbBinaryPrimitiveParser {
      * Decodes one variable-length pad stream.
      * @param {Uint8Array | ArrayBuffer} headerBytes
      * @param {Uint8Array | ArrayBuffer} dataBytes
-     * @returns {{ x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean, holeShape: number | null, holeSlotLength: number | null, holeRotation: number | null, hasRoundedRect: boolean, roundedRectShapeTop: number | null, cornerRadiusTop: number | null, offsetTopX: number, offsetTopY: number, componentIndex: number | null }[]}
+     * @returns {{ x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean, holeShape: number | null, holeSlotLength: number | null, holeRotation: number | null, hasRoundedRect: boolean, roundedRectShapeTop: number | null, cornerRadiusTop: number | null, offsetTopX: number, offsetTopY: number, componentIndex: number | null, layerCode: number | null, layerId: number | null, legacyLayerId: number | null, layerV7SaveId: number | null }[]}
      */
     static parsePadStream(headerBytes, dataBytes) {
         const count = PcbBinaryPrimitiveParser.#readRecordCount(headerBytes)
@@ -451,7 +457,7 @@ export class PcbBinaryPrimitiveParser {
     /**
      * Decodes one pad payload from its subrecords.
      * @param {DataView[]} subrecords
-     * @returns {{ x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean, holeShape: number | null, holeSlotLength: number | null, holeRotation: number | null, hasRoundedRect: boolean, roundedRectShapeTop: number | null, cornerRadiusTop: number | null, offsetTopX: number, offsetTopY: number, componentIndex: number | null } | null}
+     * @returns {{ x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean, holeShape: number | null, holeSlotLength: number | null, holeRotation: number | null, hasRoundedRect: boolean, roundedRectShapeTop: number | null, cornerRadiusTop: number | null, offsetTopX: number, offsetTopY: number, componentIndex: number | null, layerCode: number | null, layerId: number | null, legacyLayerId: number | null, layerV7SaveId: number | null } | null}
      */
     static #parsePadSubrecords(subrecords) {
         const mainRecord =
@@ -466,6 +472,9 @@ export class PcbBinaryPrimitiveParser {
         ) {
             return null
         }
+
+        const layerState =
+            PcbBinaryPrimitiveParser.#parsePadLayerState(mainRecord)
 
         return {
             x: PcbBinaryPrimitiveParser.#readMil(mainRecord, 13),
@@ -491,7 +500,32 @@ export class PcbBinaryPrimitiveParser {
                 mainRecord,
                 5
             ),
+            layerCode: layerState.layerId,
+            layerId: layerState.layerId,
+            legacyLayerId: layerState.legacyLayerId,
+            layerV7SaveId: layerState.layerV7SaveId,
             ...PcbBinaryPrimitiveParser.#parsePadExtensionBlock(extensionRecord)
+        }
+    }
+
+    /**
+     * Decodes the visible and hidden saved-layer state from one pad main record.
+     * @param {DataView} mainRecord
+     * @returns {{ layerId: number | null, legacyLayerId: number | null, layerV7SaveId: number | null }}
+     */
+    static #parsePadLayerState(mainRecord) {
+        const legacyLayerId = mainRecord.getUint8(0) || null
+        const layerV7SaveId =
+            mainRecord.byteLength >= 118
+                ? mainRecord.getUint32(114, true) || null
+                : null
+        const decodedLayerId =
+            PcbLayerIdCodec.legacyLayerIdFromV7SaveId(layerV7SaveId)
+
+        return {
+            layerId: decodedLayerId || legacyLayerId,
+            legacyLayerId,
+            layerV7SaveId
         }
     }
 

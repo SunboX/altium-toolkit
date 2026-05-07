@@ -68,6 +68,7 @@ class PcbBinaryPrimitiveTestFactory {
         const dataView = new DataView(dataBytes.buffer)
 
         headerView.setUint32(0, 1, true)
+        dataView.setUint8(5, 74)
         dataView.setUint16(8, 18, true)
         dataView.setUint16(10, 24, true)
         dataView.setUint16(12, 4, true)
@@ -75,6 +76,8 @@ class PcbBinaryPrimitiveTestFactory {
         PcbBinaryPrimitiveTestFactory.#writeMil(dataView, 22, 9079.5466)
         PcbBinaryPrimitiveTestFactory.#writeMil(dataView, 26, 23.622)
         PcbBinaryPrimitiveTestFactory.#writeMil(dataView, 30, 11.811)
+        dataView.setUint8(34, 1)
+        dataView.setUint8(35, 32)
 
         return { headerBytes, dataBytes }
     }
@@ -154,6 +157,7 @@ class PcbBinaryPrimitiveTestFactory {
         const payloadView = new DataView(mainPayload.buffer)
 
         headerView.setUint32(0, 1, true)
+        payloadView.setUint8(0, 74)
         payloadView.setUint16(3, 21, true)
         payloadView.setUint16(5, 0xffff, true)
         payloadView.setUint16(7, 7, true)
@@ -200,6 +204,7 @@ class PcbBinaryPrimitiveTestFactory {
         const extensionView = new DataView(extensionPayload.buffer)
 
         headerView.setUint32(0, 1, true)
+        mainView.setUint8(0, 1)
         mainView.setUint16(3, 22, true)
         mainView.setUint16(5, 0xffff, true)
         mainView.setUint16(7, 8, true)
@@ -217,6 +222,7 @@ class PcbBinaryPrimitiveTestFactory {
         mainView.setUint8(51, 1)
         mainView.setFloat64(52, 270, true)
         mainView.setUint8(60, 1)
+        mainView.setUint32(114, 0x0100ffff, true)
 
         extensionView.setUint8(262, 2)
         PcbBinaryPrimitiveTestFactory.#writeMil(extensionView, 263, 98.4252)
@@ -409,7 +415,11 @@ test('PcbBinaryPrimitiveParser decodes via streams', () => {
                 holeDiameter: 11.811,
                 componentIndex: 4,
                 netIndex: 18,
-                polygonIndex: 24
+                polygonIndex: 24,
+                layerCode: 74,
+                layerId: 74,
+                layerStartId: 1,
+                layerEndId: 32
             }
         ]
     )
@@ -502,7 +512,11 @@ test('PcbBinaryPrimitiveParser decodes pad streams', () => {
                 offsetTopY: 0,
                 componentIndex: 7,
                 netIndex: 21,
-                polygonIndex: null
+                polygonIndex: null,
+                layerCode: 74,
+                layerId: 74,
+                legacyLayerId: 74,
+                layerV7SaveId: null
             }
         ]
     )
@@ -544,7 +558,11 @@ test('PcbBinaryPrimitiveParser decodes extended pad streams', () => {
                 offsetTopY: 0,
                 componentIndex: 8,
                 netIndex: 22,
-                polygonIndex: null
+                polygonIndex: null,
+                layerCode: 32,
+                layerId: 32,
+                legacyLayerId: 1,
+                layerV7SaveId: 0x0100ffff
             }
         ]
     )

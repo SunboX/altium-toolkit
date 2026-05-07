@@ -148,6 +148,7 @@ class PcbStreamTestFactory {
         const dataView = new DataView(dataBytes.buffer)
 
         headerView.setUint32(0, 1, true)
+        dataView.setUint8(5, 74)
         dataView.setUint16(8, 14, true)
         dataView.setUint16(10, 24, true)
         dataView.setUint16(12, 4, true)
@@ -155,6 +156,8 @@ class PcbStreamTestFactory {
         PcbStreamTestFactory.#writeMil(dataView, 22, 250)
         PcbStreamTestFactory.#writeMil(dataView, 26, 24)
         PcbStreamTestFactory.#writeMil(dataView, 30, 12)
+        dataView.setUint8(34, 1)
+        dataView.setUint8(35, 32)
 
         return { headerBytes, dataBytes }
     }
@@ -193,6 +196,7 @@ class PcbStreamTestFactory {
         const payloadView = new DataView(mainPayload.buffer)
 
         headerView.setUint32(0, 1, true)
+        payloadView.setUint8(0, 74)
         payloadView.setUint16(3, 17, true)
         payloadView.setUint16(5, 0xffff, true)
         payloadView.setUint16(7, 7, true)
@@ -366,7 +370,11 @@ test('PcbStreamExtractor extracts printable and binary PCB streams', () => {
             holeDiameter: 12,
             componentIndex: 4,
             netIndex: 14,
-            polygonIndex: 24
+            polygonIndex: 24,
+            layerCode: 74,
+            layerId: 74,
+            layerStartId: 1,
+            layerEndId: 32
         }
     ])
     assert.deepEqual(extracted.binaryPrimitives.fills, [
@@ -423,7 +431,11 @@ test('PcbStreamExtractor extracts printable and binary PCB streams', () => {
             offsetTopY: 0,
             componentIndex: 7,
             netIndex: 17,
-            polygonIndex: null
+            polygonIndex: null,
+            layerCode: 74,
+            layerId: 74,
+            legacyLayerId: 74,
+            layerV7SaveId: null
         }
     ])
     assert.deepEqual(extracted.binaryPrimitives.regions, [

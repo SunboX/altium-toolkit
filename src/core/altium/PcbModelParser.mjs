@@ -12,7 +12,8 @@ const {
     getField,
     parseBoolean,
     parseNumericField,
-    stripExtension
+    stripExtension,
+    toColor
 } = ParserUtils
 
 /**
@@ -21,6 +22,9 @@ const {
 export class PcbModelParser {
     /**
      * Parses a normalized PCB model.
+     *
+     * When Nets6/Data is present, the model exposes native net definitions and
+     * resolved primitive netName fields keyed by numeric netIndex values.
      * @param {string} fileName
      * @param {{ raw: string, fields: Record<string, string | string[]>, sourceStream?: string }[]} records
      * @param {{ streamNames: string[], binaryPrimitives: { fills: { x1: number, y1: number, x2: number, y2: number, layerCode: number, layerId: number, componentIndex?: number | null }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode: number, layerId: number, componentIndex?: number | null }[], arcs: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode: number, layerId: number, componentIndex?: number | null }[], vias: { x: number, y: number, diameter: number, holeDiameter: number, componentIndex?: number | null }[], pads: { x: number, y: number, sizeTopX: number, sizeTopY: number, sizeMidX: number, sizeMidY: number, sizeBottomX: number, sizeBottomY: number, holeDiameter: number, shapeTop: number, shapeMid: number, shapeBottom: number, rotation: number, isPlated: boolean, componentIndex?: number | null }[] }, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } } | null} pcbExtraction
@@ -73,6 +77,9 @@ export class PcbModelParser {
         const primitiveLayers = AltiumLayoutParser.parsePrimitiveLayerNames(
             boardRecords.map((record) => record.fields)
         )
+        const nets = PcbModelParser.#parseNetRecords(records)
+        const netNameByIndex = PcbModelParser.#buildNetNameMap(nets)
+        const classes = PcbModelParser.#parseClassRecords(records)
         const polygons = polygonRecords
             .map((record) => ({
                 layer: getField(record.fields, 'LAYER') || 'UNKNOWN',
@@ -80,15 +87,38 @@ export class PcbModelParser {
                     .segments
             }))
             .filter((polygon) => polygon.segments.length > 0)
-        const tracks = pcbExtraction?.binaryPrimitives?.tracks || []
-        const arcs = pcbExtraction?.binaryPrimitives?.arcs || []
-        const vias = pcbExtraction?.binaryPrimitives?.vias || []
-        const fills = pcbExtraction?.binaryPrimitives?.fills || []
-        const pads = pcbExtraction?.binaryPrimitives?.pads || []
-        const regions = pcbExtraction?.binaryPrimitives?.regions || []
-        const shapeBasedRegions =
-            pcbExtraction?.binaryPrimitives?.shapeBasedRegions || []
-        const boardRegions = pcbExtraction?.binaryPrimitives?.boardRegions || []
+        const tracks = PcbModelParser.#annotatePrimitiveNetNames(
+            pcbExtraction?.binaryPrimitives?.tracks || [],
+            netNameByIndex
+        )
+        const arcs = PcbModelParser.#annotatePrimitiveNetNames(
+            pcbExtraction?.binaryPrimitives?.arcs || [],
+            netNameByIndex
+        )
+        const vias = PcbModelParser.#annotatePrimitiveNetNames(
+            pcbExtraction?.binaryPrimitives?.vias || [],
+            netNameByIndex
+        )
+        const fills = PcbModelParser.#annotatePrimitiveNetNames(
+            pcbExtraction?.binaryPrimitives?.fills || [],
+            netNameByIndex
+        )
+        const pads = PcbModelParser.#annotatePrimitiveNetNames(
+            pcbExtraction?.binaryPrimitives?.pads || [],
+            netNameByIndex
+        )
+        const regions = PcbModelParser.#annotatePrimitiveNetNames(
+            pcbExtraction?.binaryPrimitives?.regions || [],
+            netNameByIndex
+        )
+        const shapeBasedRegions = PcbModelParser.#annotatePrimitiveNetNames(
+            pcbExtraction?.binaryPrimitives?.shapeBasedRegions || [],
+            netNameByIndex
+        )
+        const boardRegions = PcbModelParser.#annotatePrimitiveNetNames(
+            pcbExtraction?.binaryPrimitives?.boardRegions || [],
+            netNameByIndex
+        )
         const texts = PcbModelParser.#normalizeTexts(
             pcbExtraction?.binaryPrimitives?.texts || [],
             rawComponentRecords
@@ -158,6 +188,15 @@ export class PcbModelParser {
             {
                 severity: 'info',
                 message: 'Recovered ' + layers.length + ' layer stack entries.'
+            },
+            {
+                severity: 'info',
+                message: 'Recovered ' + nets.length + ' PCB net definitions.'
+            },
+            {
+                severity: 'info',
+                message:
+                    'Recovered ' + classes.length + ' PCB class definitions.'
             }
         ]
 
@@ -240,6 +279,8 @@ export class PcbModelParser {
                 layerCount: layers.length,
                 outlineSegmentCount: boardOutline.segments.length,
                 bomRowCount: bom.length,
+                netCount: nets.length,
+                classCount: classes.length,
                 polygonCount: polygons.length,
                 trackCount: tracks.length,
                 arcCount: arcs.length,
@@ -252,6 +293,8 @@ export class PcbModelParser {
                 boardOutline: normalizedPcb.boardOutline,
                 layers,
                 primitiveLayers,
+                nets,
+                classes,
                 components: normalizedPcb.components,
                 polygons: normalizedPcb.polygons,
                 fills: normalizedPcb.fills,
@@ -317,6 +360,278 @@ export class PcbModelParser {
                 commentOn: parseBoolean(record.fields.COMMENTON)
             }))
             .filter((component) => component.pattern && component.designator)
+    }
+
+    /**
+     * Normalizes native Nets6/Data records in stream order.
+     * @param {{ fields: Record<string, string | string[]>, sourceStream?: string }[]} records
+     * @returns {{ netIndex: number, name: string, uniqueId: string, color: string, visible: boolean, overrideColor: boolean, keepout: boolean, locked: boolean, userRouted: boolean, loopRemoval: boolean, jumpersVisible: boolean, polygonOutline: boolean, layer: string, unionIndex: number }[]}
+     */
+    static #parseNetRecords(records) {
+        return records
+            .filter((record) => record.sourceStream === 'Nets6/Data')
+            .map((record, index) =>
+                PcbModelParser.#normalizeNetRecord(record.fields, index)
+            )
+            .filter((net) => net.name || net.uniqueId)
+    }
+
+    /**
+     * Normalizes one native Altium PCB net record.
+     * @param {Record<string, string | string[]>} fields
+     * @param {number} fallbackIndex
+     * @returns {{ netIndex: number, name: string, uniqueId: string, color: string, visible: boolean, overrideColor: boolean, keepout: boolean, locked: boolean, userRouted: boolean, loopRemoval: boolean, jumpersVisible: boolean, polygonOutline: boolean, layer: string, unionIndex: number }}
+     */
+    static #normalizeNetRecord(fields, fallbackIndex) {
+        const explicitIndex = PcbModelParser.#firstIntegerField(fields, [
+            'NETINDEX',
+            'INDEX'
+        ])
+        const uniqueId = getField(fields, 'UNIQUEID') || getField(fields, 'UID')
+        const name =
+            getField(fields, 'NAME') || getField(fields, 'NETNAME') || uniqueId
+
+        return {
+            netIndex:
+                explicitIndex === null ? Number(fallbackIndex) : explicitIndex,
+            name,
+            uniqueId,
+            color: toColor(getField(fields, 'COLOR'), '#ffff00'),
+            visible: PcbModelParser.#parseBooleanField(fields, 'VISIBLE', true),
+            overrideColor: PcbModelParser.#parseBooleanField(
+                fields,
+                'OVERRIDECOLORFORDRAW',
+                false
+            ),
+            keepout: PcbModelParser.#parseBooleanField(
+                fields,
+                'KEEPOUT',
+                false
+            ),
+            locked: PcbModelParser.#parseBooleanField(fields, 'LOCKED', false),
+            userRouted: PcbModelParser.#parseBooleanField(
+                fields,
+                'USERROUTED',
+                true
+            ),
+            loopRemoval: PcbModelParser.#parseBooleanField(
+                fields,
+                'LOOPREMOVAL',
+                true
+            ),
+            jumpersVisible: PcbModelParser.#parseBooleanField(
+                fields,
+                'JUMPERSVISIBLE',
+                true
+            ),
+            polygonOutline: PcbModelParser.#parseBooleanField(
+                fields,
+                'POLYGONOUTLINE',
+                false
+            ),
+            layer: getField(fields, 'LAYER') || '',
+            unionIndex: parseNumericField(fields, 'UNIONINDEX') || 0
+        }
+    }
+
+    /**
+     * Builds a net-name lookup keyed by native net index.
+     * @param {{ netIndex: number, name: string }[]} nets
+     * @returns {Map<number, string>}
+     */
+    static #buildNetNameMap(nets) {
+        const netNameByIndex = new Map()
+
+        for (const net of nets) {
+            if (Number.isInteger(net.netIndex) && net.name) {
+                netNameByIndex.set(net.netIndex, net.name)
+            }
+        }
+
+        return netNameByIndex
+    }
+
+    /**
+     * Adds resolved net names to decoded primitives without changing geometry.
+     * @param {{ netIndex?: number | string | null }[]} primitives
+     * @param {Map<number, string>} netNameByIndex
+     * @returns {object[]}
+     */
+    static #annotatePrimitiveNetNames(primitives, netNameByIndex) {
+        return (primitives || []).map((primitive) => {
+            const netIndex = Number(primitive?.netIndex)
+            const netName = Number.isInteger(netIndex)
+                ? netNameByIndex.get(netIndex)
+                : ''
+
+            return netName ? { ...primitive, netName } : primitive
+        })
+    }
+
+    /**
+     * Normalizes native Classes6/Data records in stream order.
+     * @param {{ fields: Record<string, string | string[]>, sourceStream?: string }[]} records
+     * @returns {{ classIndex: number, name: string, kind: number, kindName: string, memberCount: number, members: string[], enabled: boolean, uniqueId: string }[]}
+     */
+    static #parseClassRecords(records) {
+        return PcbModelParser.#mergeClassRecordFields(
+            records.filter((record) => record.sourceStream === 'Classes6/Data')
+        )
+            .map((fields, index) =>
+                PcbModelParser.#normalizeClassRecord(fields, index)
+            )
+            .filter(
+                (classRecord) =>
+                    classRecord.name ||
+                    classRecord.uniqueId ||
+                    classRecord.members.length
+            )
+    }
+
+    /**
+     * Merges adjacent name/detail records while preserving standalone class
+     * records. Altium often stores class display fields and class membership
+     * fields in separate consecutive records.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @returns {Record<string, string | string[]>[]}
+     */
+    static #mergeClassRecordFields(records) {
+        const mergedRecords = []
+        let pendingNameFields = null
+
+        for (const record of records) {
+            const fields = record.fields || {}
+            const hasName = Boolean(getField(fields, 'NAME'))
+            const hasPayload = PcbModelParser.#hasClassPayload(fields)
+
+            if (pendingNameFields && hasName) {
+                mergedRecords.push(pendingNameFields)
+                pendingNameFields = null
+            }
+
+            if (hasName && !hasPayload) {
+                pendingNameFields = fields
+                continue
+            }
+
+            if (pendingNameFields) {
+                mergedRecords.push({ ...pendingNameFields, ...fields })
+                pendingNameFields = null
+                continue
+            }
+
+            mergedRecords.push(fields)
+        }
+
+        if (pendingNameFields) {
+            mergedRecords.push(pendingNameFields)
+        }
+
+        return mergedRecords
+    }
+
+    /**
+     * Normalizes one native Altium PCB class record.
+     * @param {Record<string, string | string[]>} fields
+     * @param {number} classIndex
+     * @returns {{ classIndex: number, name: string, kind: number, kindName: string, memberCount: number, members: string[], enabled: boolean, uniqueId: string }}
+     */
+    static #normalizeClassRecord(fields, classIndex) {
+        const kind = parseNumericField(fields, 'KIND') || 0
+        const members = PcbModelParser.#parseClassMembers(fields)
+        const memberCount = parseNumericField(fields, 'MEMBERCOUNT')
+
+        return {
+            classIndex,
+            name: getField(fields, 'NAME'),
+            kind,
+            kindName: PcbModelParser.#classKindName(kind),
+            memberCount: memberCount === null ? members.length : memberCount,
+            members,
+            enabled: PcbModelParser.#parseBooleanField(fields, 'ENABLED', true),
+            uniqueId: getField(fields, 'UNIQUEID') || getField(fields, 'UID')
+        }
+    }
+
+    /**
+     * Returns true when one Classes6/Data field set carries semantic payload
+     * beyond an adjacent display-name record.
+     * @param {Record<string, string | string[]>} fields
+     * @returns {boolean}
+     */
+    static #hasClassPayload(fields) {
+        return Object.keys(fields || {}).some(
+            (key) =>
+                key === 'KIND' ||
+                key === 'MEMBERCOUNT' ||
+                key === 'ENABLED' ||
+                key === 'UNIQUEID' ||
+                /^M\d+$/.test(key)
+        )
+    }
+
+    /**
+     * Extracts ordered class members from M0, M1, ... fields.
+     * @param {Record<string, string | string[]>} fields
+     * @returns {string[]}
+     */
+    static #parseClassMembers(fields) {
+        return Object.keys(fields || {})
+            .filter((key) => /^M\d+$/.test(key))
+            .sort(
+                (left, right) => Number(left.slice(1)) - Number(right.slice(1))
+            )
+            .map((key) => getField(fields, key))
+            .filter(Boolean)
+    }
+
+    /**
+     * Returns a stable display name for one native PCB class kind.
+     * @param {number} kind
+     * @returns {string}
+     */
+    static #classKindName(kind) {
+        return (
+            {
+                0: 'net',
+                1: 'component',
+                2: 'from-to',
+                3: 'pad',
+                4: 'layer',
+                6: 'diff-pair',
+                7: 'polygon'
+            }[Number(kind)] || 'unknown'
+        )
+    }
+
+    /**
+     * Parses one Altium boolean field with a default for omitted fields.
+     * @param {Record<string, string | string[]>} fields
+     * @param {string} key
+     * @param {boolean} fallback
+     * @returns {boolean}
+     */
+    static #parseBooleanField(fields, key, fallback) {
+        const raw = getField(fields, key)
+
+        return raw ? parseBoolean(raw) : fallback
+    }
+
+    /**
+     * Returns the first integer-like numeric field value.
+     * @param {Record<string, string | string[]>} fields
+     * @param {string[]} keys
+     * @returns {number | null}
+     */
+    static #firstIntegerField(fields, keys) {
+        for (const key of keys) {
+            const parsed = parseNumericField(fields, key)
+            if (Number.isInteger(parsed)) {
+                return parsed
+            }
+        }
+
+        return null
     }
 
     /**
