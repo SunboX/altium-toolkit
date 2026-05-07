@@ -64,6 +64,9 @@ through `WideStrings6/Data` when Altium stores the display string in that table;
 when such a Texts6 designator differs from `SOURCEDESIGNATOR`, the public
 component uses the displayed designator and preserves the original value in
 `baseDesignator` with `displayDesignator` and `designatorSource` metadata.
+Component-owned Texts6 comment/value records are marked with `role: 'comment'`
+and `isComment`; unresolved annotation slots are additionally marked with
+`isPlaceholder`.
 
 Decoded pad primitives preserve raw `padFlags` plus named tenting and testpoint
 flags. Pad shape codes are kept as raw `shapeTop` / `shapeMid` / `shapeBottom`

@@ -248,10 +248,10 @@ test('renderPcbSvg renders authored PCB text primitives', () => {
 })
 
 /**
- * Verifies Altium component-parameter placeholders do not render as authored
- * board overlay labels.
+ * Verifies Altium component-parameter placeholders are suppressed only when
+ * text metadata identifies them as component annotations.
  */
-test('renderPcbSvg suppresses PCB comment placeholder text primitives', () => {
+test('renderPcbSvg suppresses PCB annotation placeholder text primitives', () => {
     const markup = PcbSvgRenderer.render({
         summary: { title: 'Placeholder board' },
         pcb: {
@@ -282,6 +282,17 @@ test('renderPcbSvg suppresses PCB comment placeholder text primitives', () => {
                     y: 240,
                     height: 32,
                     rotation: 0,
+                    layerId: 33,
+                    role: 'comment',
+                    isComment: true,
+                    isPlaceholder: true
+                },
+                {
+                    text: 'Comment',
+                    x: 190,
+                    y: 245,
+                    height: 32,
+                    rotation: 0,
                     layerId: 33
                 },
                 {
@@ -291,7 +302,8 @@ test('renderPcbSvg suppresses PCB comment placeholder text primitives', () => {
                     height: 32,
                     rotation: 0,
                     layerId: 33,
-                    role: 'designator'
+                    role: 'designator',
+                    isPlaceholder: true
                 },
                 {
                     text: 'BOARD-ID',
@@ -306,7 +318,8 @@ test('renderPcbSvg suppresses PCB comment placeholder text primitives', () => {
         }
     })
 
-    assert.doesNotMatch(markup, />Comment<\/text>/)
+    assert.match(markup, />Comment<\/text>/)
+    assert.equal(markup.match(/>Comment<\/text>/gu)?.length, 1)
     assert.doesNotMatch(markup, />Designator1<\/text>/)
     assert.match(markup, />BOARD-ID<\/text>/)
 })

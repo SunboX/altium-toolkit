@@ -334,6 +334,12 @@
                 "isDesignator": {
                     "type": "boolean"
                 },
+                "isComment": {
+                    "type": "boolean"
+                },
+                "isPlaceholder": {
+                    "type": "boolean"
+                },
                 "componentIndex": {
                     "type": ["number", "null"]
                 },

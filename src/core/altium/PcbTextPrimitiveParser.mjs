@@ -17,7 +17,7 @@ export class PcbTextPrimitiveParser {
      * @param {Uint8Array | ArrayBuffer} headerBytes
      * @param {Uint8Array | ArrayBuffer} dataBytes
      * @param {{ wideStrings?: Map<number | string, string> | Record<string, string> | { byIndex?: Record<string, string> } }} [options]
-     * @returns {{ text: string, x: number, y: number, height: number, layerId: number, ownerIndex: number | null, kind: number, visibilityFlags: number, rotation: number, strokeFontType?: number, strokeWidth?: number, fontType?: number, fontTypeName?: string, fontName?: string, fontFamily?: string, isBold?: boolean, isItalic?: boolean, fontWeight?: number, fontStyle?: string, wideStringIndex?: number, textSource?: string, role?: string, isDesignator?: boolean, componentIndex?: number }[]}
+     * @returns {{ text: string, x: number, y: number, height: number, layerId: number, ownerIndex: number | null, kind: number, visibilityFlags: number, rotation: number, strokeFontType?: number, strokeWidth?: number, fontType?: number, fontTypeName?: string, fontName?: string, fontFamily?: string, isBold?: boolean, isItalic?: boolean, fontWeight?: number, fontStyle?: string, wideStringIndex?: number, textSource?: string, role?: string, isDesignator?: boolean, isComment?: boolean, isPlaceholder?: boolean, componentIndex?: number }[]}
      */
     static parseTextStream(headerBytes, dataBytes, options = {}) {
         const count = PcbTextPrimitiveParser.#readRecordCount(headerBytes)
@@ -106,7 +106,7 @@ export class PcbTextPrimitiveParser {
      * @param {DataView} payload
      * @param {Uint8Array} textBytes
      * @param {Map<string, string>} wideStrings
-     * @returns {{ text: string, x: number, y: number, height: number, layerId: number, ownerIndex: number | null, kind: number, visibilityFlags: number, rotation: number, strokeFontType?: number, strokeWidth?: number, fontType?: number, fontTypeName?: string, fontName?: string, fontFamily?: string, isBold?: boolean, isItalic?: boolean, fontWeight?: number, fontStyle?: string, wideStringIndex?: number, textSource?: string, role?: string, isDesignator?: boolean, componentIndex?: number } | null}
+     * @returns {{ text: string, x: number, y: number, height: number, layerId: number, ownerIndex: number | null, kind: number, visibilityFlags: number, rotation: number, strokeFontType?: number, strokeWidth?: number, fontType?: number, fontTypeName?: string, fontName?: string, fontFamily?: string, isBold?: boolean, isItalic?: boolean, fontWeight?: number, fontStyle?: string, wideStringIndex?: number, textSource?: string, role?: string, isDesignator?: boolean, isComment?: boolean, isPlaceholder?: boolean, componentIndex?: number } | null}
      */
     static #parseTextRecord(payload, textBytes, wideStrings) {
         if (
@@ -135,6 +135,12 @@ export class PcbTextPrimitiveParser {
             ? 0
             : payload.getUint32(41, true)
 
+        const role = PcbTextPrimitiveParser.#parseTextRole(
+            payload,
+            normalizedOwnerIndex,
+            hasExtendedFontFields
+        )
+
         return {
             text: resolvedText.text,
             layerId: payload.getUint8(0),
@@ -153,10 +159,10 @@ export class PcbTextPrimitiveParser {
             ),
             ...extendedText,
             ...resolvedText.metadata,
-            ...PcbTextPrimitiveParser.#parseTextRole(
-                payload,
-                normalizedOwnerIndex,
-                hasExtendedFontFields
+            ...role,
+            ...PcbTextPrimitiveParser.#parsePlaceholderMetadata(
+                resolvedText.text,
+                role
             )
         }
     }
@@ -257,23 +263,74 @@ export class PcbTextPrimitiveParser {
      * @param {DataView} payload
      * @param {number | null} ownerIndex
      * @param {boolean} hasExtendedFontFields
-     * @returns {{ role?: string, isDesignator?: boolean, componentIndex?: number }}
+     * @returns {{ role?: string, isDesignator?: boolean, isComment?: boolean, componentIndex?: number }}
      */
     static #parseTextRole(payload, ownerIndex, hasExtendedFontFields) {
         if (
             !hasExtendedFontFields ||
             payload.byteLength < 42 ||
-            payload.getUint8(41) === 0 ||
             !Number.isInteger(ownerIndex)
         ) {
             return {}
         }
 
+        if (payload.getUint8(41) !== 0) {
+            return {
+                role: 'designator',
+                isDesignator: true,
+                componentIndex: ownerIndex
+            }
+        }
+
+        const kind = payload.getUint16(25, true)
+        if (kind === 1) {
+            return {
+                role: 'comment',
+                isComment: true,
+                componentIndex: ownerIndex
+            }
+        }
+
         return {
-            role: 'designator',
-            isDesignator: true,
             componentIndex: ownerIndex
         }
+    }
+
+    /**
+     * Marks unresolved component annotation placeholders once during parsing.
+     * @param {string} text
+     * @param {{ role?: string, isDesignator?: boolean, isComment?: boolean, componentIndex?: number }} role
+     * @returns {{ role?: string, isDesignator?: boolean, isComment?: boolean, isPlaceholder?: boolean }}
+     */
+    static #parsePlaceholderMetadata(text, role) {
+        const value = String(text || '').trim()
+        const hasComponentOwner = Number.isInteger(role?.componentIndex)
+
+        if (role?.isComment === true || role?.role === 'comment') {
+            return value === 'Comment' ? { isPlaceholder: true } : {}
+        }
+
+        if (role?.isDesignator === true || role?.role === 'designator') {
+            return /^Designator\d*$/u.test(value) ? { isPlaceholder: true } : {}
+        }
+
+        if (hasComponentOwner && value === 'Comment') {
+            return {
+                role: 'comment',
+                isComment: true,
+                isPlaceholder: true
+            }
+        }
+
+        if (hasComponentOwner && /^Designator\d*$/u.test(value)) {
+            return {
+                role: 'designator',
+                isDesignator: true,
+                isPlaceholder: true
+            }
+        }
+
+        return {}
     }
 
     /**

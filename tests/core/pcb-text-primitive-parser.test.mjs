@@ -114,6 +114,61 @@ class PcbTextPrimitiveTestFactory {
     }
 
     /**
+     * Creates one unresolved component comment placeholder text stream.
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static createCommentPlaceholderTextStream() {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+        const dataBytes = PcbTextPrimitiveTestFactory.#createTextRecord({
+            payloadLength: 123,
+            text: 'Comment',
+            layerId: 33,
+            ownerIndex: 2,
+            x: 125,
+            y: 225,
+            height: 18,
+            kind: 1,
+            visibilityFlags: 0,
+            fontType: 1,
+            fontName: 'Synthetic Sans',
+            strokeWidth: 3
+        })
+
+        headerView.setUint32(0, 1, true)
+
+        return { headerBytes, dataBytes }
+    }
+
+    /**
+     * Creates one unresolved component comment placeholder stream where the
+     * text role must be inferred from ownership and placeholder content.
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static createMissingRoleCommentPlaceholderTextStream() {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+        const dataBytes = PcbTextPrimitiveTestFactory.#createTextRecord({
+            payloadLength: 123,
+            text: 'Comment',
+            layerId: 33,
+            ownerIndex: 7,
+            x: 125,
+            y: 225,
+            height: 18,
+            kind: 2,
+            visibilityFlags: 0,
+            fontType: 1,
+            fontName: 'Synthetic Sans',
+            strokeWidth: 3
+        })
+
+        headerView.setUint32(0, 1, true)
+
+        return { headerBytes, dataBytes }
+    }
+
+    /**
      * Creates one object-id/payload-length text record with a variable text
      * tail.
      * @param {{ payloadLength: number, text: string, layerId: number, ownerIndex: number, x: number, y: number, height: number, kind: number, visibilityFlags: number, rotation?: number, fontType?: number, isBold?: boolean, isItalic?: boolean, fontName?: string, strokeWidth?: number, wideStringIndex?: number, designatorFlag?: boolean }} options
@@ -269,7 +324,10 @@ test('PcbBinaryPrimitiveParser extracts TrueType text font metadata', () => {
                 isItalic: true,
                 fontWeight: 700,
                 fontStyle: 'italic',
-                wideStringIndex: 6
+                wideStringIndex: 6,
+                role: 'comment',
+                isComment: true,
+                componentIndex: 2
             }
         ]
     )
@@ -313,6 +371,88 @@ test('PcbBinaryPrimitiveParser resolves Texts6 WideStrings6 designators', () => 
                 role: 'designator',
                 isDesignator: true,
                 componentIndex: 4
+            }
+        ]
+    )
+})
+
+/**
+ * Verifies unresolved component comment annotation placeholders are marked once
+ * during primitive parsing.
+ */
+test('PcbBinaryPrimitiveParser marks Texts6 comment placeholders', () => {
+    const { headerBytes, dataBytes } =
+        PcbTextPrimitiveTestFactory.createCommentPlaceholderTextStream()
+
+    assert.deepEqual(
+        PcbBinaryPrimitiveParser.parseTextStream(headerBytes, dataBytes),
+        [
+            {
+                text: 'Comment',
+                layerId: 33,
+                ownerIndex: 2,
+                x: 125,
+                y: 225,
+                height: 18,
+                kind: 1,
+                visibilityFlags: 0,
+                rotation: 0,
+                strokeFontType: 1,
+                strokeWidth: 3,
+                fontType: 1,
+                fontTypeName: 'TrueType',
+                fontName: 'Synthetic Sans',
+                fontFamily: 'Synthetic Sans',
+                isBold: false,
+                isItalic: false,
+                fontWeight: 400,
+                fontStyle: 'normal',
+                wideStringIndex: 0,
+                role: 'comment',
+                isComment: true,
+                componentIndex: 2,
+                isPlaceholder: true
+            }
+        ]
+    )
+})
+
+/**
+ * Verifies component-owned unresolved comment placeholders are still marked
+ * when the text record omits an explicit comment role bit.
+ */
+test('PcbBinaryPrimitiveParser infers missing Texts6 comment placeholder roles', () => {
+    const { headerBytes, dataBytes } =
+        PcbTextPrimitiveTestFactory.createMissingRoleCommentPlaceholderTextStream()
+
+    assert.deepEqual(
+        PcbBinaryPrimitiveParser.parseTextStream(headerBytes, dataBytes),
+        [
+            {
+                text: 'Comment',
+                layerId: 33,
+                ownerIndex: 7,
+                x: 125,
+                y: 225,
+                height: 18,
+                kind: 2,
+                visibilityFlags: 0,
+                rotation: 0,
+                strokeFontType: 2,
+                strokeWidth: 3,
+                fontType: 1,
+                fontTypeName: 'TrueType',
+                fontName: 'Synthetic Sans',
+                fontFamily: 'Synthetic Sans',
+                isBold: false,
+                isItalic: false,
+                fontWeight: 400,
+                fontStyle: 'normal',
+                wideStringIndex: 0,
+                componentIndex: 7,
+                role: 'comment',
+                isComment: true,
+                isPlaceholder: true
             }
         ]
     )

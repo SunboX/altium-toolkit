@@ -70,7 +70,7 @@ export class PcbBinaryPrimitiveParser {
      * @param {Uint8Array | ArrayBuffer} headerBytes
      * @param {Uint8Array | ArrayBuffer} dataBytes
      * @param {{ wideStrings?: Map<number | string, string> | Record<string, string> | { byIndex?: Record<string, string> } }} [options]
-     * @returns {{ text: string, x: number, y: number, height: number, layerId: number, ownerIndex: number | null, kind: number, visibilityFlags: number, rotation: number, role?: string, isDesignator?: boolean, componentIndex?: number }[]}
+     * @returns {{ text: string, x: number, y: number, height: number, layerId: number, ownerIndex: number | null, kind: number, visibilityFlags: number, rotation: number, role?: string, isDesignator?: boolean, isComment?: boolean, isPlaceholder?: boolean, componentIndex?: number }[]}
      */
     static parseTextStream(headerBytes, dataBytes, options = {}) {
         return PcbTextPrimitiveParser.parseTextStream(

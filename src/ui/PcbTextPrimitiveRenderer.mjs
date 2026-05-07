@@ -242,12 +242,11 @@ export class PcbTextPrimitiveRenderer {
     }
 
     /**
-     * Returns true for unresolved Altium component parameter placeholders.
-     * @param {{ text?: string }} text
+     * Returns true for unresolved Altium component annotation placeholders.
+     * @param {{ isPlaceholder?: boolean }} text
      * @returns {boolean}
      */
     static #isPlaceholderText(text) {
-        const value = String(text?.text || '').trim()
-        return value === 'Comment' || /^Designator\d*$/u.test(value)
+        return text?.isPlaceholder === true
     }
 }
