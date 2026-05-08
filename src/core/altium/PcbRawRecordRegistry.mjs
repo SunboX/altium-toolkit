@@ -199,15 +199,15 @@ export class PcbRawRecordRegistry {
                 continue
             }
 
-            rawRecords.push(
-                ...slices.map((slice) =>
+            for (const slice of slices) {
+                rawRecords.push(
                     PcbRawRecordRegistry.#normalizePcbDocRecord(
                         descriptor,
                         slice,
                         parsedCount
                     )
                 )
-            )
+            }
         }
 
         return rawRecords

@@ -708,14 +708,24 @@ export class PcbSvgRenderer {
     }
 
     /**
-     * Returns true when one component already has authored local geometry from
-     * selected top-side documentation layers.
-     * @param {{ x: number, y: number, pattern: string }} component
-     * @param {{ fills: { x1: number, y1: number, x2: number, y2: number }[], tracks: { x1: number, y1: number, x2: number, y2: number }[], arcs: { x: number, y: number, radius: number, width?: number }[], regions?: { points?: { x: number, y: number }[], holes?: { x: number, y: number }[][] }[] }} footprintPrimitives
-     * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number, rotation?: number, offsetTopX?: number, offsetTopY?: number, holeDiameter?: number }[]} pads
+     * Returns true when one component already has authored geometry, either by
+     * an explicit component ownership link or by nearby recovered primitives.
+     * @param {{ componentIndex?: number | null, x: number, y: number, pattern: string }} component
+     * @param {{ fills: { componentIndex?: number | null, x1: number, y1: number, x2: number, y2: number }[], tracks: { componentIndex?: number | null, x1: number, y1: number, x2: number, y2: number }[], arcs: { componentIndex?: number | null, x: number, y: number, radius: number, width?: number }[], regions?: { componentIndex?: number | null, points?: { x: number, y: number }[], holes?: { x: number, y: number }[][] }[] }} footprintPrimitives
+     * @param {{ componentIndex?: number | null, x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number, rotation?: number, offsetTopX?: number, offsetTopY?: number, holeDiameter?: number }[]} pads
      * @returns {boolean}
      */
     static #hasAuthoredFootprintDetail(component, footprintPrimitives, pads) {
+        if (
+            PcbSvgRenderer.#hasComponentOwnedFootprintDetail(
+                component,
+                footprintPrimitives,
+                pads
+            )
+        ) {
+            return true
+        }
+
         const bounds = PcbSvgRenderer.#footprintDetailBounds(component)
 
         return (
@@ -734,6 +744,34 @@ export class PcbSvgRenderer {
             (pads || []).some((pad) =>
                 PcbSvgRenderer.#padIntersectsBounds(pad, bounds)
             )
+        )
+    }
+
+    /**
+     * Returns true when recovered primitives directly reference the component.
+     * @param {{ componentIndex?: number | null }} component
+     * @param {{ fills?: { componentIndex?: number | null }[], tracks?: { componentIndex?: number | null }[], arcs?: { componentIndex?: number | null }[], regions?: { componentIndex?: number | null }[] }} footprintPrimitives
+     * @param {{ componentIndex?: number | null }[]} pads
+     * @returns {boolean}
+     */
+    static #hasComponentOwnedFootprintDetail(
+        component,
+        footprintPrimitives,
+        pads
+    ) {
+        const componentIndex = Number(component?.componentIndex)
+        if (!Number.isInteger(componentIndex)) {
+            return false
+        }
+
+        return [
+            ...(footprintPrimitives.tracks || []),
+            ...(footprintPrimitives.fills || []),
+            ...(footprintPrimitives.arcs || []),
+            ...(footprintPrimitives.regions || []),
+            ...(pads || [])
+        ].some(
+            (primitive) => Number(primitive?.componentIndex) === componentIndex
         )
     }
 

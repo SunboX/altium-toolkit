@@ -997,6 +997,77 @@ test('renderPcbSvg omits synthetic bodies for pad-defined packages', () => {
 })
 
 /**
+ * Verifies component-owned pad geometry suppresses fallback bodies even when
+ * recovered component origins land outside the board outline.
+ */
+test('renderPcbSvg omits synthetic bodies for off-board component origins with owned pads', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Indexed test board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 1000,
+                heightMil: 500,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 1000, y2: 0 },
+                    { type: 'line', x1: 1000, y1: 0, x2: 1000, y2: 500 },
+                    { type: 'line', x1: 1000, y1: 500, x2: 0, y2: 500 },
+                    { type: 'line', x1: 0, y1: 500, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [{ name: 'Top Layer' }],
+            primitiveLayers: [],
+            polygons: [],
+            fills: [],
+            tracks: [],
+            vias: [],
+            pads: [
+                {
+                    componentIndex: 7,
+                    x: 500,
+                    y: 250,
+                    sizeTopX: 40,
+                    sizeTopY: 40,
+                    sizeMidX: 40,
+                    sizeMidY: 40,
+                    sizeBottomX: 40,
+                    sizeBottomY: 40,
+                    holeDiameter: 0,
+                    shapeTop: 1,
+                    shapeMid: 1,
+                    shapeBottom: 1,
+                    rotation: 0,
+                    isPlated: true,
+                    hasRoundedRect: false,
+                    roundedRectShapeTop: null,
+                    cornerRadiusTop: null,
+                    offsetTopX: 0,
+                    offsetTopY: 0
+                }
+            ],
+            components: [
+                {
+                    componentIndex: 7,
+                    designator: 'TP1',
+                    x: 1400,
+                    y: 250,
+                    rotation: 0,
+                    layer: 'TOP',
+                    pattern: 'TP2'
+                }
+            ]
+        }
+    })
+
+    assert.match(markup, /pcb-pad [^"]*pcb-pad--smd/)
+    assert.doesNotMatch(
+        markup,
+        /class="pcb-component pcb-component--top"[^>]*><rect class="pcb-component__body"/
+    )
+})
+
+/**
  * Verifies larger unknown packages still suppress the synthetic component body
  * when authored pads define the footprint beyond the small fallback heuristic.
  */
