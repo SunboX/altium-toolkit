@@ -12,8 +12,9 @@ outputs from the recovered model.
 
 The package was extracted from [ECAD Forge](https://ecadforge.app/), where it
 is used for browser-based Altium document parsing and deterministic render
-output. Its parser behavior, normalized model shape, and renderer output can be
-reused by other browser or Node-based tools.
+output. It is also used in [PCB Styler](https://pcb-styler.app/). Its parser
+behavior, normalized model shape, and renderer output can be reused by other
+browser or Node-based tools.
 
 ## Features
 
