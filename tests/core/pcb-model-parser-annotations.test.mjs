@@ -111,6 +111,58 @@ test('PcbModelParser applies Texts6 designators and primitive parameters', () =>
 })
 
 /**
+ * Verifies unowned board-level overlay text is not hidden by component
+ * annotation display flags from native component index zero.
+ */
+test('PcbModelParser keeps unowned PCB overlay text visible', () => {
+    const documentModel = PcbModelParser.parse(
+        'demo.PcbDoc',
+        [
+            createBoardRecord(),
+            {
+                sourceStream: 'Components6/Data',
+                fields: {
+                    LAYER: 'TOP',
+                    X: '100mil',
+                    Y: '120mil',
+                    PATTERN: 'QFN-56',
+                    ROTATION: '0',
+                    SOURCEDESIGNATOR: 'U1',
+                    NAMEON: 'TRUE',
+                    COMMENTON: 'FALSE'
+                }
+            }
+        ],
+        {
+            streamNames: ['Texts6/Data'],
+            binaryPrimitives: {
+                texts: [
+                    {
+                        text: 'BOARD-SILK',
+                        ownerIndex: null,
+                        x: 120,
+                        y: 140,
+                        height: 10,
+                        layerId: 33,
+                        kind: 1,
+                        visibilityFlags: 0,
+                        rotation: 0
+                    }
+                ]
+            },
+            diagnostics: {
+                printableRecordCount: 2,
+                printableStreamCount: 2,
+                binaryPrimitiveCount: 1
+            }
+        }
+    )
+
+    assert.equal(documentModel.pcb.texts[0].text, 'BOARD-SILK')
+    assert.equal(documentModel.pcb.texts[0].visible, true)
+})
+
+/**
  * Creates the standard synthetic rectangular board record for parser tests.
  * @returns {{ sourceStream: string, fields: Record<string, string> }}
  */

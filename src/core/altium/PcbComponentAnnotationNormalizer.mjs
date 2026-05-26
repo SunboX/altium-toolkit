@@ -112,12 +112,21 @@ export class PcbComponentAnnotationNormalizer {
      * @returns {number | null}
      */
     static #textComponentIndex(text) {
-        const componentIndex = Number(text?.componentIndex)
-        if (Number.isInteger(componentIndex)) {
-            return componentIndex
+        if (
+            text?.componentIndex !== null &&
+            text?.componentIndex !== undefined
+        ) {
+            const componentIndex = Number(text.componentIndex)
+            if (Number.isInteger(componentIndex)) {
+                return componentIndex
+            }
         }
 
-        const ownerIndex = Number(text?.ownerIndex)
+        if (text?.ownerIndex === null || text?.ownerIndex === undefined) {
+            return null
+        }
+
+        const ownerIndex = Number(text.ownerIndex)
         return Number.isInteger(ownerIndex) ? ownerIndex : null
     }
 

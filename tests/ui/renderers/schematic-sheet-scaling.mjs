@@ -193,3 +193,82 @@ test('renderSchematicSvg scales sparse custom-sheet content from the bottom-left
         /<defs><clipPath id="schematic-content-clip-[^"]+"><rect x="20" y="20" width="1460" height="910" \/><\/clipPath><\/defs><g class="schematic-content" clip-path="url\(#schematic-content-clip-[^"]+\)" transform="translate\(20 930\) scale\(1\.29\) translate\(-20 -930\)">/
     )
 })
+
+/**
+ * Verifies non-rendered component placeholders do not prevent sparse custom
+ * sheets from scaling visible schematic content into the authored frame.
+ */
+test('renderSchematicSvg scales sparse custom sheets with hidden origin placeholders', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Hidden placeholder fit' },
+        schematic: {
+            sheet: {
+                width: 1500,
+                height: 950,
+                sourceWidth: 1500,
+                sourceHeight: 950,
+                marginWidth: 20,
+                borderOn: true,
+                titleBlockOn: false,
+                xZones: 4,
+                yZones: 4,
+                fonts: {
+                    1: {
+                        size: 10,
+                        family: 'Times New Roman',
+                        bold: false
+                    },
+                    6: {
+                        size: 36,
+                        family: 'Times New Roman',
+                        bold: false
+                    }
+                }
+            },
+            lines: [
+                {
+                    x1: 740,
+                    y1: 730,
+                    x2: 1120,
+                    y2: 730,
+                    color: '#000080',
+                    width: 2
+                },
+                {
+                    x1: 30,
+                    y1: 30,
+                    x2: 1120,
+                    y2: 30,
+                    color: '#000080',
+                    width: 2
+                }
+            ],
+            texts: [
+                {
+                    x: 50,
+                    y: 690,
+                    text: 'EMBER NODE',
+                    color: '#000080',
+                    fontSize: 36,
+                    fontFamily: 'Times New Roman',
+                    fontWeight: 400
+                }
+            ],
+            components: [
+                {
+                    x: 0,
+                    y: 580,
+                    designator: 'U?'
+                }
+            ],
+            pins: [],
+            ports: [],
+            crosses: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /<g class="schematic-content" clip-path="url\(#schematic-content-clip-[^"]+\)" transform="translate\(20 930\) scale\(1\.27\) translate\(-20 -930\)">/
+    )
+})

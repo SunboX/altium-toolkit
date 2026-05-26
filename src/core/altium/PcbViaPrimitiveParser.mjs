@@ -14,7 +14,7 @@ export class PcbViaPrimitiveParser {
 
     static #VIA_RECORD_BYTE_LENGTH = 326
 
-    static #VIA_PAYLOAD_MIN_BYTE_LENGTH = 321
+    static #VIA_PAYLOAD_MIN_BYTE_LENGTH = 209
 
     /**
      * Decodes one via stream.

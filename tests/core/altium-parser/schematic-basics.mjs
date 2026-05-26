@@ -30,6 +30,137 @@ test('parseAltiumArrayBuffer parses an embedded fake SchDoc sample', async () =>
 })
 
 /**
+ * Verifies native-style uppercase schematic fields normalize through the same
+ * parser path as mixed-case fake records.
+ */
+test('parseAltiumArrayBuffer accepts uppercase schematic field keys', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CUSTOMX=200|CUSTOMY=120|VISIBLEGRIDSIZE=10|SNAPGRIDSIZE=5' +
+            '|BORDERON=F|TITLEBLOCKON=F|CUSTOMMARGINWIDTH=10|CUSTOMXZONES=6|CUSTOMYZONES=4' +
+            '|FONTIDCOUNT=1|SIZE1=10|FONTNAME1=Times New Roman|BOLD1=F|ROTATION1=0' +
+            '|RECORD=13|LOCATION.X=20|LOCATION.Y=40|CORNER.X=90|CORNER.Y=40' +
+            '|LINEWIDTH=1|COLOR=128|INDEXINSHEET=1' +
+            '|RECORD=2|OWNERINDEX=700|OWNERPARTID=1|PINCONGLOMERATE=58|PINLENGTH=20' +
+            '|LOCATION.X=120|LOCATION.Y=60|NAME=RUNE_A|DESIGNATOR=1|COLOR=255' +
+            '|RECORD=41|LOCATION.X=140|LOCATION.Y=70|COLOR=8388608|FONTID=1' +
+            '|TEXT=GLYPH_A|NAME=Designator|OWNERINDEX=700'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'uppercase-fields.SchDoc',
+        arrayBuffer
+    )
+
+    assert.equal(documentModel.schematic.sheet.width, 200)
+    assert.equal(documentModel.schematic.lines.length, 1)
+    assert.equal(documentModel.schematic.pins.length, 1)
+    assert.equal(documentModel.schematic.texts.length, 1)
+    assert.deepEqual(documentModel.schematic.lines[0], {
+        x1: 20,
+        y1: 40,
+        x2: 90,
+        y2: 40,
+        color: '#800000',
+        width: 1,
+        lineStyle: 0,
+        renderOrder: 1,
+        ownerIndex: undefined
+    })
+    assert.equal(documentModel.schematic.pins[0].name, 'RUNE_A')
+    assert.equal(documentModel.schematic.texts[0].text, 'GLYPH_A')
+})
+
+/**
+ * Verifies fields recovered before the marker key remain attached to their
+ * owning record instead of becoming orphan printable fragments.
+ */
+test('parseAltiumArrayBuffer preserves fields before record markers', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        [
+            '|HEADER=Schematic Document',
+            '|FONTNAME1=Times New Roman|SIZE1=10|BORDERON=T|CUSTOMX=300' +
+                '|RECORD=31|CUSTOMY=180|VISIBLEGRIDSIZE=10|SNAPGRIDSIZE=5' +
+                '|CUSTOMMARGINWIDTH=10|CUSTOMXZONES=6|CUSTOMYZONES=4|FONTIDCOUNT=1',
+            '|X4=20|Y4=30|X1=20|Y1=80' +
+                '|RECORD=7|LOCATIONCOUNT=4|X2=80|Y2=80|X3=80|Y3=30' +
+                '|COLOR=128|AREACOLOR=16776960|ISSOLID=T|LINEWIDTH=1'
+        ].join('\u0000')
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'marker-prefix-fields.SchDoc',
+        arrayBuffer
+    )
+
+    assert.equal(documentModel.schematic.sheet.width, 300)
+    assert.equal(documentModel.schematic.sheet.borderOn, true)
+    assert.equal(
+        documentModel.schematic.sheet.fonts['1'].family,
+        'Times New Roman'
+    )
+    assert.deepEqual(documentModel.schematic.polygons[0].points, [
+        { x: 20, y: 80 },
+        { x: 80, y: 80 },
+        { x: 80, y: 30 },
+        { x: 20, y: 30 }
+    ])
+})
+
+/**
+ * Verifies visible template placeholders render after metadata resolution,
+ * while internal component and directive parameters stay hidden.
+ */
+test('parseAltiumArrayBuffer renders visible placeholders without internal parameters', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CUSTOMX=300|CUSTOMY=180|VISIBLEGRIDSIZE=10|SNAPGRIDSIZE=5' +
+            '|BORDERON=T|CUSTOMMARGINWIDTH=10|CUSTOMXZONES=6|CUSTOMYZONES=4' +
+            '|FONTIDCOUNT=1|SIZE1=10|FONTNAME1=Times New Roman|BOLD1=F|ROTATION1=0' +
+            '|RECORD=41|NAME=Title|TEXT=RUNE BOARD|ISHIDDEN=T' +
+            '|RECORD=4|LOCATION.X=20|LOCATION.Y=150|COLOR=8388608|FONTID=1|TEXT==Title' +
+            '|RECORD=41|LOCATION.X=40|LOCATION.Y=120|NAME=PinUniqueId|TEXT=HIDDEN_PIN_KEY|FONTID=1' +
+            '|RECORD=41|LOCATION.X=40|LOCATION.Y=110|NAME=Vendor|TEXT=HIDDEN_VENDOR|FONTID=1' +
+            '|RECORD=41|LOCATION.X=40|LOCATION.Y=100|NAME=IC|TEXT=HIDDEN_DEVICE|FONTID=1' +
+            '|RECORD=41|LOCATION.X=40|LOCATION.Y=90|NAME=DifferentialPair|TEXT=True|FONTID=1' +
+            '|RECORD=41|LOCATION.X=80|LOCATION.Y=70|NAME=Comment|TEXT=VISIBLE_VALUE|FONTID=1'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'visible-placeholder.SchDoc',
+        arrayBuffer
+    )
+    const visibleTexts = documentModel.schematic.texts.map((text) => text.text)
+
+    assert.equal(visibleTexts.includes('RUNE BOARD'), true)
+    assert.equal(visibleTexts.includes('VISIBLE_VALUE'), true)
+    assert.equal(visibleTexts.includes('HIDDEN_PIN_KEY'), false)
+    assert.equal(visibleTexts.includes('HIDDEN_VENDOR'), false)
+    assert.equal(visibleTexts.includes('HIDDEN_DEVICE'), false)
+    assert.equal(visibleTexts.includes('True'), false)
+})
+
+/**
+ * Verifies extended Altium line styles survive parsing and render as a
+ * dash-dot frame rather than a solid outline.
+ */
+test('renderSchematicSvg renders extended dash-dot schematic line style', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CUSTOMX=300|CUSTOMY=180|VISIBLEGRIDSIZE=10|SNAPGRIDSIZE=5' +
+            '|BORDERON=F|CUSTOMMARGINWIDTH=10|CUSTOMXZONES=6|CUSTOMYZONES=4' +
+            '|FONTIDCOUNT=1|SIZE1=10|FONTNAME1=Times New Roman|BOLD1=F|ROTATION1=0' +
+            '|RECORD=6|LOCATIONCOUNT=2|X1=20|Y1=150|X2=240|Y2=150' +
+            '|COLOR=8323857|LINEWIDTH=2|LINESTYLEEXT=3|INDEXINSHEET=2'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'dash-dot-line.SchDoc',
+        arrayBuffer
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.equal(documentModel.schematic.lines[0].lineStyle, 3)
+    assert.match(markup, /stroke-dasharray="16 10 3 10" stroke-linecap="round"/)
+})
+
+/**
  * Verifies wrapped record-28 note boxes stay in the text model and do not
  * leak into the line model as a diagonal location-to-corner segment.
  */

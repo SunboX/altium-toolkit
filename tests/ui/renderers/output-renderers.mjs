@@ -118,6 +118,46 @@ test('renderPcbSvg renders board outline, copper primitives, and placements', ()
 })
 
 /**
+ * Verifies PCB renderer uses primitive layer names when the formal board stack
+ * is absent.
+ */
+test('renderPcbSvg summarizes primitive layers when stack layers are absent', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Layer fallback' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 100,
+                heightMil: 100,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 100, y2: 0 },
+                    { type: 'line', x1: 100, y1: 0, x2: 100, y2: 100 },
+                    { type: 'line', x1: 100, y1: 100, x2: 0, y2: 100 },
+                    { type: 'line', x1: 0, y1: 100, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [],
+            primitiveLayers: [
+                { layerId: 1, name: 'Top Layer' },
+                { layerId: 33, name: 'Top Overlay' }
+            ],
+            polygons: [],
+            fills: [],
+            tracks: [],
+            vias: [],
+            pads: [],
+            texts: [],
+            components: []
+        }
+    })
+
+    assert.match(markup, /0 placements, 2 layers/)
+    assert.match(markup, /<li>Top Layer<\/li>/)
+    assert.match(markup, /<li>Top Overlay<\/li>/)
+})
+
+/**
  * Verifies embedded PCB fonts are emitted as SVG font faces and applied to
  * TrueType text primitives.
  */
@@ -1314,6 +1354,27 @@ test('pcb viewer stylesheet defines PCB theme variables', async () => {
     )
     assert.match(boardOutlineBlock, /fill:\s*var\(--pcb-board-fill\);/)
     assert.match(boardOutlineBlock, /stroke:\s*var\(--pcb-board-stroke\);/)
+})
+
+/**
+ * Verifies overlay silkscreen paths and text use the footprint overlay color
+ * instead of default SVG black styling.
+ */
+test('pcb viewer stylesheet colors overlay silkscreen regions and text', async () => {
+    const cssPath = new URL(
+        '../../../src/styles/altium-renderers.css',
+        import.meta.url
+    )
+    const css = await readFile(cssPath, 'utf8')
+
+    assert.match(
+        css,
+        /\.pcb-footprint-region\s*\{[\s\S]*fill:\s*var\(--pcb-footprint-track-color\);/
+    )
+    assert.match(
+        css,
+        /\.pcb-text\s*\{[\s\S]*fill:\s*var\(--pcb-footprint-track-color\);/
+    )
 })
 
 /**

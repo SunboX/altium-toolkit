@@ -160,6 +160,50 @@ test('PcbStreamExtractor preserves raw PcbDoc primitive records', () => {
 })
 
 /**
+ * Verifies compact via streams are decoded and represented as individual raw
+ * primitive records.
+ */
+test('PcbStreamExtractor preserves compact via primitive records', () => {
+    const viaStream = PcbBinaryPrimitiveTestFactory.createCompactViaStream()
+    const streams = new Map([
+        ['Vias6/Header', viaStream.headerBytes],
+        ['Vias6/Data', viaStream.dataBytes]
+    ])
+    const extracted = PcbStreamExtractor.extractFromStreams(streams)
+
+    assert.equal(extracted.binaryPrimitives.vias.length, 2)
+    assert.equal(extracted.rawRecords.length, 2)
+    assert.deepEqual(
+        extracted.rawRecords.map((record) => ({
+            family: record.family,
+            type: record.type,
+            byteLength: record.byteLength,
+            payloadByteLength: record.payloadByteLength,
+            encoding: record.encoding,
+            parsed: record.parsed
+        })),
+        [
+            {
+                family: 'vias',
+                type: 'via',
+                byteLength: 214,
+                payloadByteLength: 209,
+                encoding: 'length-prefixed',
+                parsed: true
+            },
+            {
+                family: 'vias',
+                type: 'via',
+                byteLength: 214,
+                payloadByteLength: 209,
+                encoding: 'length-prefixed',
+                parsed: true
+            }
+        ]
+    )
+})
+
+/**
  * Verifies large primitive batches are appended without exceeding JavaScript
  * engine argument limits.
  */

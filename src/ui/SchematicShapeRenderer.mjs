@@ -231,18 +231,27 @@ export class SchematicShapeRenderer {
      * @returns {string}
      */
     static #buildSchematicStrokeStyleAttributes(lineWidth, lineStyle) {
-        if (Number(lineStyle || 0) !== 1) {
+        const resolvedLineStyle = Number(lineStyle || 0)
+        if (
+            resolvedLineStyle !== 1 &&
+            resolvedLineStyle !== 2 &&
+            resolvedLineStyle !== 3
+        )
             return ''
-        }
 
         const dashLength = Math.max(Number(lineWidth || 1) * 8, 8)
         const gapLength = Math.max(Number(lineWidth || 1) * 5, 5)
+        const dotLength = Math.max(Number(lineWidth || 1) * 1.5, 1.5)
+        const dashPattern =
+            resolvedLineStyle === 1
+                ? [dashLength, gapLength]
+                : resolvedLineStyle === 2
+                  ? [dotLength, gapLength]
+                  : [dashLength, gapLength, dotLength, gapLength]
 
         return (
             ' stroke-dasharray="' +
-            formatNumber(dashLength) +
-            ' ' +
-            formatNumber(gapLength) +
+            dashPattern.map((part) => formatNumber(part)).join(' ') +
             '" stroke-linecap="round"'
         )
     }

@@ -32,7 +32,7 @@ export class PcbLibStreamExtractor {
             type: 'via',
             collection: 'vias',
             minimumSubrecordCount: 1,
-            minimumPayloadByteLength: 321,
+            minimumPayloadByteLength: 209,
             parser: 'parseViaStream'
         },
         4: {

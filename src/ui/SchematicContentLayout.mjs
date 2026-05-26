@@ -246,27 +246,44 @@ export class SchematicContentLayout {
         }
 
         const virtualInnerWidth = virtualSourceSheet.width - margin * 2
-        const scale = (width - margin * 2) / virtualInnerWidth
+        const targetScale = (width - margin * 2) / virtualInnerWidth
 
-        if (!Number.isFinite(scale) || scale <= 1) {
+        if (!Number.isFinite(targetScale) || targetScale <= 1) {
             return ''
         }
 
         const pivotX = margin
         const pivotY = height - margin
+        const topLimit = margin + contentPadding * 0.2
+        const bottomLimit = height - margin - footerReserve
+        const rightLimit = width - margin
+        const scale = Math.min(
+            targetScale,
+            ...SchematicContentLayout.#resolvePivotScaleLimits(
+                bounds,
+                pivotX,
+                pivotY,
+                margin,
+                topLimit,
+                rightLimit,
+                bottomLimit
+            )
+        )
+
+        if (!Number.isFinite(scale) || scale <= 1) {
+            return ''
+        }
+
         const projectedMinX = pivotX + (bounds.minX - pivotX) * scale
         const projectedMaxX = pivotX + (bounds.maxX - pivotX) * scale
         const projectedMinY = pivotY + (bounds.minY - pivotY) * scale
         const projectedMaxY = pivotY + (bounds.maxY - pivotY) * scale
-        const topLimit = margin + contentPadding
-        const bottomLimit = height - margin - footerReserve
-        const rightLimit = width - margin
 
         if (
-            projectedMinX < margin ||
-            projectedMaxX > rightLimit ||
-            projectedMinY < topLimit ||
-            projectedMaxY > bottomLimit
+            projectedMinX < margin - 0.01 ||
+            projectedMaxX > rightLimit + 0.01 ||
+            projectedMinY < topLimit - 0.01 ||
+            projectedMaxY > bottomLimit + 0.01
         ) {
             return ''
         }
@@ -284,6 +301,74 @@ export class SchematicContentLayout {
             formatNumber(-pivotY) +
             ')"'
         )
+    }
+
+    /**
+     * Resolves per-edge maximum scale factors for a bottom-left pivot.
+     * @param {{ minX: number, minY: number, maxX: number, maxY: number }} bounds
+     * @param {number} pivotX
+     * @param {number} pivotY
+     * @param {number} leftLimit
+     * @param {number} topLimit
+     * @param {number} rightLimit
+     * @param {number} bottomLimit
+     * @returns {number[]}
+     */
+    static #resolvePivotScaleLimits(
+        bounds,
+        pivotX,
+        pivotY,
+        leftLimit,
+        topLimit,
+        rightLimit,
+        bottomLimit
+    ) {
+        return [
+            SchematicContentLayout.#resolvePivotScaleLimit(
+                pivotX,
+                bounds.minX,
+                leftLimit,
+                'min'
+            ),
+            SchematicContentLayout.#resolvePivotScaleLimit(
+                pivotX,
+                bounds.maxX,
+                rightLimit,
+                'max'
+            ),
+            SchematicContentLayout.#resolvePivotScaleLimit(
+                pivotY,
+                bounds.minY,
+                topLimit,
+                'min'
+            ),
+            SchematicContentLayout.#resolvePivotScaleLimit(
+                pivotY,
+                bounds.maxY,
+                bottomLimit,
+                'max'
+            )
+        ]
+    }
+
+    /**
+     * Resolves one axis scale cap from an edge limit.
+     * @param {number} pivot
+     * @param {number} coordinate
+     * @param {number} limit
+     * @param {'min' | 'max'} mode
+     * @returns {number}
+     */
+    static #resolvePivotScaleLimit(pivot, coordinate, limit, mode) {
+        if (mode === 'min') {
+            return coordinate < pivot
+                ? (pivot - limit) / (pivot - coordinate)
+                : Infinity
+        }
+
+        return coordinate > pivot
+            ? (limit - pivot) / (coordinate - pivot)
+            : Infinity
     }
 
     /**
@@ -538,6 +623,10 @@ export class SchematicContentLayout {
         }
 
         for (const component of schematic?.components || []) {
+            if (!SchematicContentLayout.#isDrawableComponentAnchor(component)) {
+                continue
+            }
+
             coordinates.push([
                 component.x,
                 projectSchematicY(sheetHeight, component.y)
@@ -602,6 +691,25 @@ export class SchematicContentLayout {
             maxX: Math.max(...coordinates.map(([x]) => x)),
             maxY: Math.max(...coordinates.map(([, y]) => y))
         }
+    }
+
+    /**
+     * Returns true when one component anchor can produce visible fallback
+     * markup and should therefore influence layout bounds.
+     * @param {{ x?: number, y?: number, designator?: string }} component
+     * @returns {boolean}
+     */
+    static #isDrawableComponentAnchor(component) {
+        if (!component) return false
+
+        const hasCoordinates =
+            Number.isFinite(component.x) &&
+            Number.isFinite(component.y) &&
+            (component.x !== 0 || component.y !== 0)
+        const hasDesignator =
+            Boolean(component.designator) && component.designator !== 'U?'
+
+        return hasCoordinates && hasDesignator
     }
 
     /**

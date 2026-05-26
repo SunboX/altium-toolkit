@@ -98,3 +98,21 @@ test('PcbBinaryPrimitiveParser decodes variable-length via streams', () => {
     assert.equal(vias[1].x, 11235.2291)
     assert.equal(vias[1].layerId, 74)
 })
+
+/**
+ * Verifies compact length-prefixed via records decode when optional tail
+ * metadata is omitted.
+ */
+test('PcbBinaryPrimitiveParser decodes compact via streams', () => {
+    const { headerBytes, dataBytes } =
+        PcbBinaryPrimitiveTestFactory.createCompactViaStream()
+    const vias = PcbBinaryPrimitiveParser.parseViaStream(headerBytes, dataBytes)
+
+    assert.equal(vias.length, 2)
+    assert.equal(vias[0].diameter, 23.622)
+    assert.equal(vias[0].holeDiameter, 11.811)
+    assert.equal(vias[0].layerId, 74)
+    assert.equal(vias[0].layerStartId, 1)
+    assert.equal(vias[0].layerEndId, 32)
+    assert.equal(vias[1].x, 11300)
+})

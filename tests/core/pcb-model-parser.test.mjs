@@ -747,6 +747,7 @@ test('PcbModelParser exposes primitive layer names for decoded binary layers', (
         { layerId: 59, name: 'M3 Placement Outline' },
         { layerId: 71, name: 'M15 Top RefDes' }
     ])
+    assert.equal(documentModel.summary.layerCount, 3)
 })
 
 /**

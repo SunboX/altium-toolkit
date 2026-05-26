@@ -40,8 +40,11 @@ export class PcbSvgRenderer {
         const vias = pcb.vias || []
         const pads = pcb.pads || []
         const components = pcb.components.slice(0, 260)
+        const stackLayers = Array.isArray(pcb.layers) ? pcb.layers : []
+        const primitiveLayers = pcb.primitiveLayers || []
+        const displayLayers = stackLayers.length ? stackLayers : primitiveLayers
         const texts = PcbTextPrimitiveRenderer.select(
-            pcb.primitiveLayers || [],
+            primitiveLayers,
             pcb.texts || [],
             'top'
         )
@@ -54,7 +57,7 @@ export class PcbSvgRenderer {
         )
         const footprintPrimitives = PcbEdgeFacingGlyphNormalizer.normalize(
             PcbFootprintPrimitiveSelector.select(
-                pcb.primitiveLayers || [],
+                primitiveLayers,
                 fills,
                 tracks,
                 arcs,
@@ -95,7 +98,7 @@ export class PcbSvgRenderer {
             vias,
             pads
         )
-        const layerMarkup = pcb.layers
+        const layerMarkup = displayLayers
             .slice(0, 10)
             .map(
                 (layer) =>
@@ -307,7 +310,7 @@ export class PcbSvgRenderer {
             '</h3><p>' +
             components.length +
             ' placements, ' +
-            pcb.layers.length +
+            displayLayers.length +
             ' layers</p></header>' +
             '<div class="pcb-layout">' +
             '<aside class="pcb-legend"><h4>Board stack</h4><p>Top-facing composite view</p><ul>' +

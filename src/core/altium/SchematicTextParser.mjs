@@ -60,7 +60,7 @@ export class SchematicTextParser {
      * Normalizes one schematic text record into a drawable text node.
      * @param {Record<string, string | string[]>} fields
      * @param {Record<string, string>} metadata
-     * @param {{ width: number, marginWidth: number }} sheet
+     * @param {{ width: number, marginWidth: number, titleBlockOn?: boolean }} sheet
      * @param {Record<string, { size: number, family: string, bold: boolean, rotation: number }>} fonts
      * @returns {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] } | null}
      */
@@ -431,14 +431,13 @@ export class SchematicTextParser {
      * @param {string} name
      * @param {string} rawText
      * @param {string} text
-     * @param {{ width: number, marginWidth: number }} sheet
+     * @param {{ width: number, marginWidth: number, titleBlockOn?: boolean }} sheet
      * @returns {boolean}
      */
     static #shouldSkipSchematicText(fields, name, rawText, text, sheet) {
         const normalizedName = String(name || '')
             .trim()
             .toLowerCase()
-        const normalizedRawText = String(rawText || '').trim()
         const normalizedText = String(text || '').trim()
         const nonDrawableNames = new Set([
             'kind',
@@ -448,16 +447,25 @@ export class SchematicTextParser {
             'model',
             'part number',
             'pkg type',
-            'description'
+            'description',
+            'vendor',
+            'manufacturer',
+            'supplier',
+            'ic',
+            'pinuniqueid',
+            'differentialpair'
         ])
 
         if (nonDrawableNames.has(normalizedName)) return true
+        if (/uniqueid$/i.test(normalizedName)) return true
         if (!normalizedText || normalizedText === '*') return true
         if (/^=/.test(normalizedText)) return true
-        if (SchematicTextParser.isTitleBlockFooterRecord(fields, sheet.width)) {
+        if (
+            sheet.titleBlockOn &&
+            SchematicTextParser.isTitleBlockFooterRecord(fields, sheet.width)
+        ) {
             return true
         }
-        if (/^=/.test(normalizedRawText)) return true
 
         return /@designator|initial voltage/i.test(normalizedText)
     }

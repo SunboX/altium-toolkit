@@ -16,6 +16,7 @@ export class AsciiRecordParser {
     static parse(arrayBuffer) {
         const runs = PrintableTextDecoder.extractRunBytes(arrayBuffer)
         const records = []
+        let pendingPrefix = ''
 
         for (const runBytes of runs) {
             const run = AsciiRecordParser.#bytesToBinaryString(runBytes)
@@ -26,8 +27,28 @@ export class AsciiRecordParser {
             for (const chunk of chunks) {
                 const candidate = chunk.trim()
                 if (!AsciiRecordParser.#isRecordCandidate(candidate)) continue
-                records.push(AsciiRecordParser.#parseRecord(candidate))
+
+                const headerPrefix =
+                    AsciiRecordParser.#extractHeaderFieldPrefix(candidate)
+                if (headerPrefix) {
+                    pendingPrefix += headerPrefix
+                    continue
+                }
+
+                if (!AsciiRecordParser.#hasRecordMarker(candidate)) {
+                    pendingPrefix += candidate
+                    continue
+                }
+
+                records.push(
+                    AsciiRecordParser.#parseRecord(pendingPrefix + candidate)
+                )
+                pendingPrefix = ''
             }
+        }
+
+        if (pendingPrefix) {
+            records.push(AsciiRecordParser.#parseRecord(pendingPrefix))
         }
 
         return records
@@ -42,6 +63,40 @@ export class AsciiRecordParser {
         if (!candidate.startsWith('|')) return false
         if (!candidate.includes('=')) return false
         return candidate.split('|').length >= 4
+    }
+
+    /**
+     * Returns true when a printable fragment contains its marker field.
+     * @param {string} candidate
+     * @returns {boolean}
+     */
+    static #hasRecordMarker(candidate) {
+        return /(?:^|\|)(?:HEADER|RECORD|UNICODE|SELECTION|KIND)=/.test(
+            candidate
+        )
+    }
+
+    /**
+     * Extracts schematic sheet fields that trail a schematic header before the
+     * first record.
+     * @param {string} candidate
+     * @returns {string}
+     */
+    static #extractHeaderFieldPrefix(candidate) {
+        if (!candidate.startsWith('|HEADER=')) {
+            return ''
+        }
+
+        const segments = candidate.split('|').filter(Boolean)
+        if (segments.length <= 1) {
+            return ''
+        }
+        const headerValue = segments[0].slice('HEADER='.length)
+        if (!/^Schematic Document$/i.test(headerValue)) {
+            return ''
+        }
+
+        return '|' + segments.slice(1).join('|')
     }
 
     /**
@@ -89,7 +144,61 @@ export class AsciiRecordParser {
             AsciiRecordParser.#appendFieldValue(fields, key, value)
         }
 
-        return { raw, fields }
+        return {
+            raw,
+            fields: AsciiRecordParser.#createCaseInsensitiveFields(fields)
+        }
+    }
+
+    /**
+     * Wraps parsed fields so consumers can read native records regardless of
+     * whether the printable stream used upper, lower, or mixed-case keys.
+     * @param {Record<string, string | string[]>} fields
+     * @returns {Record<string, string | string[]>}
+     */
+    static #createCaseInsensitiveFields(fields) {
+        const normalizedKeyIndex =
+            AsciiRecordParser.#buildCaseInsensitiveFieldIndex(fields)
+
+        return new Proxy(fields, {
+            get(target, property, receiver) {
+                if (typeof property !== 'string' || property in target) {
+                    return Reflect.get(target, property, receiver)
+                }
+
+                const normalizedKey = normalizedKeyIndex.get(
+                    property.toLowerCase()
+                )
+                return normalizedKey
+                    ? Reflect.get(target, normalizedKey, receiver)
+                    : undefined
+            },
+            has(target, property) {
+                if (typeof property !== 'string' || property in target) {
+                    return Reflect.has(target, property)
+                }
+
+                return normalizedKeyIndex.has(property.toLowerCase())
+            }
+        })
+    }
+
+    /**
+     * Builds a lookup from lower-case field names to their source key.
+     * @param {Record<string, string | string[]>} fields
+     * @returns {Map<string, string>}
+     */
+    static #buildCaseInsensitiveFieldIndex(fields) {
+        const normalizedKeyIndex = new Map()
+
+        for (const key of Object.keys(fields)) {
+            const normalizedKey = key.toLowerCase()
+            if (!normalizedKeyIndex.has(normalizedKey)) {
+                normalizedKeyIndex.set(normalizedKey, key)
+            }
+        }
+
+        return normalizedKeyIndex
     }
 
     /**

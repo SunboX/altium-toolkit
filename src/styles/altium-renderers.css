@@ -247,9 +247,12 @@
     fill: var(--pcb-copper-solid-fill);
 }
 
-.pcb-footprint-fill,
-.pcb-footprint-region {
+.pcb-footprint-fill {
     fill: var(--pcb-footprint-fill);
+}
+
+.pcb-footprint-region {
+    fill: var(--pcb-footprint-track-color);
 }
 
 .pcb-footprint-track,
@@ -269,7 +272,7 @@
 
 .pcb-text {
     font-size: 29px;
-    fill: var(--pcb-component-text);
+    fill: var(--pcb-footprint-track-color);
     font-weight: 700;
     font-family: Arial, sans-serif;
     pointer-events: none;

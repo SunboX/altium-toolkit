@@ -511,16 +511,22 @@ export class SchematicSvgRenderer {
      * @returns {string}
      */
     static #buildSchematicLineStyleAttributes(line) {
-        if (Number(line.lineStyle || 0) !== 1) {
-            return ''
-        }
+        const lineStyle = Number(line.lineStyle || 0)
+        if (lineStyle !== 1 && lineStyle !== 2 && lineStyle !== 3) return ''
+
         const dashLength = Math.max(Number(line.width || 1) * 8, 8)
         const gapLength = Math.max(Number(line.width || 1) * 5, 5)
+        const dotLength = Math.max(Number(line.width || 1) * 1.5, 1.5)
+        const dashPattern =
+            lineStyle === 1
+                ? [dashLength, gapLength]
+                : lineStyle === 2
+                  ? [dotLength, gapLength]
+                  : [dashLength, gapLength, dotLength, gapLength]
+
         return (
             ' stroke-dasharray="' +
-            formatNumber(dashLength) +
-            ' ' +
-            formatNumber(gapLength) +
+            dashPattern.map((part) => formatNumber(part)).join(' ') +
             '" stroke-linecap="round"'
         )
     }

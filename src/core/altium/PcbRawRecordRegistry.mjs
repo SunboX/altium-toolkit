@@ -45,7 +45,7 @@ export class PcbRawRecordRegistry {
                 type: 'via',
                 typeId: 3,
                 fixedRecordByteLength: 326,
-                minimumPayloadByteLength: 321,
+                minimumPayloadByteLength: 209,
                 lengthPrefixedView: 'record',
                 parser: 'PcbViaPrimitiveParser',
                 strategy: 'slicer'

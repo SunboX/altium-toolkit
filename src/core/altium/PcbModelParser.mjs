@@ -367,7 +367,7 @@ export class PcbModelParser {
             summary: {
                 title: stripExtension(fileName),
                 componentCount: componentRecords.length,
-                layerCount: layers.length,
+                layerCount: layers.length || primitiveLayers.length,
                 outlineSegmentCount: boardOutline.segments.length,
                 bomRowCount: bom.length,
                 netCount: nets.length,

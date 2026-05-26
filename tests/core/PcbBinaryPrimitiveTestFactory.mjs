@@ -144,6 +144,28 @@ export class PcbBinaryPrimitiveTestFactory {
     }
 
     /**
+     * Creates a compact length-prefixed via stream without optional tail data.
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static createCompactViaStream() {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+        const firstRecord = PcbBinaryPrimitiveTestFactory.#createViaRecord(209)
+        const secondRecord = PcbBinaryPrimitiveTestFactory.#createViaRecord(209)
+        const secondView = new DataView(secondRecord.buffer)
+        const dataBytes = new Uint8Array(
+            firstRecord.byteLength + secondRecord.byteLength
+        )
+
+        headerView.setUint32(0, 2, true)
+        PcbBinaryPrimitiveTestFactory.#writeMil(secondView, 18, 11300)
+        dataBytes.set(firstRecord, 0)
+        dataBytes.set(secondRecord, firstRecord.byteLength)
+
+        return { headerBytes, dataBytes }
+    }
+
+    /**
      * Creates a one-fill stream pair.
      * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
      */

@@ -422,8 +422,7 @@ export class SchematicPinParser {
         }
 
         const segments = []
-        const lineStyle =
-            ParserUtils.parseNumericField(fields, 'LineStyle') || 0
+        const lineStyle = SchematicPinParser.#resolveSchematicLineStyle(fields)
 
         for (let index = 1; index < points.length; index += 1) {
             const previous = points[index - 1]
@@ -477,8 +476,7 @@ export class SchematicPinParser {
         }
 
         const segments = []
-        const lineStyle =
-            ParserUtils.parseNumericField(fields, 'LineStyle') || 0
+        const lineStyle = SchematicPinParser.#resolveSchematicLineStyle(fields)
 
         for (let index = 1; index < points.length; index += 1) {
             const previous = points[index - 1]
@@ -509,6 +507,24 @@ export class SchematicPinParser {
         })
 
         return segments
+    }
+
+    /**
+     * Resolves Altium's legacy and extended schematic line style fields.
+     * @param {Record<string, string | string[]>} fields
+     * @returns {number}
+     */
+    static #resolveSchematicLineStyle(fields) {
+        const extendedStyle = ParserUtils.parseNumericField(
+            fields,
+            'LineStyleExt'
+        )
+
+        if (extendedStyle !== null) {
+            return extendedStyle
+        }
+
+        return ParserUtils.parseNumericField(fields, 'LineStyle') || 0
     }
 
     /**
