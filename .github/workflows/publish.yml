@@ -29,7 +29,7 @@ jobs:
 
             - name: Check release tag
               run: |
-                  node -e "const pkg = require('./package.json'); const expected = `v${pkg.version}`; const actual = process.env.GITHUB_REF_NAME; if (actual !== expected) { console.error(`Tag ${actual} does not match package version ${expected}`); process.exit(1); }"
+                  node -e "const pkg = require('./package.json'); const expected = 'v' + pkg.version; const actual = process.env.GITHUB_REF_NAME; if (actual !== expected) { console.error('Tag ' + actual + ' does not match package version ' + expected); process.exit(1); }"
 
             - name: Check formatting
               run: npm run check:format
