@@ -220,7 +220,7 @@ test('PcbScene3dBuilder emits embedded external placements from normalized body 
     assert.deepEqual(scene.externalPlacements[0], {
         designator: 'Q1',
         mountSide: 'top',
-        rotationDeg: 315,
+        rotationDeg: 90,
         positionMil: {
             x: -250,
             y: -50,
@@ -232,7 +232,7 @@ test('PcbScene3dBuilder emits embedded external placements from normalized body 
         },
         bodyRotationDeg: 315,
         modelTransform: {
-            rotationDeg: { x: 0, y: 0, z: 90 },
+            rotationDeg: { x: -0, y: -0, z: 0 },
             dzMil: 11.811
         },
         externalModel: {
@@ -246,10 +246,10 @@ test('PcbScene3dBuilder emits embedded external placements from normalized body 
 })
 
 /**
- * Verifies explicit external placements inherit the matched component
- * rotation in addition to any authored 2D body rotation offset.
+ * Verifies explicit external placements use authored 3D model yaw after
+ * matching to a component designator.
  */
-test('PcbScene3dBuilder combines matched component rotation with body rotation', () => {
+test('PcbScene3dBuilder uses model yaw for matched external placements', () => {
     const scene = PcbScene3dBuilder.build(
         {
             fileName: 'demo.PcbDoc',
@@ -320,14 +320,15 @@ test('PcbScene3dBuilder combines matched component rotation with body rotation',
 
     assert.equal(scene.externalPlacements.length, 1)
     assert.equal(scene.externalPlacements[0].designator, 'J1')
-    assert.equal(scene.externalPlacements[0].rotationDeg, 225)
+    assert.equal(scene.externalPlacements[0].rotationDeg, 0)
+    assert.equal(scene.externalPlacements[0].bodyRotationDeg, 45)
 })
 
 /**
- * Verifies matched explicit placements use the component anchor position even
- * when the body metadata position is slightly offset.
+ * Verifies matched explicit placements keep the native body anchor position
+ * even when the matched component origin is nearby.
  */
-test('PcbScene3dBuilder prefers the matched component position for explicit placements', () => {
+test('PcbScene3dBuilder keeps the native body position for explicit placements', () => {
     const scene = PcbScene3dBuilder.build(
         {
             fileName: 'demo.PcbDoc',
@@ -399,8 +400,8 @@ test('PcbScene3dBuilder prefers the matched component position for explicit plac
 
     assert.equal(scene.externalPlacements.length, 1)
     assert.deepEqual(scene.externalPlacements[0].positionMil, {
-        x: -250,
-        y: -50,
+        x: -290,
+        y: -10,
         z: 31.5
     })
 })
@@ -533,9 +534,9 @@ test('PcbScene3dBuilder binds unresolved repeated bodies to repeated matching co
     assert.deepEqual(
         scene.externalPlacements.map((placement) => placement.positionMil),
         [
-            { x: -50, y: -900, z: -31.5 },
-            { x: -50, y: -600, z: -31.5 },
-            { x: -50, y: -300, z: -31.5 }
+            { x: -450, y: 100, z: 31.5 },
+            { x: -450, y: 400, z: 31.5 },
+            { x: -450, y: 700, z: 31.5 }
         ]
     )
 })

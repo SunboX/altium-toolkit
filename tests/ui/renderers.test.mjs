@@ -4,6 +4,7 @@
 
 import './renderers/schematic-core.mjs'
 import './renderers/schematic-large-text.mjs'
+import './renderers/schematic-notes.mjs'
 import './renderers/schematic-parity.mjs'
 import './renderers/schematic-polygon-joins.mjs'
 import './renderers/schematic-ports.mjs'

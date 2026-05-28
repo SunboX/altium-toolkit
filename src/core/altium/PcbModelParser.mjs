@@ -93,6 +93,7 @@ export class PcbModelParser {
         const primitiveLayers = AltiumLayoutParser.parsePrimitiveLayerNames(
             boardRecords.map((record) => record.fields)
         )
+        const appearance3d = PcbModelParser.#parseAppearance3d(boardRecords)
         const nets = PcbModelParser.#parseNetRecords(records)
         const netNameByIndex = PcbModelParser.#buildNetNameMap(nets)
         const classes = PcbModelParser.#parseClassRecords(records)
@@ -392,6 +393,7 @@ export class PcbModelParser {
                 layerSubstacks,
                 boardRegionContexts,
                 primitiveLayers,
+                appearance3d,
                 nets,
                 classes,
                 rules,
@@ -556,6 +558,86 @@ export class PcbModelParser {
         }
 
         return netNameByIndex
+    }
+
+    /**
+     * Extracts authored Altium 3D appearance colors from board metadata.
+     * @param {{ fields: Record<string, string | string[]> }[]} boardRecords
+     * @returns {{ boardCoreColor?: number, solderMaskTopColor?: number, solderMaskBottomColor?: number, copperColor?: number, silkscreenTopColor?: number, silkscreenBottomColor?: number } | null}
+     */
+    static #parseAppearance3d(boardRecords) {
+        const configText = (Array.isArray(boardRecords) ? boardRecords : [])
+            .map((record) => getField(record.fields, '3DCONFIGURATION'))
+            .find(Boolean)
+        if (!configText) {
+            return null
+        }
+
+        const config = PcbModelParser.#parseConfigurationFields(configText)
+        const appearance = {
+            boardCoreColor: PcbModelParser.#parseAltiumBgrColor(
+                config.get('CFG3D.BOARDCORECOLOR')
+            ),
+            solderMaskTopColor: PcbModelParser.#parseAltiumBgrColor(
+                config.get('CFG3D.TOPSOLDERMASKCOLOR')
+            ),
+            solderMaskBottomColor: PcbModelParser.#parseAltiumBgrColor(
+                config.get('CFG3D.BOTSOLDERMASKCOLOR')
+            ),
+            copperColor: PcbModelParser.#parseAltiumBgrColor(
+                config.get('CFG3D.COPPERCOLOR')
+            ),
+            silkscreenTopColor: PcbModelParser.#parseAltiumBgrColor(
+                config.get('CFG3D.TOPSILKSCREENCOLOR')
+            ),
+            silkscreenBottomColor: PcbModelParser.#parseAltiumBgrColor(
+                config.get('CFG3D.BOTSILKSCREENCOLOR')
+            )
+        }
+
+        return Object.values(appearance).some(Number.isInteger)
+            ? appearance
+            : null
+    }
+
+    /**
+     * Parses backtick-delimited Altium configuration key/value fields.
+     * @param {string} value
+     * @returns {Map<string, string>}
+     */
+    static #parseConfigurationFields(value) {
+        const fields = new Map()
+
+        String(value || '')
+            .split('`')
+            .forEach((segment) => {
+                const separatorIndex = segment.indexOf('=')
+                if (separatorIndex <= 0) {
+                    return
+                }
+
+                fields.set(
+                    segment.slice(0, separatorIndex).toUpperCase(),
+                    segment.slice(separatorIndex + 1)
+                )
+            })
+
+        return fields
+    }
+
+    /**
+     * Converts Altium decimal BGR color storage into an RGB integer.
+     * @param {string | undefined} value
+     * @returns {number | undefined}
+     */
+    static #parseAltiumBgrColor(value) {
+        const parsed = Number.parseInt(String(value ?? '').trim(), 10)
+        if (!Number.isFinite(parsed)) {
+            return undefined
+        }
+
+        const bgr = parsed & 0xffffff
+        return ((bgr & 0xff) << 16) | (bgr & 0xff00) | (bgr >> 16)
     }
 
     /**

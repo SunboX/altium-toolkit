@@ -17,7 +17,7 @@ export class PcbTextPrimitiveParser {
      * @param {Uint8Array | ArrayBuffer} headerBytes
      * @param {Uint8Array | ArrayBuffer} dataBytes
      * @param {{ wideStrings?: Map<number | string, string> | Record<string, string> | { byIndex?: Record<string, string> } }} [options]
-     * @returns {{ text: string, x: number, y: number, height: number, layerId: number, ownerIndex: number | null, kind: number, visibilityFlags: number, rotation: number, strokeFontType?: number, strokeWidth?: number, fontType?: number, fontTypeName?: string, fontName?: string, fontFamily?: string, isBold?: boolean, isItalic?: boolean, fontWeight?: number, fontStyle?: string, wideStringIndex?: number, textSource?: string, role?: string, isDesignator?: boolean, isComment?: boolean, isPlaceholder?: boolean, componentIndex?: number }[]}
+     * @returns {{ text: string, x: number, y: number, height: number, layerId: number, ownerIndex: number | null, kind: number, visibilityFlags: number, rotation: number, mirrored: boolean, strokeFontType?: number, strokeWidth?: number, fontType?: number, fontTypeName?: string, fontName?: string, fontFamily?: string, isBold?: boolean, isItalic?: boolean, fontWeight?: number, fontStyle?: string, isInverted?: boolean, marginBorderWidth?: number, wideStringIndex?: number, useInvertedRectangle?: boolean, textboxRectWidth?: number, textboxRectHeight?: number, textboxRectJustification?: number, textSource?: string, role?: string, isDesignator?: boolean, isComment?: boolean, isPlaceholder?: boolean, componentIndex?: number }[]}
      */
     static parseTextStream(headerBytes, dataBytes, options = {}) {
         const count = PcbTextPrimitiveParser.#readRecordCount(headerBytes)
@@ -106,7 +106,7 @@ export class PcbTextPrimitiveParser {
      * @param {DataView} payload
      * @param {Uint8Array} textBytes
      * @param {Map<string, string>} wideStrings
-     * @returns {{ text: string, x: number, y: number, height: number, layerId: number, ownerIndex: number | null, kind: number, visibilityFlags: number, rotation: number, strokeFontType?: number, strokeWidth?: number, fontType?: number, fontTypeName?: string, fontName?: string, fontFamily?: string, isBold?: boolean, isItalic?: boolean, fontWeight?: number, fontStyle?: string, wideStringIndex?: number, textSource?: string, role?: string, isDesignator?: boolean, isComment?: boolean, isPlaceholder?: boolean, componentIndex?: number } | null}
+     * @returns {{ text: string, x: number, y: number, height: number, layerId: number, ownerIndex: number | null, kind: number, visibilityFlags: number, rotation: number, mirrored: boolean, strokeFontType?: number, strokeWidth?: number, fontType?: number, fontTypeName?: string, fontName?: string, fontFamily?: string, isBold?: boolean, isItalic?: boolean, fontWeight?: number, fontStyle?: string, isInverted?: boolean, marginBorderWidth?: number, wideStringIndex?: number, useInvertedRectangle?: boolean, textboxRectWidth?: number, textboxRectHeight?: number, textboxRectJustification?: number, textSource?: string, role?: string, isDesignator?: boolean, isComment?: boolean, isPlaceholder?: boolean, componentIndex?: number } | null}
      */
     static #parseTextRecord(payload, textBytes, wideStrings) {
         if (
@@ -157,6 +157,10 @@ export class PcbTextPrimitiveParser {
                 visibilityFlags,
                 hasExtendedFontFields
             ),
+            mirrored: PcbTextPrimitiveParser.#resolveTextMirrored(
+                payload,
+                hasExtendedFontFields
+            ),
             ...extendedText,
             ...resolvedText.metadata,
             ...role,
@@ -171,7 +175,7 @@ export class PcbTextPrimitiveParser {
      * Parses extended TrueType/barcode font metadata when the payload carries
      * the modern PCB text field block.
      * @param {DataView} payload
-     * @returns {{ strokeFontType?: number, strokeWidth?: number, fontType?: number, fontTypeName?: string, fontName?: string, fontFamily?: string, isBold?: boolean, isItalic?: boolean, fontWeight?: number, fontStyle?: string, wideStringIndex?: number }}
+     * @returns {{ strokeFontType?: number, strokeWidth?: number, fontType?: number, fontTypeName?: string, fontName?: string, fontFamily?: string, isBold?: boolean, isItalic?: boolean, fontWeight?: number, fontStyle?: string, isInverted?: boolean, marginBorderWidth?: number, wideStringIndex?: number, useInvertedRectangle?: boolean, textboxRectWidth?: number, textboxRectHeight?: number, textboxRectJustification?: number }}
      */
     static #parseExtendedTextFields(payload) {
         if (payload.byteLength < 110) {
@@ -201,8 +205,35 @@ export class PcbTextPrimitiveParser {
             fontStyle: isItalic ? 'italic' : 'normal'
         }
 
+        if (payload.byteLength >= 111) {
+            extendedFields.isInverted = payload.getUint8(110) !== 0
+        }
+        if (payload.byteLength >= 115) {
+            extendedFields.marginBorderWidth = PcbTextPrimitiveParser.#readMil(
+                payload,
+                111
+            )
+        }
         if (payload.byteLength >= 119) {
             extendedFields.wideStringIndex = payload.getUint32(115, true)
+        }
+        if (payload.byteLength >= 124) {
+            extendedFields.useInvertedRectangle = payload.getUint8(123) !== 0
+        }
+        if (payload.byteLength >= 128) {
+            extendedFields.textboxRectWidth = PcbTextPrimitiveParser.#readMil(
+                payload,
+                124
+            )
+        }
+        if (payload.byteLength >= 132) {
+            extendedFields.textboxRectHeight = PcbTextPrimitiveParser.#readMil(
+                payload,
+                128
+            )
+        }
+        if (payload.byteLength >= 133) {
+            extendedFields.textboxRectJustification = payload.getUint8(132)
         }
 
         return extendedFields
@@ -453,6 +484,20 @@ export class PcbTextPrimitiveParser {
         }
 
         return PcbTextPrimitiveParser.#textRotationFromFlags(visibilityFlags)
+    }
+
+    /**
+     * Resolves text mirroring from the explicit modern text byte.
+     * @param {DataView} payload
+     * @param {boolean} hasExtendedFontFields
+     * @returns {boolean}
+     */
+    static #resolveTextMirrored(payload, hasExtendedFontFields) {
+        if (hasExtendedFontFields && payload.byteLength >= 36) {
+            return payload.getUint8(35) !== 0
+        }
+
+        return false
     }
 
     /**

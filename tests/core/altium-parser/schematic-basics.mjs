@@ -63,6 +63,7 @@ test('parseAltiumArrayBuffer accepts uppercase schematic field keys', () => {
         color: '#800000',
         width: 1,
         lineStyle: 0,
+        recordType: '13',
         renderOrder: 1,
         ownerIndex: undefined
     })

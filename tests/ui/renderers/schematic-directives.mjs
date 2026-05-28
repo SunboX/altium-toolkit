@@ -124,19 +124,19 @@ test('renderSchematicSvg draws authored outer pin markers and overlined pin labe
     )
     assert.match(
         markup,
-        /<g class="schematic-pin-marker"><polygon points="114,61 114,67 120,64" fill="var\(--schematic-pin-marker-fill\)" stroke="var\(--schematic-text-color\)" stroke-width="0\.75" vector-effect="non-scaling-stroke" \/><\/g><text class="schematic-pin-number"/
+        /<g class="schematic-pin-marker"><polygon points="114,62 114,68 120,65" fill="var\(--schematic-pin-marker-fill\)" stroke="var\(--schematic-text-color\)" stroke-width="0\.75" vector-effect="non-scaling-stroke" \/><\/g><text class="schematic-pin-number" x="112" y="64"/
     )
     assert.match(
         markup,
-        /<text class="schematic-pin-name" x="124" y="67" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400"><tspan text-decoration="overline">CS<\/tspan><\/text>/
+        /<text class="schematic-pin-name" x="124" y="68" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400"><tspan text-decoration="overline">CS<\/tspan><\/text>/
     )
     assert.match(
         markup,
-        /<text class="schematic-pin-name" x="124" y="107" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400"><tspan text-decoration="overline">WP<\/tspan><tspan text-decoration="none">\/IO2<\/tspan><\/text>/
+        /<text class="schematic-pin-name" x="124" y="108" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400"><tspan text-decoration="overline">WP<\/tspan><tspan text-decoration="none">\/IO2<\/tspan><\/text>/
     )
     assert.match(
         markup,
-        /<text class="schematic-pin-name" x="124" y="127" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400"><tspan text-decoration="overline">HOLD<\/tspan><tspan text-decoration="none">\/IO3<\/tspan><\/text>/
+        /<text class="schematic-pin-name" x="124" y="128" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400"><tspan text-decoration="overline">HOLD<\/tspan><tspan text-decoration="none">\/IO3<\/tspan><\/text>/
     )
 })
 

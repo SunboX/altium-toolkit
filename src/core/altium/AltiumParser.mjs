@@ -26,6 +26,7 @@ import { SchematicBusEntryParser } from './SchematicBusEntryParser.mjs'
 import { SchematicImageParser } from './SchematicImageParser.mjs'
 import { SchematicNetlistBuilder } from './SchematicNetlistBuilder.mjs'
 import { SchematicComponentTextResolver } from './SchematicComponentTextResolver.mjs'
+import { SchematicStreamExtractor } from './SchematicStreamExtractor.mjs'
 const {
     countMatchingKeys,
     getDisplayText,
@@ -65,7 +66,13 @@ export class AltiumParser {
         const records = AsciiRecordParser.parse(arrayBuffer)
         const fileType = AltiumParser.#sniffFileType(fileName, records)
         if (fileType === 'SchDoc') {
-            return AltiumParser.#parseSchematic(fileName, records, arrayBuffer)
+            const schematicExtraction =
+                SchematicStreamExtractor.extractFromArrayBuffer(arrayBuffer)
+            return AltiumParser.#parseSchematic(
+                fileName,
+                schematicExtraction?.records || records,
+                arrayBuffer
+            )
         }
         if (fileType === 'PcbDoc') {
             const pcbExtraction =
@@ -270,13 +277,15 @@ export class AltiumParser {
                 color: toColor(record.fields.Color, '#a44a1b'),
                 width: parseNumericField(record.fields, 'LineWidth') || 1,
                 lineStyle: parseNumericField(record.fields, 'LineStyle') || 0,
+                recordType: getField(record.fields, 'RECORD') || undefined,
                 renderOrder:
                     parseNumericField(record.fields, 'IndexInSheet') ?? index,
                 ownerIndex: getField(record.fields, 'OwnerIndex') || undefined
             })),
             ...polylineRecords.flatMap((record, index) =>
                 parseSchematicPolyline(record.fields, {
-                    isBus: getField(record.fields, 'RECORD') === '26'
+                    isBus: getField(record.fields, 'RECORD') === '26',
+                    recordType: getField(record.fields, 'RECORD') || undefined
                 }).map((line, segmentIndex) => ({
                     ...line,
                     renderOrder:
@@ -291,6 +300,8 @@ export class AltiumParser {
                 parseSchematicPolygon(record.fields).map(
                     (line, segmentIndex) => ({
                         ...line,
+                        recordType:
+                            getField(record.fields, 'RECORD') || undefined,
                         renderOrder:
                             (parseNumericField(record.fields, 'IndexInSheet') ??
                                 index) +
@@ -379,7 +390,8 @@ export class AltiumParser {
                     texts,
                     normalizedLines,
                     pins,
-                    ports
+                    ports,
+                    rectangles
                 ),
                 normalizedLines,
                 pins,

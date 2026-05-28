@@ -13,7 +13,7 @@ const { escapeHtml, formatNumber, projectSchematicY } = SchematicSvgUtils
 export class SchematicJunctionRenderer {
     /**
      * Builds junction-dot markup from connected wire linework.
-     * @param {{ x1: number, y1: number, x2: number, y2: number, color: string, ownerIndex?: string, isBus?: boolean }[]} lines
+     * @param {{ x1: number, y1: number, x2: number, y2: number, color: string, ownerIndex?: string, isBus?: boolean, recordType?: string }[]} lines
      * @param {{ x: number, y: number }[]} crosses
      * @param {{ x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down' }[]} [ports]
      * @param {{ x: number, y: number, style?: number, powerPortDirection?: 'up' | 'down' | 'left' | 'right' }[]} [powerPorts]
@@ -53,15 +53,15 @@ export class SchematicJunctionRenderer {
 
     /**
      * Resolves all wire-junction points that should display a connection dot.
-     * @param {{ x1: number, y1: number, x2: number, y2: number, color: string, ownerIndex?: string, isBus?: boolean }[]} lines
+     * @param {{ x1: number, y1: number, x2: number, y2: number, color: string, ownerIndex?: string, isBus?: boolean, recordType?: string }[]} lines
      * @param {{ x: number, y: number }[]} crosses
      * @param {{ x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down' }[]} ports
      * @param {{ x: number, y: number, style?: number, powerPortDirection?: 'up' | 'down' | 'left' | 'right' }[]} powerPorts
      * @returns {{ x: number, y: number, color: string }[]}
      */
     static #resolveJunctions(lines, crosses, ports, powerPorts) {
-        const wireLines = lines.filter(
-            (line) => !line.ownerIndex && line.isBus !== true
+        const wireLines = lines.filter((line) =>
+            SchematicJunctionRenderer.#isElectricalWireLine(line)
         )
         const verticalPorts = ports.filter((port) =>
             SchematicJunctionRenderer.#isVerticalPort(port)
@@ -368,6 +368,24 @@ export class SchematicJunctionRenderer {
             Number.isFinite(Number(powerPort.y)) &&
             typeof powerPort.powerPortDirection === 'string'
         )
+    }
+
+    /**
+     * Returns true when one line can participate in synthetic electrical
+     * junction dots.
+     * @param {{ ownerIndex?: string, isBus?: boolean, recordType?: string }} line
+     * @returns {boolean}
+     */
+    static #isElectricalWireLine(line) {
+        if (line?.ownerIndex || line?.isBus === true) {
+            return false
+        }
+
+        if (!Object.prototype.hasOwnProperty.call(line || {}, 'recordType')) {
+            return true
+        }
+
+        return !['6', '7', '26'].includes(String(line.recordType || ''))
     }
 
     /**

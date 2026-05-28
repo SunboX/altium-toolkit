@@ -136,12 +136,24 @@ export class SchematicTextPostProcessor {
      * @param {{ x1: number, y1: number, x2: number, y2: number, ownerIndex?: string }[]} lines
      * @param {{ x: number, y: number, ownerIndex: string, length: number, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
      * @param {{ x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down' }[]} ports
+     * @param {{ x: number, y: number, width: number, height: number, ownerIndex?: string }[]} rectangles
      * @returns {{ x: number, y: number, text: string, name?: string, ownerIndex?: string, recordType?: string, rotation?: number, anchor?: 'start' | 'middle' | 'end' }[]}
      */
-    static anchorComponentTextsFromOwnerBounds(texts, lines, pins, ports = []) {
+    static anchorComponentTextsFromOwnerBounds(
+        texts,
+        lines,
+        pins,
+        ports = [],
+        rectangles = []
+    ) {
         const ownerBounds = SchematicTextPostProcessor.#buildOwnerBounds(
             lines,
             pins
+        )
+        const ownerBodyBounds = SchematicTextPostProcessor.#buildOwnerBounds(
+            lines,
+            pins,
+            rectangles
         )
         const ownerPinCounts =
             SchematicTextPostProcessor.#buildOwnerPinCounts(pins)
@@ -164,14 +176,11 @@ export class SchematicTextPostProcessor {
                 return text
             }
 
-            const paddedText = SchematicTextPostProcessor.#isDesignatorText(
-                text
-            )
-                ? SchematicTextPostProcessor.#padDesignatorAboveOwner(
-                      text,
-                      bounds
-                  )
-                : text
+            const paddedText =
+                SchematicTextPostProcessor.#padDesignatorAboveOwner(
+                    text,
+                    ownerBodyBounds.get(text.ownerIndex) || bounds
+                )
             const ownerPinCount = ownerPinCounts.get(text.ownerIndex) || 0
 
             if (text.y > bounds.maxY) {
@@ -290,12 +299,13 @@ export class SchematicTextPostProcessor {
     }
 
     /**
-     * Builds per-owner primitive bounds from drawable lines and pins.
+     * Builds per-owner primitive bounds from drawable lines, pins, and bodies.
      * @param {{ x1: number, y1: number, x2: number, y2: number, ownerIndex?: string }[]} lines
      * @param {{ x: number, y: number, ownerIndex: string }[]} pins
+     * @param {{ x: number, y: number, width: number, height: number, ownerIndex?: string }[]} rectangles
      * @returns {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>}
      */
-    static #buildOwnerBounds(lines, pins) {
+    static #buildOwnerBounds(lines, pins, rectangles = []) {
         const ownerBounds = new Map()
 
         for (const line of lines) {
@@ -322,6 +332,24 @@ export class SchematicTextPostProcessor {
                 ownerBounds,
                 pin.ownerIndex,
                 [{ x: pin.x, y: pin.y }]
+            )
+        }
+
+        for (const rectangle of rectangles) {
+            if (!rectangle.ownerIndex) {
+                continue
+            }
+
+            SchematicTextPostProcessor.#extendBounds(
+                ownerBounds,
+                rectangle.ownerIndex,
+                [
+                    { x: rectangle.x, y: rectangle.y },
+                    {
+                        x: rectangle.x + rectangle.width,
+                        y: rectangle.y + rectangle.height
+                    }
+                ]
             )
         }
 
@@ -506,7 +534,7 @@ export class SchematicTextPostProcessor {
      * @returns {{ x: number, y: number }}
      */
     static #padDesignatorAboveOwner(text, bounds) {
-        if (text.y <= bounds.maxY) {
+        if (text.y < bounds.maxY - 1 || text.y >= bounds.maxY + 4) {
             return text
         }
 

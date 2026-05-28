@@ -56,7 +56,9 @@ export class SchematicPowerPortRenderer {
                     y,
                     fontSize,
                     labelOptions,
-                    resolvedColor
+                    resolvedColor,
+                    lines,
+                    sheetHeight
                 ) +
                 '</g>'
             )
@@ -77,7 +79,9 @@ export class SchematicPowerPortRenderer {
                 y,
                 fontSize,
                 labelOptions,
-                resolvedColor
+                resolvedColor,
+                lines,
+                sheetHeight
             ) +
             '</g>'
         )
@@ -514,6 +518,8 @@ export class SchematicPowerPortRenderer {
      * @param {number} fontSize
      * @param {{ fontSize?: number, fontFamily?: string, fontWeight?: number }} labelOptions
      * @param {string} color
+     * @param {{ x1: number, y1: number, x2: number, y2: number }[]} lines
+     * @param {number} sheetHeight
      * @returns {string}
      */
     static #buildDirectionalLabel(
@@ -523,52 +529,193 @@ export class SchematicPowerPortRenderer {
         y,
         fontSize,
         labelOptions,
-        color
+        color,
+        lines = [],
+        sheetHeight = 0
     ) {
-        if (direction === 'up') {
-            return createSvgText(
-                'schematic-power-port-label',
-                x,
-                y - 16,
-                text.text,
-                color,
-                'middle',
-                labelOptions
-            )
-        }
-
-        if (direction === 'right') {
-            return createSvgText(
-                'schematic-power-port-label',
-                x + 18,
-                y + fontSize * 0.36,
-                text.text,
-                color,
-                'start',
-                labelOptions
-            )
-        }
-
-        if (direction === 'left') {
-            return createSvgText(
-                'schematic-power-port-label',
-                x - 18,
-                y + fontSize * 0.36,
-                text.text,
-                color,
-                'end',
-                labelOptions
-            )
-        }
+        const placement = SchematicPowerPortRenderer.#resolveLabelPlacement(
+            text,
+            direction,
+            x,
+            y,
+            fontSize,
+            lines,
+            sheetHeight
+        )
 
         return createSvgText(
             'schematic-power-port-label',
-            x,
-            y + 25,
+            placement.x,
+            placement.y,
             text.text,
             color,
-            'middle',
+            placement.anchor,
             labelOptions
         )
+    }
+
+    /**
+     * Resolves label placement and avoids nearby horizontal net-line overlap
+     * for upward rail labels in dense schematic areas.
+     * @param {{ text: string, style?: number }} text
+     * @param {'up' | 'down' | 'left' | 'right'} direction
+     * @param {number} x
+     * @param {number} y
+     * @param {number} fontSize
+     * @param {{ x1: number, y1: number, x2: number, y2: number }[]} lines
+     * @param {number} sheetHeight
+     * @returns {{ x: number, y: number, anchor: 'start' | 'middle' | 'end' }}
+     */
+    static #resolveLabelPlacement(
+        text,
+        direction,
+        x,
+        y,
+        fontSize,
+        lines,
+        sheetHeight
+    ) {
+        if (direction === 'up') {
+            return {
+                x,
+                y: SchematicPowerPortRenderer.#resolveUpwardRailLabelY(
+                    text,
+                    x,
+                    y,
+                    y - 16,
+                    fontSize,
+                    lines,
+                    sheetHeight
+                ),
+                anchor: 'middle'
+            }
+        }
+
+        if (direction === 'right') {
+            return { x: x + 18, y: y + fontSize * 0.36, anchor: 'start' }
+        }
+
+        if (direction === 'left') {
+            return { x: x - 18, y: y + fontSize * 0.36, anchor: 'end' }
+        }
+
+        return { x, y: y + 25, anchor: 'middle' }
+    }
+
+    /**
+     * Shifts an upward rail label below close parallel net lines when the
+     * default placement would draw text through an existing wire.
+     * @param {{ text: string, style?: number }} text
+     * @param {number} x
+     * @param {number} connectionY
+     * @param {number} defaultY
+     * @param {number} fontSize
+     * @param {{ x1: number, y1: number, x2: number, y2: number }[]} lines
+     * @param {number} sheetHeight
+     * @returns {number}
+     */
+    static #resolveUpwardRailLabelY(
+        text,
+        x,
+        connectionY,
+        defaultY,
+        fontSize,
+        lines,
+        sheetHeight
+    ) {
+        if (Number(text.style || 0) === 4) {
+            return defaultY
+        }
+
+        let labelY = defaultY
+
+        for (const line of lines) {
+            const horizontalLine =
+                SchematicPowerPortRenderer.#projectHorizontalLine(
+                    line,
+                    sheetHeight
+                )
+
+            if (!horizontalLine) {
+                continue
+            }
+
+            if (
+                !SchematicPowerPortRenderer.#horizontalLineIntersectsLabel(
+                    horizontalLine,
+                    text.text,
+                    x,
+                    labelY,
+                    fontSize
+                )
+            ) {
+                continue
+            }
+
+            labelY = Math.min(
+                connectionY - 4,
+                Math.max(labelY, horizontalLine.y + fontSize + 4)
+            )
+        }
+
+        return labelY
+    }
+
+    /**
+     * Projects one source horizontal line into SVG coordinates.
+     * @param {{ x1: number, y1: number, x2: number, y2: number }} line
+     * @param {number} sheetHeight
+     * @returns {{ y: number, minX: number, maxX: number } | null}
+     */
+    static #projectHorizontalLine(line, sheetHeight) {
+        const y1 = projectSchematicY(sheetHeight, line.y1)
+        const y2 = projectSchematicY(sheetHeight, line.y2)
+
+        if (Math.abs(y1 - y2) > 0.01) {
+            return null
+        }
+
+        return {
+            y: y1,
+            minX: Math.min(line.x1, line.x2),
+            maxX: Math.max(line.x1, line.x2)
+        }
+    }
+
+    /**
+     * Checks whether a projected horizontal line crosses an estimated text box.
+     * @param {{ y: number, minX: number, maxX: number }} line
+     * @param {string} label
+     * @param {number} x
+     * @param {number} labelY
+     * @param {number} fontSize
+     * @returns {boolean}
+     */
+    static #horizontalLineIntersectsLabel(line, label, x, labelY, fontSize) {
+        const textWidth = SchematicPowerPortRenderer.#estimateLabelWidth(
+            label,
+            fontSize
+        )
+        const textMinX = x - textWidth / 2
+        const textMaxX = x + textWidth / 2
+        const textTopY = labelY - fontSize
+        const textBottomY = labelY + fontSize * 0.25
+
+        return (
+            line.maxX >= textMinX &&
+            line.minX <= textMaxX &&
+            line.y >= textTopY &&
+            line.y <= textBottomY
+        )
+    }
+
+    /**
+     * Estimates one power-port label width for clearance checks.
+     * @param {string} label
+     * @param {number} fontSize
+     * @returns {number}
+     */
+    static #estimateLabelWidth(label, fontSize) {
+        return String(label || '').length * fontSize * 0.56
     }
 }

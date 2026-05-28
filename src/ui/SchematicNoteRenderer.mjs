@@ -51,11 +51,23 @@ export class SchematicNoteRenderer {
             '--schematic-note-border-color'
         )
         const noteStroke = text.showBorder ? borderColor : 'none'
+        const noteSourceLines = text.noteLines || []
+        const verticalTextMargin =
+            SchematicNoteRenderer.#resolveVerticalTextMargin(
+                textMargin,
+                height,
+                requestedTextSize
+            )
         const layout = SchematicNoteRenderer.#resolveTextLayout(
-            text.noteLines || [],
+            noteSourceLines,
             Math.max(width - textMargin * 2, requestedTextSize),
-            Math.max(height - textMargin * 2, requestedTextSize),
-            requestedTextSize
+            Math.max(height - verticalTextMargin * 2, requestedTextSize),
+            requestedTextSize,
+            SchematicNoteRenderer.#isCompactSingleLineNote(
+                noteSourceLines,
+                height,
+                requestedTextSize
+            )
         )
         const noteLines = layout.noteLines
         const textSize = layout.textSize
@@ -69,6 +81,7 @@ export class SchematicNoteRenderer {
                     right,
                     top,
                     textMargin,
+                    verticalTextMargin,
                     lineHeight,
                     textSize,
                     text
@@ -102,14 +115,33 @@ export class SchematicNoteRenderer {
      * @param {number} maxWidth
      * @param {number} maxHeight
      * @param {number} requestedTextSize
+     * @param {boolean} keepSingleLineSize
      * @returns {{ noteLines: string[], textSize: number, lineHeight: number }}
      */
     static #resolveTextLayout(
         noteLines,
         maxWidth,
         maxHeight,
-        requestedTextSize
+        requestedTextSize,
+        keepSingleLineSize = false
     ) {
+        if (keepSingleLineSize) {
+            const visibleLines = noteLines.filter((line) =>
+                String(line || '').trim()
+            )
+
+            return {
+                noteLines: visibleLines,
+                textSize: requestedTextSize,
+                lineHeight: SchematicNoteRenderer.#resolveLineHeight(
+                    requestedTextSize,
+                    maxHeight,
+                    0,
+                    visibleLines.length
+                )
+            }
+        }
+
         let textSize = requestedTextSize
         let wrappedLines = []
 
@@ -263,6 +295,36 @@ export class SchematicNoteRenderer {
     }
 
     /**
+     * Checks if a note is a tight one-line callout where Altium preserves the
+     * text size even when the note rectangle has little vertical padding.
+     * @param {string[]} noteLines
+     * @param {number} height
+     * @param {number} requestedTextSize
+     * @returns {boolean}
+     */
+    static #isCompactSingleLineNote(noteLines, height, requestedTextSize) {
+        const visibleLineCount = noteLines.filter((line) =>
+            String(line || '').trim()
+        ).length
+
+        return visibleLineCount === 1 && height <= requestedTextSize * 1.5
+    }
+
+    /**
+     * Reduces vertical padding for short note rectangles so readable text is
+     * centered instead of scaled down to satisfy the default margin.
+     * @param {number} textMargin
+     * @param {number} height
+     * @param {number} requestedTextSize
+     * @returns {number}
+     */
+    static #resolveVerticalTextMargin(textMargin, height, requestedTextSize) {
+        const centeredMargin = Math.max((height - requestedTextSize) / 2, 0)
+
+        return Math.min(textMargin, centeredMargin)
+    }
+
+    /**
      * Splits one oversized token into smaller width-safe fragments.
      * @param {string} token
      * @param {number} maxWidth
@@ -360,7 +422,8 @@ export class SchematicNoteRenderer {
      * @param {number} left
      * @param {number} right
      * @param {number} top
-     * @param {number} textMargin
+     * @param {number} horizontalTextMargin
+     * @param {number} verticalTextMargin
      * @param {number} lineHeight
      * @param {number} textSize
      * @param {{ color: string, fontFamily?: string, fontWeight?: number }} text
@@ -372,13 +435,14 @@ export class SchematicNoteRenderer {
         left,
         right,
         top,
-        textMargin,
+        horizontalTextMargin,
+        verticalTextMargin,
         lineHeight,
         textSize,
         text
     ) {
-        const x = left + textMargin
-        const y = top + textMargin + textSize + index * lineHeight
+        const x = left + horizontalTextMargin
+        const y = top + verticalTextMargin + textSize + index * lineHeight
 
         if (/^_+$/.test(String(line || '').trim())) {
             return (
@@ -387,7 +451,7 @@ export class SchematicNoteRenderer {
                 '" y1="' +
                 formatNumber(y - textSize * 0.35) +
                 '" x2="' +
-                formatNumber(right - textMargin) +
+                formatNumber(right - horizontalTextMargin) +
                 '" y2="' +
                 formatNumber(y - textSize * 0.35) +
                 '" stroke="' +

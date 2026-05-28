@@ -9,7 +9,7 @@ export class PcbFontMetricsParser {
     /**
      * Parses font-family metrics from a TrueType/OpenType sfnt payload.
      * @param {Uint8Array | ArrayBuffer} bytes
-     * @returns {{ format: 'truetype' | 'opentype' | 'unknown', unitsPerEm?: number, ascent?: number, descent?: number, lineGap?: number, cellHeight?: number, emScaleFromPcbHeight?: number, capHeight?: number, averageAdvanceWidth?: number, weightClass?: number, widthClass?: number }}
+     * @returns {{ format: 'truetype' | 'opentype' | 'unknown', unitsPerEm?: number, ascent?: number, descent?: number, lineGap?: number, windowsAscent?: number, windowsDescent?: number, cellHeight?: number, emScaleFromPcbHeight?: number, capHeight?: number, averageAdvanceWidth?: number, weightClass?: number, widthClass?: number }}
      */
     static parse(bytes) {
         const normalizedBytes = PcbFontMetricsParser.#toUint8Array(bytes)
@@ -43,10 +43,7 @@ export class PcbFontMetricsParser {
             tables.get('hmtx'),
             hhea.numberOfHMetrics
         )
-        const cellHeight =
-            Number.isFinite(hhea.ascent) && Number.isFinite(hhea.descent)
-                ? hhea.ascent + Math.abs(hhea.descent)
-                : undefined
+        const cellHeight = PcbFontMetricsParser.#resolvePcbCellHeight(hhea, os2)
         const metrics = {
             format,
             ...head,
@@ -177,7 +174,7 @@ export class PcbFontMetricsParser {
      * Reads typography metadata from the `OS/2` table.
      * @param {DataView} view
      * @param {{ offset: number, length: number } | undefined} table
-     * @returns {{ averageAdvanceWidth?: number, weightClass?: number, widthClass?: number, capHeight?: number }}
+     * @returns {{ averageAdvanceWidth?: number, weightClass?: number, widthClass?: number, windowsAscent?: number, windowsDescent?: number, capHeight?: number }}
      */
     static #readOs2Table(view, table) {
         if (!PcbFontMetricsParser.#tableHasBytes(table, 8)) {
@@ -203,8 +200,38 @@ export class PcbFontMetricsParser {
                 table.offset + 88
             )
         }
+        if (PcbFontMetricsParser.#tableHasBytes(table, 78)) {
+            metrics.windowsAscent = PcbFontMetricsParser.#readUint16(
+                view,
+                table.offset + 74
+            )
+            metrics.windowsDescent = PcbFontMetricsParser.#readUint16(
+                view,
+                table.offset + 76
+            )
+        }
 
         return metrics
+    }
+
+    /**
+     * Resolves the TrueType cell height used by Altium PCB text placement.
+     * @param {{ ascent?: number, descent?: number }} hhea
+     * @param {{ windowsAscent?: number, windowsDescent?: number }} os2
+     * @returns {number | undefined}
+     */
+    static #resolvePcbCellHeight(hhea, os2) {
+        if (
+            Number.isFinite(os2.windowsAscent) &&
+            Number.isFinite(os2.windowsDescent) &&
+            os2.windowsAscent + os2.windowsDescent > 0
+        ) {
+            return os2.windowsAscent + os2.windowsDescent
+        }
+
+        return Number.isFinite(hhea.ascent) && Number.isFinite(hhea.descent)
+            ? hhea.ascent + Math.abs(hhea.descent)
+            : undefined
     }
 
     /**

@@ -302,7 +302,9 @@ test('PcbFontMetricsParser reads sfnt metrics used for PCB text sizing', () => {
         capHeight: 690,
         averageAdvanceWidth: 510,
         weightClass: 400,
-        widthClass: 5
+        widthClass: 5,
+        windowsAscent: 0,
+        windowsDescent: 0
     })
 })
 

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbEdgeFacingGlyphNormalizer } from './PcbEdgeFacingGlyphNormalizer.mjs'
+import { PcbScene3dDrillCutoutBuilder } from './PcbScene3dDrillCutoutBuilder.mjs'
 import { PcbFootprintPrimitiveSelector } from './PcbFootprintPrimitiveSelector.mjs'
 import { PcbScene3dPackages } from './PcbScene3dPackages.mjs'
 
@@ -10,14 +11,22 @@ import { PcbScene3dPackages } from './PcbScene3dPackages.mjs'
  * Builds deterministic 3D scene data from the normalized PCB model.
  */
 export class PcbScene3dBuilder {
+    static #DENSE_OVERLAY_FILL_COLOR = 0xf8f6ef
+    static #DENSE_OVERLAY_MIN_REGION_AREA_RATIO = 0.2
+    static #DENSE_OVERLAY_MIN_TRACK_COUNT = 250
+    static #DENSE_OVERLAY_KNOCKOUT_COLOR = 0x2f6a2c
+    static #PRECISE_BODY_MATCH_TOLERANCE_MIL = 5
+    static #TRUETYPE_TEXT_WIDTH_RATIO = 0.55
+
     /**
      * Builds a scene description for host 3D renderers.
      * @param {{ pcb?: { boardOutline?: { widthMil?: number, heightMil?: number, minX?: number, minY?: number, segments?: Array<Record<string, number | string>> }, primitiveLayers?: { layerId: number, name: string }[], pads?: { x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[], tracks?: any[], arcs?: any[], fills?: any[], vias?: any[], polygons?: any[], embeddedModels?: any[], componentBodies?: { modelId?: string, checksum?: number | null, embedded?: boolean, name?: string, identifier?: string, positionMil?: { x?: number, y?: number }, rotationDeg?: number, modelRotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number }[], components?: { designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null, source?: string, modelPath?: string }[] } }} documentModel
      * @param {{ modelRegistry?: { resolveComponentModel: (component: any) => { name: string, relativePath: string, format: string } | null, resolveComponentBodyModel?: (componentBody: any) => { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } | null } | null, boardThicknessMil?: number }} [options]
-     * @returns {{ board: { widthMil: number, heightMil: number, thicknessMil: number, minX: number, minY: number, centerX: number, centerY: number, segments: Array<Record<string, number | string>> }, components: { designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, boardPositionMil: { x: number, y: number, z: number }, pattern: string, source: string, body: { family: string, sizeMil: { width: number, depth: number, height: number } }, externalModel: { name: string, relativePath: string, format: string } | null }[], externalPlacements: { designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, bodyRotationDeg: number, modelTransform: { rotationDeg: { x: number, y: number, z: number }, dzMil: number }, externalModel: { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } }[], detail: { pads: any[], tracks: any[], arcs: any[], fills: any[], vias: any[], polygons: any[], silkscreen: { top: { fills: any[], tracks: any[], arcs: any[] }, bottom: { fills: any[], tracks: any[], arcs: any[] } } } }}
+     * @returns {{ board: { widthMil: number, heightMil: number, thicknessMil: number, minX: number, minY: number, centerX: number, centerY: number, segments: Array<Record<string, number | string>> }, components: { designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, boardPositionMil: { x: number, y: number, z: number }, pattern: string, source: string, body: { family: string, sizeMil: { width: number, depth: number, height: number } }, externalModel: { name: string, relativePath: string, format: string } | null }[], externalPlacements: { designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, bodyRotationDeg: number, modelTransform: { rotationDeg: { x: number, y: number, z: number }, dzMil: number }, externalModel: { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } }[], detail: { pads: any[], tracks: any[], arcs: any[], fills: any[], vias: any[], polygons: any[], silkscreen: { top: { fills: any[], tracks: any[], arcs: any[], texts: any[], fillColor?: number, strokeColor?: number }, bottom: { fills: any[], tracks: any[], arcs: any[], texts: any[], fillColor?: number, strokeColor?: number } } } }}
      */
     static build(documentModel, options = {}) {
         const pcb = documentModel?.pcb || {}
+        const appearance3d = pcb.appearance3d || {}
         const boardOutline = pcb.boardOutline || {}
         const primitiveLayers = Array.isArray(pcb.primitiveLayers)
             ? pcb.primitiveLayers
@@ -30,6 +39,10 @@ export class PcbScene3dBuilder {
         const tracks = Array.isArray(pcb.tracks) ? pcb.tracks : []
         const arcs = Array.isArray(pcb.arcs) ? pcb.arcs : []
         const fills = Array.isArray(pcb.fills) ? pcb.fills : []
+        const texts = Array.isArray(pcb.texts) ? pcb.texts : []
+        const vias = Array.isArray(pcb.vias) ? pcb.vias : []
+        const silkscreenRegions =
+            PcbScene3dBuilder.#resolveSilkscreenRegions(pcb)
         const thicknessMil = Number(options.boardThicknessMil || 63) || 63
         const modelRegistry = options.modelRegistry || null
         const board = {
@@ -52,8 +65,40 @@ export class PcbScene3dBuilder {
             componentBodies,
             components
         )
+        const topSilkscreen = PcbScene3dBuilder.#buildSilkscreenSide(
+            primitiveLayers,
+            fills,
+            tracks,
+            arcs,
+            texts,
+            silkscreenRegions,
+            boardOutline,
+            'top',
+            pads,
+            vias
+        )
+        const bottomSilkscreen = PcbScene3dBuilder.#buildSilkscreenSide(
+            primitiveLayers,
+            fills,
+            tracks,
+            arcs,
+            texts,
+            silkscreenRegions,
+            boardOutline,
+            'bottom',
+            pads,
+            vias
+        )
+
+        PcbScene3dBuilder.#applySilkscreenAppearance(
+            topSilkscreen,
+            bottomSilkscreen,
+            board,
+            appearance3d
+        )
 
         return {
+            sourceFormat: 'altium',
             board,
             components: components.map((component) =>
                 PcbScene3dBuilder.#buildComponent(
@@ -76,33 +121,18 @@ export class PcbScene3dBuilder {
                 )
                 .filter(Boolean),
             detail: {
+                embeddedFonts: Array.isArray(pcb.embeddedFonts)
+                    ? pcb.embeddedFonts
+                    : [],
                 pads,
                 tracks,
                 arcs,
                 fills,
-                vias: Array.isArray(pcb.vias) ? pcb.vias : [],
+                vias,
                 polygons: Array.isArray(pcb.polygons) ? pcb.polygons : [],
                 silkscreen: {
-                    top: PcbEdgeFacingGlyphNormalizer.normalize(
-                        PcbFootprintPrimitiveSelector.select(
-                            primitiveLayers,
-                            fills,
-                            tracks,
-                            arcs,
-                            'top'
-                        ),
-                        boardOutline
-                    ),
-                    bottom: PcbEdgeFacingGlyphNormalizer.normalize(
-                        PcbFootprintPrimitiveSelector.select(
-                            primitiveLayers,
-                            fills,
-                            tracks,
-                            arcs,
-                            'bottom'
-                        ),
-                        boardOutline
-                    )
+                    top: topSilkscreen,
+                    bottom: bottomSilkscreen
                 }
             }
         }
@@ -163,7 +193,7 @@ export class PcbScene3dBuilder {
     /**
      * Builds one explicit external-model placement from normalized component
      * body metadata.
-     * @param {{ modelId?: string, checksum?: number | null, embedded?: boolean, name?: string, identifier?: string, positionMil?: { x?: number, y?: number }, rotationDeg?: number, modelRotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number }} componentBody
+     * @param {{ modelId?: string, checksum?: number | null, embedded?: boolean, name?: string, identifier?: string, layer?: string, positionMil?: { x?: number, y?: number }, rotationDeg?: number, modelRotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number }} componentBody
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null } | null} matchedComponent
      * @param {{ centerX: number, centerY: number }} board
      * @param {number} thicknessMil
@@ -190,16 +220,17 @@ export class PcbScene3dBuilder {
             return null
         }
 
-        const mountSide =
-            String(matchedComponent?.layer || 'TOP').toUpperCase() === 'BOTTOM'
-                ? 'bottom'
-                : 'top'
+        const mountSide = PcbScene3dBuilder.#resolveExternalPlacementMountSide(
+            componentBody,
+            matchedComponent
+        )
         const halfBoardThickness = thicknessMil / 2
         const sourcePosition =
             PcbScene3dBuilder.#resolveExternalPlacementSourcePosition(
-                componentBody,
-                matchedComponent
+                componentBody
             )
+        const modelRotation =
+            PcbScene3dBuilder.#resolveExternalModelRotation(componentBody)
 
         return {
             designator:
@@ -226,11 +257,7 @@ export class PcbScene3dBuilder {
             },
             bodyRotationDeg: Number(componentBody.rotationDeg || 0),
             modelTransform: {
-                rotationDeg: {
-                    x: Number(componentBody.modelRotationDeg?.x || 0),
-                    y: Number(componentBody.modelRotationDeg?.y || 0),
-                    z: Number(componentBody.modelRotationDeg?.z || 0)
-                },
+                rotationDeg: modelRotation,
                 dzMil: Number(componentBody.dzMil || 0)
             },
             externalModel: resolvedModel
@@ -251,6 +278,10 @@ export class PcbScene3dBuilder {
         const assignedBodyIndexes = new Set()
         const assignedComponentIndexes = new Set()
         const closeCandidates = []
+        const matchContext = PcbScene3dBuilder.#buildBodyMatchContext(
+            componentBodies,
+            components
+        )
 
         componentBodies.forEach((componentBody, bodyIndex) => {
             components.forEach((component, componentIndex) => {
@@ -260,7 +291,15 @@ export class PcbScene3dBuilder {
                         component
                     )
 
-                if (distance <= 600) {
+                if (
+                    distance <= 600 &&
+                    PcbScene3dBuilder.#canUseCloseBodyComponentMatch(
+                        componentBody,
+                        component,
+                        matchContext,
+                        distance
+                    )
+                ) {
                     closeCandidates.push({
                         bodyIndex,
                         componentIndex,
@@ -347,6 +386,84 @@ export class PcbScene3dBuilder {
         })
 
         return matches
+    }
+
+    /**
+     * Builds reusable identity statistics for body/component matching.
+     * @param {{ modelId?: string, name?: string, identifier?: string }[]} componentBodies
+     * @param {{ pattern?: string, source?: string, modelPath?: string }[]} components
+     * @returns {{ bodyGroupCounts: Map<string, number>, candidateComponentCounts: Map<string, number> }}
+     */
+    static #buildBodyMatchContext(componentBodies, components) {
+        const bodyGroupCounts = new Map()
+        const bodyByGroup = new Map()
+        const candidateComponentCounts = new Map()
+
+        for (const componentBody of componentBodies) {
+            const groupKey =
+                PcbScene3dBuilder.#resolveBodyGroupKey(componentBody)
+            bodyGroupCounts.set(
+                groupKey,
+                (bodyGroupCounts.get(groupKey) || 0) + 1
+            )
+            if (!bodyByGroup.has(groupKey)) {
+                bodyByGroup.set(groupKey, componentBody)
+            }
+        }
+
+        bodyByGroup.forEach((componentBody, groupKey) => {
+            candidateComponentCounts.set(
+                groupKey,
+                components.filter(
+                    (component) =>
+                        PcbScene3dBuilder.#scoreBodyComponentAffinity(
+                            componentBody,
+                            component
+                        ) > 0
+                ).length
+            )
+        })
+
+        return { bodyGroupCounts, candidateComponentCounts }
+    }
+
+    /**
+     * Returns true when a close body/component pair is identity-compatible and
+     * the body group can be matched one-to-one to component anchors.
+     * @param {{ modelId?: string, name?: string, identifier?: string }} componentBody
+     * @param {{ pattern?: string, source?: string, modelPath?: string }} component
+     * @param {{ bodyGroupCounts: Map<string, number>, candidateComponentCounts: Map<string, number> }} matchContext
+     * @param {number} distanceMil Distance between body and component anchors.
+     * @returns {boolean}
+     */
+    static #canUseCloseBodyComponentMatch(
+        componentBody,
+        component,
+        matchContext,
+        distanceMil
+    ) {
+        if (
+            Number(distanceMil) <=
+            PcbScene3dBuilder.#PRECISE_BODY_MATCH_TOLERANCE_MIL
+        ) {
+            return true
+        }
+
+        if (
+            PcbScene3dBuilder.#scoreBodyComponentAffinity(
+                componentBody,
+                component
+            ) <= 0
+        ) {
+            return false
+        }
+
+        const groupKey = PcbScene3dBuilder.#resolveBodyGroupKey(componentBody)
+        const bodyCount = matchContext.bodyGroupCounts.get(groupKey) || 0
+        const candidateCount =
+            matchContext.candidateComponentCounts.get(groupKey) || 0
+
+        return bodyCount > 0 && bodyCount <= candidateCount
     }
 
     /**
@@ -506,23 +623,12 @@ export class PcbScene3dBuilder {
     }
 
     /**
-     * Returns the component anchor that should be used for one resolved body
+     * Returns the native body anchor that should be used for one explicit model
      * placement.
      * @param {{ positionMil?: { x?: number, y?: number } }} componentBody
-     * @param {{ x: number, y: number } | null} matchedComponent
      * @returns {{ x: number, y: number }}
      */
-    static #resolveExternalPlacementSourcePosition(
-        componentBody,
-        matchedComponent
-    ) {
-        if (matchedComponent) {
-            return {
-                x: Number(matchedComponent.x || 0),
-                y: Number(matchedComponent.y || 0)
-            }
-        }
-
+    static #resolveExternalPlacementSourcePosition(componentBody) {
         return {
             x: Number(componentBody?.positionMil?.x || 0),
             y: Number(componentBody?.positionMil?.y || 0)
@@ -530,18 +636,452 @@ export class PcbScene3dBuilder {
     }
 
     /**
-     * Resolves the authored placement rotation for one explicit external
-     * model, combining the matched component orientation with any additional
-     * 2D model rotation offset carried by the body metadata.
+     * Resolves which board side one explicit model should mount on.
+     * @param {{ layer?: string }} componentBody
+     * @param {{ layer?: string } | null} matchedComponent
+     * @returns {'top' | 'bottom'}
+     */
+    static #resolveExternalPlacementMountSide(componentBody, matchedComponent) {
+        const bodySide = PcbScene3dBuilder.#resolveMechanicalLayerSide(
+            componentBody?.layer
+        )
+        if (bodySide) {
+            return bodySide
+        }
+
+        return String(matchedComponent?.layer || 'TOP').toUpperCase() ===
+            'BOTTOM'
+            ? 'bottom'
+            : 'top'
+    }
+
+    /**
+     * Resolves a common Altium top/bottom mechanical layer pair.
+     * @param {string | undefined} layer
+     * @returns {'top' | 'bottom' | null}
+     */
+    static #resolveMechanicalLayerSide(layer) {
+        const match = String(layer || '').match(/^MECHANICAL\s*(\d+)$/i)
+        if (!match) {
+            return null
+        }
+
+        return Number(match[1]) % 2 === 0 ? 'bottom' : 'top'
+    }
+
+    /**
+     * Resolves the authored placement rotation for one explicit external model.
+     * Altium stores the 3D model's board-facing yaw in MODEL.3D.ROTZ.
      * @param {{ rotationDeg?: number }} componentBody
      * @param {{ rotation?: number } | null} matchedComponent
      * @returns {number}
      */
     static #resolveExternalPlacementRotation(componentBody, matchedComponent) {
+        const modelRotationZ = Number(componentBody?.modelRotationDeg?.z)
+        if (Number.isFinite(modelRotationZ)) {
+            return PcbScene3dBuilder.#normalizeAngle(modelRotationZ)
+        }
+
         return PcbScene3dBuilder.#normalizeAngle(
-            Number(matchedComponent?.rotation || 0) +
-                Number(componentBody?.rotationDeg || 0)
+            Number(componentBody?.rotationDeg || 0) +
+                Number(matchedComponent?.rotation || 0)
         )
+    }
+
+    /**
+     * Resolves model-local rotations after converting Altium's positive local
+     * rotation fields into the renderer's signed 3D model convention.
+     * @param {{ modelRotationDeg?: { x?: number, y?: number, z?: number } }} componentBody
+     * @returns {{ x: number, y: number, z: number }}
+     */
+    static #resolveExternalModelRotation(componentBody) {
+        return {
+            x: -Number(componentBody?.modelRotationDeg?.x || 0),
+            y: -Number(componentBody?.modelRotationDeg?.y || 0),
+            z: 0
+        }
+    }
+
+    /**
+     * Selects and normalizes one board-side silkscreen primitive set.
+     * @param {{ layerId: number, name: string }[]} primitiveLayers
+     * @param {{ x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[]} fills
+     * @param {{ x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[]} tracks
+     * @param {{ x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[]} arcs
+     * @param {{ text?: string, value?: string, x?: number, y?: number, height?: number, strokeWidth?: number, layerCode?: number, layerId?: number, visible?: boolean }[]} texts
+     * @param {{ points?: object[], holes?: object[][], layerCode?: number, layerId?: number }[]} regions
+     * @param {{ minX?: number, minY?: number, widthMil?: number, heightMil?: number }} boardOutline
+     * @param {'top' | 'bottom'} side
+     * @param {{ x?: number, y?: number, holeDiameter?: number, drillDiameter?: number, holeSlotLength?: number, slotLength?: number, rotation?: number, holeRotation?: number }[]} pads
+     * @param {{ x?: number, y?: number, holeDiameter?: number, drillDiameter?: number }[]} vias
+     * @returns {{ fills: object[], tracks: object[], arcs: object[], regions: object[], texts: object[], nativeTextKnockouts: boolean }}
+     */
+    static #buildSilkscreenSide(
+        primitiveLayers,
+        fills,
+        tracks,
+        arcs,
+        texts,
+        regions,
+        boardOutline,
+        side,
+        pads,
+        vias
+    ) {
+        const normalized = PcbEdgeFacingGlyphNormalizer.normalize(
+            PcbFootprintPrimitiveSelector.select(
+                primitiveLayers,
+                fills,
+                tracks,
+                arcs,
+                regions,
+                side
+            ),
+            boardOutline
+        )
+        const fillsWithRegions = [
+            ...(normalized.fills || []),
+            ...(normalized.regions || [])
+        ]
+        const denseOverlayArtwork = PcbScene3dBuilder.#isDenseOverlayArtwork(
+            {
+                fills: fillsWithRegions,
+                tracks: normalized.tracks,
+                arcs: normalized.arcs
+            },
+            boardOutline
+        )
+
+        return {
+            ...normalized,
+            denseOverlayArtwork,
+            nativeTextKnockouts: PcbScene3dBuilder.#hasNativeTextKnockouts(
+                fillsWithRegions,
+                normalized,
+                boardOutline
+            ),
+            texts: PcbScene3dBuilder.#selectSilkscreenTexts(
+                primitiveLayers,
+                texts,
+                side
+            ),
+            tracks: normalized.tracks,
+            fills: PcbScene3dDrillCutoutBuilder.clipFills(
+                fillsWithRegions,
+                pads,
+                vias
+            )
+        }
+    }
+
+    /**
+     * Applies optional appearance hints for overlay artwork that carries broad
+     * silkscreen graphics plus dense board-colored linework.
+     * @param {{ fills?: any[], tracks?: any[], arcs?: any[], fillColor?: number, strokeColor?: number }} topSilkscreen
+     * @param {{ fills?: any[], tracks?: any[], arcs?: any[], fillColor?: number, strokeColor?: number }} bottomSilkscreen
+     * @param {{ widthMil?: number, heightMil?: number }} board
+     * @param {{ silkscreenTopColor?: number, silkscreenBottomColor?: number }} appearance3d
+     * @returns {void}
+     */
+    static #applySilkscreenAppearance(
+        topSilkscreen,
+        bottomSilkscreen,
+        board,
+        appearance3d
+    ) {
+        PcbScene3dBuilder.#styleSilkscreenArtwork(
+            topSilkscreen,
+            board,
+            appearance3d.silkscreenTopColor
+        )
+        PcbScene3dBuilder.#styleSilkscreenArtwork(
+            bottomSilkscreen,
+            board,
+            appearance3d.silkscreenBottomColor
+        )
+    }
+
+    /**
+     * Applies silkscreen colors and marks dense overlay art as light filled
+     * areas with app-board-colored strokes.
+     * @param {{ fills?: any[], tracks?: any[], arcs?: any[], fillColor?: number, strokeColor?: number, knockoutColor?: number, denseOverlayArtwork?: boolean }} side
+     * @param {{ widthMil?: number, heightMil?: number }} board
+     * @param {number | undefined} silkscreenColor
+     * @returns {void}
+     */
+    static #styleSilkscreenArtwork(side, board, silkscreenColor) {
+        if (Number.isInteger(silkscreenColor)) {
+            side.strokeColor = silkscreenColor
+        }
+
+        if (
+            !side?.denseOverlayArtwork &&
+            !PcbScene3dBuilder.#isDenseOverlayArtwork(side, board)
+        ) {
+            return
+        }
+
+        side.fillColor = Number.isInteger(silkscreenColor)
+            ? silkscreenColor
+            : PcbScene3dBuilder.#DENSE_OVERLAY_FILL_COLOR
+        side.strokeColor = side.fillColor
+        side.knockoutColor = PcbScene3dBuilder.#DENSE_OVERLAY_KNOCKOUT_COLOR
+    }
+
+    /**
+     * Selects visible side-specific silkscreen texts.
+     * @param {{ layerId: number, name: string }[]} primitiveLayers
+     * @param {{ text?: string, value?: string, x?: number, y?: number, height?: number, strokeWidth?: number, layerCode?: number, layerId?: number, visible?: boolean }[]} texts
+     * @param {'top' | 'bottom'} side
+     * @returns {object[]}
+     */
+    static #selectSilkscreenTexts(primitiveLayers, texts, side) {
+        const layerIds = PcbScene3dBuilder.#resolveSilkscreenLayerIds(
+            primitiveLayers,
+            side
+        )
+
+        return (Array.isArray(texts) ? texts : [])
+            .filter((text) => text?.visible !== false)
+            .filter((text) => layerIds.has(Number(text?.layerId)))
+            .map((text) =>
+                PcbScene3dBuilder.#normalizeSilkscreenText(text, side)
+            )
+    }
+
+    /**
+     * Resolves layer IDs that belong to one overlay side.
+     * @param {{ layerId: number, name: string }[]} primitiveLayers
+     * @param {'top' | 'bottom'} side
+     * @returns {Set<number>}
+     */
+    static #resolveSilkscreenLayerIds(primitiveLayers, side) {
+        const needle = side === 'bottom' ? 'BOTTOM OVERLAY' : 'TOP OVERLAY'
+
+        return new Set(
+            (Array.isArray(primitiveLayers) ? primitiveLayers : [])
+                .filter((layer) =>
+                    String(layer?.name || '')
+                        .trim()
+                        .toUpperCase()
+                        .includes(needle)
+                )
+                .map((layer) => Number(layer.layerId))
+                .filter((layerId) => Number.isInteger(layerId))
+        )
+    }
+
+    /**
+     * Normalizes one Altium overlay text into the runtime stroke-text shape.
+     * @param {{ text?: string, value?: string, x?: number, y?: number, height?: number, strokeWidth?: number, rotation?: number, mirrored?: boolean | number | string, isMirrored?: boolean | number | string, mirrorFlag?: boolean | number | string, Mirrored?: boolean | number | string, IsMirrored?: boolean | number | string, MirrorFlag?: boolean | number | string, layerId?: number }} text
+     * @param {'top' | 'bottom'} side
+     * @returns {object}
+     */
+    static #normalizeSilkscreenText(text, side) {
+        const height = Math.max(Number(text?.height || 0), 1)
+
+        return {
+            ...text,
+            text: String(text?.text ?? text?.value ?? ''),
+            value: String(text?.text ?? text?.value ?? ''),
+            sizeX: height,
+            sizeY:
+                height *
+                PcbScene3dBuilder.#resolveSilkscreenTextWidthRatio(text),
+            thickness: Math.max(Number(text?.strokeWidth || 0), 1),
+            hAlign: 'left',
+            vAlign: 'bottom',
+            mirrored: PcbScene3dBuilder.#resolveSilkscreenTextMirrored(text),
+            side,
+            rotation: PcbScene3dBuilder.#resolveSilkscreenTextRotation(text)
+        }
+    }
+
+    /**
+     * Converts screen-space Altium text rotation for the shared 3D text factories.
+     * @param {{ rotation?: number | string }} text
+     * @returns {number}
+     */
+    static #resolveSilkscreenTextRotation(text) {
+        return PcbScene3dBuilder.#normalizeAngle(
+            360 - Number(text?.rotation || 0)
+        )
+    }
+
+    /**
+     * Checks whether one silkscreen text primitive uses TrueType glyphs.
+     * @param {{ fontTypeName?: string, fontType?: number | string, isTrueType?: boolean }} text
+     * @returns {boolean}
+     */
+    static #isTrueTypeSilkscreenText(text) {
+        const fontTypeName = String(text?.fontTypeName || '').toUpperCase()
+
+        return (
+            text?.isTrueType === true ||
+            Number(text?.fontType) === 1 ||
+            fontTypeName.includes('TRUETYPE')
+        )
+    }
+
+    /**
+     * Resolves the horizontal glyph scale used by the 3D stroke approximation.
+     * @param {{ fontTypeName?: string, fontType?: number | string, isTrueType?: boolean }} text
+     * @returns {number}
+     */
+    static #resolveSilkscreenTextWidthRatio(text) {
+        return PcbScene3dBuilder.#isTrueTypeSilkscreenText(text)
+            ? PcbScene3dBuilder.#TRUETYPE_TEXT_WIDTH_RATIO
+            : 1
+    }
+
+    /**
+     * Resolves Altium's explicit per-text mirror flag.
+     * @param {{ mirrored?: boolean | number | string, isMirrored?: boolean | number | string, mirrorFlag?: boolean | number | string, Mirrored?: boolean | number | string, IsMirrored?: boolean | number | string, MirrorFlag?: boolean | number | string }} text
+     * @returns {boolean}
+     */
+    static #resolveSilkscreenTextMirrored(text) {
+        const value =
+            text?.mirrored ??
+            text?.isMirrored ??
+            text?.mirrorFlag ??
+            text?.Mirrored ??
+            text?.IsMirrored ??
+            text?.MirrorFlag
+
+        if (typeof value === 'boolean') return value
+        if (typeof value === 'number') return value !== 0
+
+        return /^(1|true|yes|y)$/iu.test(String(value ?? '').trim())
+    }
+
+    /**
+     * Detects dense Altium overlay regions that already carry text knockouts
+     * as native fill holes.
+     * @param {any[]} fills
+     * @param {{ tracks?: any[], arcs?: any[] }} primitives
+     * @param {{ widthMil?: number, heightMil?: number }} board
+     * @returns {boolean}
+     */
+    static #hasNativeTextKnockouts(fills, primitives, board) {
+        return (
+            (Boolean(primitives?.denseOverlayArtwork) ||
+                PcbScene3dBuilder.#isDenseOverlayArtwork(
+                    {
+                        fills,
+                        tracks: primitives?.tracks,
+                        arcs: primitives?.arcs
+                    },
+                    board
+                )) &&
+            (Array.isArray(fills) ? fills : []).some(
+                (fill) => Array.isArray(fill?.holes) && fill.holes.length > 0
+            )
+        )
+    }
+
+    /**
+     * Detects overlay art from structural density rather than file-specific
+     * labels or source identifiers.
+     * @param {{ fills?: any[], tracks?: any[], arcs?: any[] }} side
+     * @param {{ widthMil?: number, heightMil?: number }} board
+     * @returns {boolean}
+     */
+    static #isDenseOverlayArtwork(side, board) {
+        const strokeCount =
+            (Array.isArray(side?.tracks) ? side.tracks.length : 0) +
+            (Array.isArray(side?.arcs) ? side.arcs.length : 0)
+
+        return (
+            strokeCount >= PcbScene3dBuilder.#DENSE_OVERLAY_MIN_TRACK_COUNT &&
+            PcbScene3dBuilder.#maxFillAreaRatio(side?.fills, board) >=
+                PcbScene3dBuilder.#DENSE_OVERLAY_MIN_REGION_AREA_RATIO
+        )
+    }
+
+    /**
+     * Resolves the largest fill-to-board bounding-box area ratio.
+     * @param {any[] | undefined} fills
+     * @param {{ widthMil?: number, heightMil?: number }} board
+     * @returns {number}
+     */
+    static #maxFillAreaRatio(fills, board) {
+        const boardArea =
+            Math.max(Number(board?.widthMil || 0), 0) *
+            Math.max(Number(board?.heightMil || 0), 0)
+        if (!boardArea) {
+            return 0
+        }
+
+        return (Array.isArray(fills) ? fills : []).reduce((maxRatio, fill) => {
+            const bounds = PcbScene3dBuilder.#resolveFillBounds(fill)
+            if (!bounds) {
+                return maxRatio
+            }
+
+            const fillArea =
+                Math.max(bounds.maxX - bounds.minX, 0) *
+                Math.max(bounds.maxY - bounds.minY, 0)
+
+            return Math.max(maxRatio, fillArea / boardArea)
+        }, 0)
+    }
+
+    /**
+     * Resolves rough authored bounds for one rectangular or polygon fill.
+     * @param {{ x1?: number, y1?: number, x2?: number, y2?: number, points?: { x?: number, y?: number }[] }} fill
+     * @returns {{ minX: number, minY: number, maxX: number, maxY: number } | null}
+     */
+    static #resolveFillBounds(fill) {
+        const points = Array.isArray(fill?.points)
+            ? fill.points
+                  .map((point) => ({
+                      x: Number(point?.x),
+                      y: Number(point?.y)
+                  }))
+                  .filter(
+                      (point) =>
+                          Number.isFinite(point.x) && Number.isFinite(point.y)
+                  )
+            : [
+                  { x: Number(fill?.x1), y: Number(fill?.y1) },
+                  { x: Number(fill?.x2), y: Number(fill?.y2) }
+              ].filter(
+                  (point) =>
+                      Number.isFinite(point.x) && Number.isFinite(point.y)
+              )
+
+        if (points.length < 2) {
+            return null
+        }
+
+        const xs = points.map((point) => point.x)
+        const ys = points.map((point) => point.y)
+
+        return {
+            minX: Math.min(...xs),
+            minY: Math.min(...ys),
+            maxX: Math.max(...xs),
+            maxY: Math.max(...ys)
+        }
+    }
+
+    /**
+     * Resolves region primitives that can contribute filled silkscreen artwork.
+     * @param {{ regions?: object[], shapeBasedRegions?: object[] }} pcb
+     * @returns {object[]}
+     */
+    static #resolveSilkscreenRegions(pcb) {
+        if (
+            Array.isArray(pcb?.shapeBasedRegions) &&
+            pcb.shapeBasedRegions.length
+        ) {
+            return pcb.shapeBasedRegions.map((region) => ({
+                ...region,
+                isShapeBased: true
+            }))
+        }
+
+        return Array.isArray(pcb?.regions) ? pcb.regions : []
     }
 
     /**

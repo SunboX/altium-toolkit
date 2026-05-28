@@ -6,6 +6,7 @@ import { SchematicSvgUtils } from './SchematicSvgUtils.mjs'
 import { SchematicColorResolver } from './SchematicColorResolver.mjs'
 
 const { escapeHtml, formatNumber, projectSchematicY } = SchematicSvgUtils
+const MISSING_IMAGE_WRAP_SAFETY_FACTOR = 0.96
 
 /**
  * Renders normalized schematic image placements.
@@ -13,7 +14,7 @@ const { escapeHtml, formatNumber, projectSchematicY } = SchematicSvgUtils
 export class SchematicImageRenderer {
     /**
      * Builds markup for embedded schematic images and unresolved placeholders.
-     * @param {{ x: number, y: number, cornerX: number, cornerY: number, mimeType?: string, dataBase64?: string, diagnosticState?: string, keepAspect?: boolean }[]} images
+     * @param {{ x: number, y: number, cornerX: number, cornerY: number, fileName?: string, mimeType?: string, dataBase64?: string, diagnosticState?: string, keepAspect?: boolean }[]} images
      * @param {number} sheetHeight
      * @returns {string}
      */
@@ -63,20 +64,16 @@ export class SchematicImageRenderer {
 
     /**
      * Builds one placeholder frame when an image payload is unavailable.
-     * @param {{ x: number, y: number, cornerX: number, cornerY: number }} image
+     * @param {{ x: number, y: number, cornerX: number, cornerY: number, fileName?: string }} image
      * @param {number} sheetHeight
      * @returns {string}
      */
     static #buildPlaceholderMarkup(image, sheetHeight) {
         const bounds = SchematicImageRenderer.#resolveBounds(image, sheetHeight)
-        const stroke = SchematicColorResolver.resolveColor(
-            '#c0c0c0',
-            '--schematic-note-border-color'
-        )
 
         return (
             '<g class="schematic-image-placeholder">' +
-            '<rect x="' +
+            '<svg x="' +
             formatNumber(bounds.x) +
             '" y="' +
             formatNumber(bounds.y) +
@@ -84,33 +81,138 @@ export class SchematicImageRenderer {
             formatNumber(bounds.width) +
             '" height="' +
             formatNumber(bounds.height) +
-            '" fill="none" stroke="' +
-            escapeHtml(stroke) +
-            '" stroke-width="1" />' +
-            '<line x1="' +
-            formatNumber(bounds.x) +
-            '" y1="' +
-            formatNumber(bounds.y) +
-            '" x2="' +
-            formatNumber(bounds.x + bounds.width) +
-            '" y2="' +
-            formatNumber(bounds.y + bounds.height) +
-            '" stroke="' +
-            escapeHtml(stroke) +
-            '" stroke-width="1" />' +
-            '<line x1="' +
-            formatNumber(bounds.x) +
-            '" y1="' +
-            formatNumber(bounds.y + bounds.height) +
-            '" x2="' +
-            formatNumber(bounds.x + bounds.width) +
-            '" y2="' +
-            formatNumber(bounds.y) +
-            '" stroke="' +
-            escapeHtml(stroke) +
-            '" stroke-width="1" />' +
+            '" overflow="hidden">' +
+            SchematicImageRenderer.#buildMissingImageMessageMarkup(
+                image,
+                bounds
+            ) +
+            '</svg>' +
             '</g>'
         )
+    }
+
+    /**
+     * Builds the visible message shown by Altium for unavailable image files.
+     * @param {{ fileName?: string }} image
+     * @param {{ x: number, y: number, width: number, height: number }} bounds
+     * @returns {string}
+     */
+    static #buildMissingImageMessageMarkup(image, bounds) {
+        const padding = Math.min(6, Math.max(bounds.width * 0.08, 2))
+        const fontSize = Math.min(8, Math.max(bounds.height / 18, 5))
+        const lineHeight = fontSize * 1.18
+        const usableWidth = Math.max(bounds.width - padding * 2, 1)
+        const lines = SchematicImageRenderer.#buildMissingImageMessageLines(
+            image.fileName,
+            usableWidth * MISSING_IMAGE_WRAP_SAFETY_FACTOR,
+            fontSize
+        )
+        const textColor = SchematicColorResolver.resolveColor(
+            '#2c3134',
+            '--schematic-text-color'
+        )
+        const startX = padding
+        const startY = padding + fontSize
+
+        return (
+            '<text class="schematic-image-placeholder-message" x="' +
+            formatNumber(startX) +
+            '" y="' +
+            formatNumber(startY) +
+            '" fill="' +
+            escapeHtml(textColor) +
+            '" font-family="Times New Roman" font-size="' +
+            formatNumber(fontSize) +
+            '">' +
+            lines
+                .map(
+                    (line, index) =>
+                        '<tspan x="' +
+                        formatNumber(startX) +
+                        '" dy="' +
+                        formatNumber(index === 0 ? 0 : lineHeight) +
+                        '">' +
+                        escapeHtml(line) +
+                        '</tspan>'
+                )
+                .join('') +
+            '</text>'
+        )
+    }
+
+    /**
+     * Wraps one missing-image message to the image placeholder width.
+     * @param {string | undefined} fileName
+     * @param {number} width
+     * @param {number} fontSize
+     * @returns {string[]}
+     */
+    static #buildMissingImageMessageLines(fileName, width, fontSize) {
+        return [
+            'Cannot open file',
+            ...SchematicImageRenderer.#wrapMissingImageFileName(
+                fileName || 'image file',
+                width,
+                fontSize
+            ),
+            '. File does not exist.'
+        ]
+    }
+
+    /**
+     * Wraps file names using conservative estimated rendered glyph widths.
+     * @param {string} fileName
+     * @param {number} width
+     * @param {number} fontSize
+     * @returns {string[]}
+     */
+    static #wrapMissingImageFileName(fileName, width, fontSize) {
+        const maxWidth = Math.max(Number(width || 0), 1)
+        const value = String(fileName || '').trim()
+        const lines = []
+        let line = ''
+        let lineWidth = 0
+
+        for (const character of value) {
+            const characterWidth =
+                SchematicImageRenderer.#estimateMissingImageCharacterWidth(
+                    character,
+                    fontSize
+                )
+
+            if (line && lineWidth + characterWidth > maxWidth) {
+                lines.push(line)
+                line = character
+                lineWidth = characterWidth
+                continue
+            }
+
+            line += character
+            lineWidth += characterWidth
+        }
+
+        if (line) {
+            lines.push(line)
+        }
+
+        return lines.length ? lines : ['image file']
+    }
+
+    /**
+     * Estimates one placeholder glyph width for Times-like schematic text.
+     * @param {string} character
+     * @param {number} fontSize
+     * @returns {number}
+     */
+    static #estimateMissingImageCharacterWidth(character, fontSize) {
+        if (/[^\x00-\x7F]/u.test(character)) return fontSize
+        if (/[A-Z]/.test(character)) return fontSize * 0.62
+        if (/[a-z]/.test(character)) return fontSize * 0.45
+        if (/[0-9]/.test(character)) return fontSize * 0.5
+        if (/[\\/]/.test(character)) return fontSize * 0.32
+        if (/[.:\-_]/.test(character)) return fontSize * 0.28
+
+        return fontSize * 0.35
     }
 
     /**

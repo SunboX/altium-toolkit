@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { ParserUtils } from './ParserUtils.mjs'
+import { SchematicPinDesignatorInferer } from './SchematicPinDesignatorInferer.mjs'
 
 /**
  * Helpers for normalized schematic pins, ports, and crosses.
@@ -395,31 +396,11 @@ export class SchematicPinParser {
     /**
      * Expands a schematic polyline record into drawable line segments.
      * @param {Record<string, string | string[]>} fields
-     * @param {{ isBus?: boolean }} [options]
-     * @returns {{ x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle: number, isBus?: boolean }[]}
+     * @param {{ isBus?: boolean, recordType?: string }} [options]
+     * @returns {{ x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle: number, isBus?: boolean, recordType?: string }[]}
      */
     static parseSchematicPolyline(fields, options = {}) {
-        const locationCount = ParserUtils.parseNumericField(
-            fields,
-            'LocationCount'
-        )
-
-        if (locationCount === null || locationCount < 2) {
-            return []
-        }
-
-        const points = []
-
-        for (let index = 1; index <= locationCount; index += 1) {
-            const x = ParserUtils.parseNumericField(fields, 'X' + index)
-            const y = ParserUtils.parseNumericField(fields, 'Y' + index)
-
-            if (x === null || y === null) {
-                break
-            }
-
-            points.push({ x, y })
-        }
+        const points = SchematicPinParser.#collectSchematicPointList(fields)
 
         const segments = []
         const lineStyle = SchematicPinParser.#resolveSchematicLineStyle(fields)
@@ -436,7 +417,8 @@ export class SchematicPinParser {
                 color: ParserUtils.toColor(fields.Color, '#a44a1b'),
                 width: ParserUtils.parseNumericField(fields, 'LineWidth') || 1,
                 lineStyle,
-                isBus: options.isBus === true ? true : undefined
+                isBus: options.isBus === true ? true : undefined,
+                recordType: options.recordType || undefined
             })
         }
 
@@ -449,27 +431,7 @@ export class SchematicPinParser {
      * @returns {{ x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle: number }[]}
      */
     static parseSchematicPolygon(fields) {
-        const locationCount = ParserUtils.parseNumericField(
-            fields,
-            'LocationCount'
-        )
-
-        if (locationCount === null || locationCount < 2) {
-            return []
-        }
-
-        const points = []
-
-        for (let index = 1; index <= locationCount; index += 1) {
-            const x = ParserUtils.parseNumericField(fields, 'X' + index)
-            const y = ParserUtils.parseNumericField(fields, 'Y' + index)
-
-            if (x === null || y === null) {
-                break
-            }
-
-            points.push({ x, y })
-        }
+        const points = SchematicPinParser.#collectSchematicPointList(fields)
 
         if (points.length < 2) {
             return []
@@ -528,17 +490,81 @@ export class SchematicPinParser {
     }
 
     /**
+     * Collects a schematic point list, carrying forward a missing coordinate
+     * axis from the preceding point when Altium omitted an unchanged value.
+     * @param {Record<string, string | string[]>} fields
+     * @returns {{ x: number, y: number }[]}
+     */
+    static #collectSchematicPointList(fields) {
+        const locationCount = ParserUtils.parseNumericField(
+            fields,
+            'LocationCount'
+        )
+
+        if (locationCount === null || locationCount < 2) {
+            return []
+        }
+
+        const points = []
+        let previousX = null
+        let previousY = null
+
+        for (let index = 1; index <= locationCount; index += 1) {
+            const x = ParserUtils.parseNumericField(fields, 'X' + index)
+            const y = ParserUtils.parseNumericField(fields, 'Y' + index)
+
+            if (x === null && y === null) {
+                break
+            }
+
+            const pointX = x === null ? previousX : x
+            const pointY = y === null ? previousY : y
+
+            if (pointX === null || pointY === null) {
+                break
+            }
+
+            points.push({ x: pointX, y: pointY })
+            previousX = pointX
+            previousY = pointY
+        }
+
+        return points
+    }
+
+    /**
      * Deduces the visible pins for one schematic symbol owner.
      * @param {{ x: number, y: number, length: number, conglomerate?: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, ownerIndex: string }[]} pins
      * @returns {{ x: number, y: number, length: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color: string, labelColor: string, labelMode: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', ownerIndex: string }[]}
      */
     static #normalizeSchematicPinGroup(pins) {
         const deduped = SchematicPinParser.#dedupeSchematicPins(pins)
+        const inferredSequentialDesignators =
+            SchematicPinDesignatorInferer.inferSequentialCompactFourPinDesignators(
+                deduped
+            )
+        const inferredTwoColumnDesignators = inferredSequentialDesignators
+            ? null
+            : SchematicPinDesignatorInferer.inferCompactTwoColumnDesignators(
+                  deduped
+              )
+        const inferredSingleColumnDesignators =
+            inferredSequentialDesignators || inferredTwoColumnDesignators
+                ? null
+                : SchematicPinDesignatorInferer.inferSingleColumnDesignators(
+                      deduped
+                  )
+        const normalizedPins =
+            inferredSequentialDesignators ||
+            inferredTwoColumnDesignators ||
+            inferredSingleColumnDesignators ||
+            deduped
         const names = [
-            ...new Set(deduped.map((pin) => pin.name).filter(Boolean))
+            ...new Set(normalizedPins.map((pin) => pin.name).filter(Boolean))
         ]
-        const orientationCount = new Set(deduped.map((pin) => pin.orientation))
-            .size
+        const orientationCount = new Set(
+            normalizedPins.map((pin) => pin.orientation)
+        ).size
         const allPassive = names.every((name) =>
             SchematicPinParser.#isPassivePinName(name)
         )
@@ -546,15 +572,20 @@ export class SchematicPinParser {
             (name) => !SchematicPinParser.#isPassivePinName(name)
         )
         const allNumberedPins =
-            deduped.length > 0 &&
-            deduped.every(
+            normalizedPins.length > 0 &&
+            normalizedPins.every(
                 (pin) =>
                     /^\d+$/.test(String(pin.designator || '').trim()) &&
                     (!pin.name || /^\d+$/.test(String(pin.name || '').trim()))
             )
         let labelMode = 'name-and-number'
 
-        if (SchematicPinParser.#isDenseTwoSidedHorizontal4850Family(deduped)) {
+        if (
+            inferredSequentialDesignators ||
+            SchematicPinParser.#isDenseTwoSidedHorizontal4850Family(
+                normalizedPins
+            )
+        ) {
             labelMode = 'number-only'
         }
 
@@ -562,35 +593,84 @@ export class SchematicPinParser {
             // Keep dense multi-side connector symbols whose contacts are only
             // identified by numbers; dropping them loses both pin numbers and
             // any power-port attachment geometry recovered from those pins.
-            if (deduped.length > 4 && !allNumberedPins) {
+            if (normalizedPins.length > 4 && !allNumberedPins) {
                 return []
             }
 
             labelMode = 'number-only'
         }
 
-        if (allPassive && deduped.length <= 2) {
+        if (allPassive && normalizedPins.length <= 2) {
             labelMode = SchematicPinParser.#isCanonicalPassiveTwoPinGroup(
-                deduped
+                normalizedPins
             )
                 ? 'hidden'
                 : 'number-only'
+        } else if (
+            SchematicPinParser.#isOwnerDrawnTerminalGlyphGroup(
+                normalizedPins,
+                semanticNames,
+                orientationCount
+            )
+        ) {
+            labelMode = 'hidden'
         } else if (!semanticNames.length && orientationCount <= 2) {
             labelMode = 'number-only'
         } else if (
             semanticNames.length >= Math.max(names.length - 1, 3) &&
             orientationCount <= 2 &&
-            deduped.length <= 4
+            normalizedPins.length <= 4
         ) {
             labelMode = 'name-only'
         }
 
-        return deduped.map(({ conglomerate, ...pin }) => ({
+        return normalizedPins.map(({ conglomerate, ...pin }) => ({
             ...pin,
             color: '#0000ff',
             labelColor: '#1f1f1f',
             labelMode
         }))
+    }
+
+    /**
+     * Returns true when a compact multi-side owner has transistor-like terminal
+     * letters that are part of the drawn symbol body, not external pin labels.
+     * @param {{ designator: string, name: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
+     * @param {string[]} semanticNames
+     * @param {number} orientationCount
+     * @returns {boolean}
+     */
+    static #isOwnerDrawnTerminalGlyphGroup(
+        pins,
+        semanticNames,
+        orientationCount
+    ) {
+        if (
+            pins.length < 3 ||
+            pins.length > 4 ||
+            orientationCount < 3 ||
+            pins.some((pin) => String(pin.designator || '').trim())
+        ) {
+            return false
+        }
+
+        if (semanticNames.length !== pins.length) {
+            return false
+        }
+
+        return semanticNames.every((name) =>
+            SchematicPinParser.#isTransistorTerminalName(name)
+        )
+    }
+
+    /**
+     * Returns true for one-letter terminal glyphs commonly drawn inside
+     * transistor-style schematic symbols.
+     * @param {string} name
+     * @returns {boolean}
+     */
+    static #isTransistorTerminalName(name) {
+        return /^[BCDEGS]$/i.test(String(name || '').trim())
     }
 
     /**

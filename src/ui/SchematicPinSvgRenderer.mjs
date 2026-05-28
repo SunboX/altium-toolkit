@@ -49,7 +49,6 @@ export class SchematicPinSvgRenderer {
         const labelMode = pin.labelMode || 'name-and-number'
         const outerMarkerStyle =
             SchematicPinSvgRenderer.#resolveSchematicOuterPinMarkerStyle(pin)
-        const usesOuterMarker = outerMarkerStyle !== null
         const rotateTopNumber =
             pin.orientation === 'top' &&
             rotatedVerticalNumberOwners.has(String(pin.ownerIndex || ''))
@@ -65,7 +64,10 @@ export class SchematicPinSvgRenderer {
         if (pin.orientation === 'left') {
             if (labelMode !== 'hidden' && labelMode !== 'name-only') {
                 const defaultNumberX =
-                    geometry.bodyX - (usesOuterMarker ? 8 : 2)
+                    geometry.bodyX -
+                    SchematicPinSvgRenderer.#resolveHorizontalPinNumberClearance(
+                        outerMarkerStyle
+                    )
                 const numberX = hasExplicitOwnerPinName
                     ? SchematicOwnerPinLabelLayout.resolveExplicitOwnerPinNumberX(
                           pin,
@@ -110,7 +112,10 @@ export class SchematicPinSvgRenderer {
         if (pin.orientation === 'right') {
             if (labelMode !== 'hidden' && labelMode !== 'name-only') {
                 const defaultNumberX =
-                    geometry.bodyX + (usesOuterMarker ? 8 : 2)
+                    geometry.bodyX +
+                    SchematicPinSvgRenderer.#resolveHorizontalPinNumberClearance(
+                        outerMarkerStyle
+                    )
                 const numberX = hasExplicitOwnerPinName
                     ? SchematicOwnerPinLabelLayout.resolveExplicitOwnerPinNumberX(
                           pin,
@@ -355,6 +360,23 @@ export class SchematicPinSvgRenderer {
                 .join('') +
             '</g>'
         )
+    }
+
+    /**
+     * Returns the horizontal pin-number clearance needed by an authored marker.
+     * @param {'single-in' | 'single-out' | 'double' | null} markerStyle
+     * @returns {number}
+     */
+    static #resolveHorizontalPinNumberClearance(markerStyle) {
+        switch (markerStyle) {
+            case 'double':
+                return 17
+            case 'single-in':
+            case 'single-out':
+                return 8
+            default:
+                return 2
+        }
     }
 
     /**

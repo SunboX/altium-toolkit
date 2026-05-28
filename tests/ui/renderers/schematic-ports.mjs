@@ -344,6 +344,56 @@ test('renderSchematicSvg prefers explicit power-port direction over wire inferen
 })
 
 /**
+ * Verifies upward rail-port labels stay clear of nearby horizontal net
+ * segments while keeping the recovered schematic color mapping.
+ */
+test('renderSchematicSvg offsets upward rail labels away from parallel wires', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Power label clearance' },
+        schematic: {
+            sheet: { width: 200, height: 100 },
+            lines: [
+                {
+                    x1: 120,
+                    y1: 50,
+                    x2: 150,
+                    y2: 50,
+                    color: '#000080',
+                    width: 1
+                },
+                { x1: 100, y1: 70, x2: 190, y2: 70, color: '#000080', width: 1 }
+            ],
+            texts: [
+                {
+                    x: 150,
+                    y: 50,
+                    text: 'AURA_3V3',
+                    color: '#800000',
+                    hidden: false,
+                    recordType: '17',
+                    style: 2,
+                    fontSize: 10,
+                    fontFamily: 'Times New Roman',
+                    fontWeight: 400,
+                    rotation: 0,
+                    powerPortDirection: 'up',
+                    anchor: 'middle'
+                }
+            ],
+            components: [],
+            pins: []
+        }
+    })
+
+    assert.match(markup, /x1="150" y1="50" x2="150" y2="38"/)
+    assert.match(
+        markup,
+        /<text class="schematic-power-port-label" x="150" y="43" fill="var\(--schematic-power-color\)" text-anchor="middle" font-size="9"/
+    )
+    assert.doesNotMatch(markup, /schematic-power-port-label" x="150" y="34"/)
+})
+
+/**
  * Verifies CSS does not override recovered schematic text metrics.
  */
 test('schematic stylesheet leaves typography to recovered SVG attributes', async () => {

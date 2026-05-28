@@ -347,6 +347,87 @@ test('renderSchematicSvg renders junction dots only for connected wire tees', ()
 })
 
 /**
+ * Verifies title-block and other graphic line crossings do not synthesize
+ * electrical junction dots.
+ */
+test('renderSchematicSvg skips junction dots on graphic table linework', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Graphic table schematic' },
+        schematic: {
+            sheet: { width: 180, height: 140 },
+            lines: [
+                {
+                    x1: 100,
+                    y1: 40,
+                    x2: 140,
+                    y2: 40,
+                    color: '#a44a1b',
+                    width: 2,
+                    recordType: '6'
+                },
+                {
+                    x1: 100,
+                    y1: 70,
+                    x2: 140,
+                    y2: 70,
+                    color: '#a44a1b',
+                    width: 2,
+                    recordType: '6'
+                },
+                {
+                    x1: 100,
+                    y1: 30,
+                    x2: 100,
+                    y2: 90,
+                    color: '#a44a1b',
+                    width: 2,
+                    recordType: '6'
+                },
+                {
+                    x1: 20,
+                    y1: 110,
+                    x2: 60,
+                    y2: 110,
+                    color: '#000080',
+                    width: 1,
+                    recordType: '27'
+                },
+                {
+                    x1: 60,
+                    y1: 110,
+                    x2: 90,
+                    y2: 110,
+                    color: '#000080',
+                    width: 1,
+                    recordType: '27'
+                },
+                {
+                    x1: 60,
+                    y1: 90,
+                    x2: 60,
+                    y2: 110,
+                    color: '#000080',
+                    width: 1,
+                    recordType: '27'
+                }
+            ],
+            texts: [],
+            components: [],
+            pins: [],
+            ports: [],
+            crosses: []
+        }
+    })
+
+    assert.doesNotMatch(markup, /class="schematic-junction" cx="100" cy="70"/)
+    assert.match(
+        markup,
+        /<circle class="schematic-junction" cx="60" cy="30" r="2" fill="var\(--schematic-default-ink-color\)" \/>/
+    )
+    assert.equal((markup.match(/class="schematic-junction"/g) || []).length, 1)
+})
+
+/**
  * Verifies schematic SVG output projects document-space Y into screen-space Y
  * and renders schematic primitives around the sheet.
  */
@@ -635,6 +716,72 @@ test('renderSchematicSvg rotates top crystal pin numbers for four-pin owners', (
     assert.match(
         markup,
         /text class="schematic-pin-number" x="48" y="29" fill="var\(--schematic-text-color\)" text-anchor="middle" font-size="9" font-family="Times New Roman" font-weight="400" transform="rotate\(-90 48 29\)">1</
+    )
+})
+
+/**
+ * Verifies compact number-only pins with authored double markers place their
+ * numbers outside the marker glyph instead of overlapping either triangle.
+ */
+test('renderSchematicSvg clears double outer pin markers from pin numbers', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Compact marker schematic' },
+        schematic: {
+            sheet: {
+                width: 220,
+                height: 140,
+                fonts: {
+                    1: {
+                        size: 10,
+                        family: 'Times New Roman',
+                        bold: false,
+                        rotation: 0
+                    }
+                }
+            },
+            lines: [],
+            texts: [],
+            components: [],
+            pins: [
+                {
+                    x: 110,
+                    y: 80,
+                    length: 20,
+                    name: 'A',
+                    designator: '1',
+                    orientation: 'left',
+                    symbolOuter: 34,
+                    color: '#0000ff',
+                    labelColor: '#1f1f1f',
+                    labelMode: 'number-only',
+                    ownerIndex: 'P42'
+                },
+                {
+                    x: 150,
+                    y: 80,
+                    length: 20,
+                    name: 'B',
+                    designator: '2',
+                    orientation: 'right',
+                    symbolOuter: 34,
+                    color: '#0000ff',
+                    labelColor: '#1f1f1f',
+                    labelMode: 'number-only',
+                    ownerIndex: 'P42'
+                }
+            ],
+            ports: [],
+            crosses: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /<polygon points="104,57 104,63 110,60"[\s\S]+<polygon points="101,57 101,63 95,60"[\s\S]+<text class="schematic-pin-number" x="93" y="59" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400">1<\/text>/
+    )
+    assert.match(
+        markup,
+        /<polygon points="156,57 156,63 150,60"[\s\S]+<polygon points="159,57 159,63 165,60"[\s\S]+<text class="schematic-pin-number" x="167" y="59" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">2<\/text>/
     )
 })
 
