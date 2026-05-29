@@ -6,6 +6,8 @@ import { PcbEdgeFacingGlyphNormalizer } from './PcbEdgeFacingGlyphNormalizer.mjs
 import { PcbScene3dDrillCutoutBuilder } from './PcbScene3dDrillCutoutBuilder.mjs'
 import { PcbFootprintPrimitiveSelector } from './PcbFootprintPrimitiveSelector.mjs'
 import { PcbScene3dPackages } from './PcbScene3dPackages.mjs'
+import { PcbScene3dPlacementSideResolver } from './PcbScene3dPlacementSideResolver.mjs'
+import { PcbScene3dTextBoxLayoutResolver } from './PcbScene3dTextBoxLayoutResolver.mjs'
 
 /**
  * Builds deterministic 3D scene data from the normalized PCB model.
@@ -114,6 +116,7 @@ export class PcbScene3dBuilder {
                     PcbScene3dBuilder.#buildExternalPlacement(
                         componentBody,
                         bodyMatches[index],
+                        components,
                         board,
                         thicknessMil,
                         modelRegistry
@@ -195,6 +198,7 @@ export class PcbScene3dBuilder {
      * body metadata.
      * @param {{ modelId?: string, checksum?: number | null, embedded?: boolean, name?: string, identifier?: string, layer?: string, positionMil?: { x?: number, y?: number }, rotationDeg?: number, modelRotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number }} componentBody
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null } | null} matchedComponent
+     * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string }[]} components
      * @param {{ centerX: number, centerY: number }} board
      * @param {number} thicknessMil
      * @param {{ resolveComponentBodyModel?: (componentBody: any) => { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } | null } | null} modelRegistry
@@ -203,6 +207,7 @@ export class PcbScene3dBuilder {
     static #buildExternalPlacement(
         componentBody,
         matchedComponent,
+        components,
         board,
         thicknessMil,
         modelRegistry
@@ -220,9 +225,10 @@ export class PcbScene3dBuilder {
             return null
         }
 
-        const mountSide = PcbScene3dBuilder.#resolveExternalPlacementMountSide(
+        const mountSide = PcbScene3dPlacementSideResolver.resolvePlacementSide(
             componentBody,
-            matchedComponent
+            matchedComponent,
+            components
         )
         const halfBoardThickness = thicknessMil / 2
         const sourcePosition =
@@ -327,7 +333,9 @@ export class PcbScene3dBuilder {
         const groupedBodyIndexes = new Map()
         componentBodies.forEach((componentBody, bodyIndex) => {
             const groupKey =
-                PcbScene3dBuilder.#resolveBodyGroupKey(componentBody)
+                PcbScene3dPlacementSideResolver.resolveBodyGroupKey(
+                    componentBody
+                )
             if (!groupedBodyIndexes.has(groupKey)) {
                 groupedBodyIndexes.set(groupKey, [])
             }
@@ -355,7 +363,7 @@ export class PcbScene3dBuilder {
                             bodyIndexes.includes(
                                 matches.indexOf(components[componentIndex])
                             )) &&
-                        PcbScene3dBuilder.#scoreBodyComponentAffinity(
+                        PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
                             referenceBody,
                             component
                         ) > 0
@@ -401,7 +409,9 @@ export class PcbScene3dBuilder {
 
         for (const componentBody of componentBodies) {
             const groupKey =
-                PcbScene3dBuilder.#resolveBodyGroupKey(componentBody)
+                PcbScene3dPlacementSideResolver.resolveBodyGroupKey(
+                    componentBody
+                )
             bodyGroupCounts.set(
                 groupKey,
                 (bodyGroupCounts.get(groupKey) || 0) + 1
@@ -416,7 +426,7 @@ export class PcbScene3dBuilder {
                 groupKey,
                 components.filter(
                     (component) =>
-                        PcbScene3dBuilder.#scoreBodyComponentAffinity(
+                        PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
                             componentBody,
                             component
                         ) > 0
@@ -450,7 +460,7 @@ export class PcbScene3dBuilder {
         }
 
         if (
-            PcbScene3dBuilder.#scoreBodyComponentAffinity(
+            PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
                 componentBody,
                 component
             ) <= 0
@@ -458,7 +468,8 @@ export class PcbScene3dBuilder {
             return false
         }
 
-        const groupKey = PcbScene3dBuilder.#resolveBodyGroupKey(componentBody)
+        const groupKey =
+            PcbScene3dPlacementSideResolver.resolveBodyGroupKey(componentBody)
         const bodyCount = matchContext.bodyGroupCounts.get(groupKey) || 0
         const candidateCount =
             matchContext.candidateComponentCounts.get(groupKey) || 0
@@ -633,40 +644,6 @@ export class PcbScene3dBuilder {
             x: Number(componentBody?.positionMil?.x || 0),
             y: Number(componentBody?.positionMil?.y || 0)
         }
-    }
-
-    /**
-     * Resolves which board side one explicit model should mount on.
-     * @param {{ layer?: string }} componentBody
-     * @param {{ layer?: string } | null} matchedComponent
-     * @returns {'top' | 'bottom'}
-     */
-    static #resolveExternalPlacementMountSide(componentBody, matchedComponent) {
-        const bodySide = PcbScene3dBuilder.#resolveMechanicalLayerSide(
-            componentBody?.layer
-        )
-        if (bodySide) {
-            return bodySide
-        }
-
-        return String(matchedComponent?.layer || 'TOP').toUpperCase() ===
-            'BOTTOM'
-            ? 'bottom'
-            : 'top'
-    }
-
-    /**
-     * Resolves a common Altium top/bottom mechanical layer pair.
-     * @param {string | undefined} layer
-     * @returns {'top' | 'bottom' | null}
-     */
-    static #resolveMechanicalLayerSide(layer) {
-        const match = String(layer || '').match(/^MECHANICAL\s*(\d+)$/i)
-        if (!match) {
-            return null
-        }
-
-        return Number(match[1]) % 2 === 0 ? 'bottom' : 'top'
     }
 
     /**
@@ -879,9 +856,11 @@ export class PcbScene3dBuilder {
      */
     static #normalizeSilkscreenText(text, side) {
         const height = Math.max(Number(text?.height || 0), 1)
+        const textBox = PcbScene3dTextBoxLayoutResolver.resolve(text)
 
         return {
             ...text,
+            ...(textBox ? { textBox } : {}),
             text: String(text?.text ?? text?.value ?? ''),
             value: String(text?.text ?? text?.value ?? ''),
             sizeX: height,
@@ -1160,85 +1139,6 @@ export class PcbScene3dBuilder {
     }
 
     /**
-     * Resolves the grouping key for repeated component-body matching.
-     * @param {{ modelId?: string, name?: string, identifier?: string }} componentBody
-     * @returns {string}
-     */
-    static #resolveBodyGroupKey(componentBody) {
-        return PcbScene3dBuilder.#normalizeLookupToken(
-            componentBody?.modelId ||
-                componentBody?.name ||
-                componentBody?.identifier
-        )
-    }
-
-    /**
-     * Scores how strongly one component record appears to belong to one body
-     * record based on shared model/footprint tokens.
-     * @param {{ name?: string, identifier?: string }} componentBody
-     * @param {{ pattern?: string, source?: string, modelPath?: string }} component
-     * @returns {number}
-     */
-    static #scoreBodyComponentAffinity(componentBody, component) {
-        const bodyTokens = PcbScene3dBuilder.#collectMeaningfulTokens([
-            componentBody?.identifier,
-            String(componentBody?.name || '').replace(/\.[^.]+$/, '')
-        ])
-        const componentTokens = PcbScene3dBuilder.#collectMeaningfulTokens([
-            component?.pattern,
-            component?.source,
-            component?.modelPath
-        ])
-        let score = 0
-
-        bodyTokens.forEach((token) => {
-            if (componentTokens.has(token)) {
-                score += token.length
-            }
-        })
-
-        return score
-    }
-
-    /**
-     * Collects normalized model tokens from free-form strings.
-     * @param {(string | undefined)[]} values
-     * @returns {Set<string>}
-     */
-    static #collectMeaningfulTokens(values) {
-        const tokens = new Set()
-
-        ;(Array.isArray(values) ? values : []).forEach((value) => {
-            String(value || '')
-                .toLowerCase()
-                .split(/[^a-z0-9]+/g)
-                .forEach((fragment) => {
-                    ;(fragment.match(/[a-z]+|\d+/g) || []).forEach((token) => {
-                        if (PcbScene3dBuilder.#isMeaningfulToken(token)) {
-                            tokens.add(token)
-                        }
-                    })
-                })
-        })
-
-        return tokens
-    }
-
-    /**
-     * Returns true when one normalized token carries useful model identity.
-     * @param {string} token
-     * @returns {boolean}
-     */
-    static #isMeaningfulToken(token) {
-        return (
-            String(token || '').length >= 2 &&
-            !new Set(['con', 'step', 'stp', 'model', 'default', 'black']).has(
-                String(token || '')
-            )
-        )
-    }
-
-    /**
      * Returns true when one unresolved body anchor still lies close enough to
      * the board envelope to be renderable without a component match.
      * @param {{ positionMil?: { x?: number, y?: number } }} componentBody
@@ -1256,17 +1156,6 @@ export class PcbScene3dBuilder {
             Number(board?.minY || 0) + Number(board?.heightMil || 0) + 600
 
         return bodyX >= minX && bodyX <= maxX && bodyY >= minY && bodyY <= maxY
-    }
-
-    /**
-     * Normalizes one lookup token for repeated-model grouping.
-     * @param {string | undefined} value
-     * @returns {string}
-     */
-    static #normalizeLookupToken(value) {
-        return String(value || '')
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '')
     }
 
     /**

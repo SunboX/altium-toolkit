@@ -534,9 +534,9 @@ test('PcbScene3dBuilder binds unresolved repeated bodies to repeated matching co
     assert.deepEqual(
         scene.externalPlacements.map((placement) => placement.positionMil),
         [
-            { x: -450, y: 100, z: 31.5 },
-            { x: -450, y: 400, z: 31.5 },
-            { x: -450, y: 700, z: 31.5 }
+            { x: -450, y: 100, z: -31.5 },
+            { x: -450, y: 400, z: -31.5 },
+            { x: -450, y: 700, z: -31.5 }
         ]
     )
 })

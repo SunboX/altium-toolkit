@@ -46,6 +46,117 @@ function buildModelRegistry() {
 }
 
 /**
+ * Verifies a matched bottom component remains authoritative when its embedded
+ * body is authored on a generic odd mechanical layer.
+ */
+test('PcbScene3dBuilder resolves matched external bodies from component side first', () => {
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'demo.PcbDoc',
+            pcb: {
+                boardOutline: buildBoardOutline(),
+                pads: [],
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: [
+                    {
+                        sourceStream: 'ComponentBodies6/Data',
+                        layer: 'MECHANICAL13',
+                        identifier: 'ember_socket_body',
+                        modelId: '{MODEL-1}',
+                        checksum: 123,
+                        embedded: true,
+                        name: 'ember_socket_body.step',
+                        positionMil: { x: 250, y: 200 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: 0, y: 0, z: 270 },
+                        dzMil: 0
+                    }
+                ],
+                components: [
+                    {
+                        designator: 'J1',
+                        x: 250,
+                        y: 200,
+                        rotation: 0,
+                        layer: 'BOTTOM',
+                        pattern: 'EMBER_SOCKET',
+                        source: 'CON/EMBER_SOCKET',
+                        height: 80
+                    }
+                ]
+            }
+        },
+        { modelRegistry: buildModelRegistry() }
+    )
+
+    assert.equal(scene.externalPlacements.length, 1)
+    assert.equal(scene.externalPlacements[0].designator, 'J1')
+    assert.equal(scene.externalPlacements[0].mountSide, 'bottom')
+    assert.equal(scene.externalPlacements[0].positionMil.z, -31.5)
+})
+
+/**
+ * Verifies repeated sub-bodies that cannot all claim one component still
+ * inherit the side of a nearby footprint-compatible bottom connector.
+ */
+test('PcbScene3dBuilder resolves unmatched repeated pin bodies from nearby component side', () => {
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'demo.PcbDoc',
+            pcb: {
+                boardOutline: buildBoardOutline(),
+                pads: [],
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: [120, 220, 320].map((y) => ({
+                    sourceStream: 'ComponentBodies6/Data',
+                    layer: 'MECHANICAL13',
+                    identifier: 'ember_pin_unit',
+                    modelId: '{MODEL-PIN}',
+                    checksum: 456,
+                    embedded: true,
+                    name: 'ember_pin_unit.step',
+                    positionMil: { x: 520, y },
+                    rotationDeg: 0,
+                    modelRotationDeg: { x: 0, y: 0, z: 270 },
+                    dzMil: 0
+                })),
+                components: [
+                    {
+                        designator: 'J1',
+                        x: 520,
+                        y: 220,
+                        rotation: 180,
+                        layer: 'BOTTOM',
+                        pattern: 'EMBER_PIN_ROW',
+                        source: 'CON/EMBER_PIN_ROW',
+                        height: 80
+                    }
+                ]
+            }
+        },
+        { modelRegistry: buildModelRegistry() }
+    )
+
+    assert.equal(scene.externalPlacements.length, 3)
+    assert.deepEqual(
+        scene.externalPlacements.map((placement) => placement.mountSide),
+        ['bottom', 'bottom', 'bottom']
+    )
+    assert.deepEqual(
+        scene.externalPlacements.map((placement) => placement.positionMil.z),
+        [-31.5, -31.5, -31.5]
+    )
+})
+
+/**
  * Verifies matched external bodies promote authored 3D yaw while keeping the
  * native body anchor instead of moving onto the 2D component origin.
  */
@@ -169,9 +280,9 @@ test('PcbScene3dBuilder keeps repeated sub-body anchors with exact matches', () 
     assert.deepEqual(
         scene.externalPlacements.map((placement) => placement.positionMil),
         [
-            { x: 20, y: -130, z: 31.5 },
-            { x: 20, y: -30, z: 31.5 },
-            { x: 20, y: 70, z: 31.5 }
+            { x: 20, y: -130, z: -31.5 },
+            { x: 20, y: -30, z: -31.5 },
+            { x: 20, y: 70, z: -31.5 }
         ]
     )
 })
