@@ -6,8 +6,30 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 # Model Format
 
-The normalized model is intentionally stable with the ECAD Forge parser model.
-The parser returns one object per parsed native document.
+The public parser returns one Circuit JSON element array per parsed native
+document. Circuit JSON is the serialized model contract. The returned array
+also carries non-serialized renderer-compatibility fields that preserve the
+previous ECAD Forge parser model for renderers and migration code.
+
+## Circuit JSON Fields
+
+Every parser result is an array of elements with a `type` field. The adapter
+emits Circuit JSON elements for source project metadata, source components,
+ports, nets, schematic symbols, schematic lines, schematic text, PCB boards,
+PCB components, PCB pads, PCB traces, and PCB vias where those structures are
+available in the source document.
+
+Use `CircuitJsonModelSchema.isModel(result)` to validate that a value is a
+Circuit JSON array. `JSON.stringify(result)` serializes only the Circuit JSON
+elements; compatibility fields are intentionally omitted from serialized JSON.
+
+## Renderer Compatibility Fields
+
+For compatibility, `AltiumParser.parseArrayBuffer()` attaches the previous
+renderer model fields directly to the Circuit JSON array. Integrations that need
+the object form can call
+`AltiumParser.parseArrayBufferToRendererModel(fileName, arrayBuffer)` or
+`CircuitJsonModelAdapter.toRendererModel(circuitJson)`.
 
 ## Common Fields
 
@@ -21,11 +43,13 @@ The parser returns one object per parsed native document.
 
 ## Schema Contracts
 
-The current root model contract is published as a JSON Schema at
+The legacy renderer compatibility contract is published as a JSON Schema at
 [`docs/schemas/altium_toolkit/normalized_model_a1.schema.json`](schemas/altium_toolkit/normalized_model_a1.schema.json).
-Parser roots expose the same id through the top-level `schema` field, and
-library consumers can compare it with
-`NormalizedModelSchema.CURRENT_SCHEMA_ID`.
+Compatibility fields expose the same id through the top-level `schema` field,
+and consumers can compare it with `NormalizedModelSchema.CURRENT_SCHEMA_ID`.
+The serialized parser return value follows the upstream
+[`tscircuit/circuit-json`](https://github.com/tscircuit/circuit-json) element
+array convention.
 
 ## Schematic Fields
 

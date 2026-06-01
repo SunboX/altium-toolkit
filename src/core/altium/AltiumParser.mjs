@@ -27,6 +27,7 @@ import { SchematicImageParser } from './SchematicImageParser.mjs'
 import { SchematicNetlistBuilder } from './SchematicNetlistBuilder.mjs'
 import { SchematicComponentTextResolver } from './SchematicComponentTextResolver.mjs'
 import { SchematicStreamExtractor } from './SchematicStreamExtractor.mjs'
+import { CircuitJsonModelAdapter } from '../circuit-json/CircuitJsonModelAdapter.mjs'
 const {
     countMatchingKeys,
     getDisplayText,
@@ -53,16 +54,28 @@ const {
 } = SchematicPinParser
 
 /**
- * Parses native Altium files into normalized viewer models.
+ * Parses native Altium files into Circuit JSON element arrays.
  */
 export class AltiumParser {
     /**
-     * Parses a native Altium buffer into a normalized viewer model.
+     * Parses a native Altium buffer into a Circuit JSON element array.
+     * @param {string} fileName
+     * @param {ArrayBuffer} arrayBuffer
+     * @returns {object[]}
+     */
+    static parseArrayBuffer(fileName, arrayBuffer) {
+        return CircuitJsonModelAdapter.fromRendererModel(
+            AltiumParser.parseArrayBufferToRendererModel(fileName, arrayBuffer)
+        )
+    }
+
+    /**
+     * Parses a native Altium buffer into the renderer compatibility model.
      * @param {string} fileName
      * @param {ArrayBuffer} arrayBuffer
      * @returns {{ schema: string, kind: 'schematic' | 'pcb' | 'pcb-library' | 'project', fileType: 'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], schematic?: Record<string, unknown>, pcb?: Record<string, unknown>, pcbLibrary?: Record<string, unknown>, project?: Record<string, unknown>, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
      */
-    static parseArrayBuffer(fileName, arrayBuffer) {
+    static parseArrayBufferToRendererModel(fileName, arrayBuffer) {
         const records = AsciiRecordParser.parse(arrayBuffer)
         const fileType = AltiumParser.#sniffFileType(fileName, records)
         if (fileType === 'SchDoc') {
@@ -118,7 +131,7 @@ export class AltiumParser {
      * @param {string} fileName
      * @param {{ raw: string, fields: Record<string, string | string[]> }[]} records
      * @param {ArrayBuffer} arrayBuffer
-     * @returns {ReturnType<typeof AltiumParser.parseArrayBuffer>}
+     * @returns {ReturnType<typeof AltiumParser.parseArrayBufferToRendererModel>}
      */
     static #parseSchematic(fileName, records, arrayBuffer) {
         const componentRecords = records.filter(

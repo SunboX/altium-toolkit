@@ -544,9 +544,17 @@ export class AltiumFixtureLoader {
      */
     static #obfuscateFixtureDocument(value) {
         if (Array.isArray(value)) {
-            return value.map((entry) =>
+            const obfuscatedArray = value.map((entry) =>
                 AltiumFixtureLoader.#obfuscateFixtureDocument(entry)
             )
+
+            for (const [key, entry] of Object.entries(value)) {
+                if (/^\d+$/u.test(key)) continue
+                obfuscatedArray[key] =
+                    AltiumFixtureLoader.#obfuscateFixtureDocument(entry)
+            }
+
+            return obfuscatedArray
         }
 
         if (value && typeof value === 'object') {

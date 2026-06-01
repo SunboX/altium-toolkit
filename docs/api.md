@@ -24,15 +24,16 @@ Specialized entrypoints are also available:
 ```js
 import { AltiumParser } from 'altium-toolkit/parser'
 
-const documentModel = AltiumParser.parseArrayBuffer(fileName, arrayBuffer)
+const circuitJson = AltiumParser.parseArrayBuffer(fileName, arrayBuffer)
 ```
 
 `fileName` is used to infer schematic, PCB document, PCB footprint-library, or
 PCB project parsing from the extension. The parser accepts native `.SchDoc`,
-`.PcbDoc`, `.PcbLib`, and `.PrjPcb` bytes as an `ArrayBuffer` and returns the
-normalized model described in [Model Format](model-format.md). Every parser
-root includes a top-level `schema` id for the emitted normalized model
-contract.
+`.PcbDoc`, `.PcbLib`, and `.PrjPcb` bytes as an `ArrayBuffer` and returns a
+Circuit JSON element array. The returned array carries non-serialized
+renderer-compatibility fields such as `kind`, `fileType`, `schematic`, `pcb`,
+`pcbLibrary`, `project`, `summary`, `diagnostics`, and `bom` so existing
+renderers can consume parser output directly during the migration.
 
 PCB parsing reads the main primitive streams together with sidecar streams such
 as `PrimitiveParameters/Data` and `WideStrings6/Data`. Component parameters are
@@ -41,12 +42,17 @@ resolve their display string through the wide-string table before the
 normalized component list and BOM are built.
 
 ```js
-import { NormalizedModelSchema } from 'altium-toolkit/parser'
+import { CircuitJsonModelSchema } from 'altium-toolkit/parser'
 
-if (documentModel.schema !== NormalizedModelSchema.CURRENT_SCHEMA_ID) {
-    throw new Error('Unsupported normalized model schema')
+if (!CircuitJsonModelSchema.isModel(circuitJson)) {
+    throw new Error('Unsupported Circuit JSON model')
 }
 ```
+
+Use `AltiumParser.parseArrayBufferToRendererModel(fileName, arrayBuffer)` when
+an integration still needs the legacy renderer model object. The
+`CircuitJsonModelAdapter` export also exposes `fromRendererModel()`,
+`toRendererModel()`, and `isCircuitJson()` for explicit conversions.
 
 Specialized parser helpers are exported for lower-level integrations, including
 `PcbBoardRegionSemanticsParser`, `PcbComponentPrimitiveIndexer`,

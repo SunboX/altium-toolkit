@@ -27,8 +27,8 @@ browser or Node-based tools.
   basic text metrics
 - Preserve raw PCB primitive records through a read-only record registry so
   unsupported or partially decoded stream data remains inspectable
-- Emit versioned normalized model roots with a machine-readable JSON Schema
-  contract
+- Emit Circuit JSON arrays from parser roots, with non-serialized
+  renderer-compatibility fields for existing consumers
 - Render schematic SVG, PCB SVG, and grouped BOM HTML
 - Build non-interactive PCB 3D scene-description data for host applications
 - Render a static 3D board summary
