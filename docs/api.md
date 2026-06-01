@@ -14,6 +14,7 @@ scene-description classes from one entrypoint.
 Specialized entrypoints are also available:
 
 - `altium-toolkit/parser`
+- `altium-toolkit/netlist-query`
 - `altium-toolkit/renderers`
 - `altium-toolkit/scene3d`
 - `altium-toolkit/workers/altium-parser.worker.mjs`
@@ -69,6 +70,35 @@ to normalized models. `PcbRawRecordRegistry` exposes immutable primitive stream
 descriptors and the raw-record preservation helpers used by the PcbDoc/PcbLib
 extractors.
 
+## Netlist Query
+
+```js
+import { LoadedDesignNetlistService } from 'altium-toolkit/netlist-query'
+
+const service = new LoadedDesignNetlistService({
+    getDocuments: () => [
+        {
+            id: 'active-sheet',
+            active: true,
+            documentModel
+        }
+    ]
+})
+
+const nets = service.searchNets({ pattern: 'i2c' })
+```
+
+The `netlist-query` entrypoint exposes browser-safe helpers for loaded document
+inspection: `LoadedDesignNetlistService`, `QueryNetlistBuilder`,
+`CircuitTraversal`, `ComponentGrouping`, `MPN_MISSING_NOTE`, and
+`RegexPattern`.
+
+The service accepts host-provided loaded document entries and returns plain
+JSON-compatible query results. It can list designs, components, and nets; search
+components by reference designator, MPN, or description; query one component's
+pin connections; and trace extended connectivity from a net or `REFDES.PIN`.
+Normal user-query failures return `{ error: string }`.
+
 ## Renderers
 
 ```js
@@ -106,6 +136,9 @@ import {
 
 - `PcbScene3dBuilder.build(documentModel, options)` returns procedural board,
   placement, copper, silkscreen, and external-model scene-description data.
+  It includes refined board-region outlines when a recovered outline is a
+  rasterized stair-step fallback, and each silkscreen side exposes
+  `drillCutouts` plus fill holes for drilled pads and vias.
 - `PcbScene3dModelRegistry` resolves embedded or session model candidates for
   component placements.
 - `PcbScene3dScenePreparator.prepare(documentModel, options)` prepares the same

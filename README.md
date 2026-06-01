@@ -30,7 +30,8 @@ browser or Node-based tools.
 - Emit Circuit JSON arrays from parser roots, with non-serialized
   renderer-compatibility fields for existing consumers
 - Render schematic SVG, PCB SVG, and grouped BOM HTML
-- Build non-interactive PCB 3D scene-description data for host applications
+- Build non-interactive PCB 3D scene-description data for host applications,
+  including refined board outlines and silkscreen drill cutouts
 - Render a static 3D board summary
 - Run entirely with local input data; no network calls are made by the parser
 

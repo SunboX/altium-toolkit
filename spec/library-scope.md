@@ -16,7 +16,8 @@ rendering primitives.
 - Schematic SVG rendering
 - PCB SVG rendering
 - BOM HTML rendering
-- PCB 3D scene-description data
+- PCB 3D scene-description data, including board-region outline refinement and
+  silkscreen drill cutout contours
 - Embedded PCB/PcbLib font extraction and basic text metrics for deterministic
   SVG rendering
 - Read-only PCB primitive record registry metadata and base64 raw-record

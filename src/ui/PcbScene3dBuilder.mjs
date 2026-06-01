@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbEdgeFacingGlyphNormalizer } from './PcbEdgeFacingGlyphNormalizer.mjs'
+import { PcbScene3dBoardOutlineRefiner } from './PcbScene3dBoardOutlineRefiner.mjs'
 import { PcbScene3dDrillCutoutBuilder } from './PcbScene3dDrillCutoutBuilder.mjs'
 import { PcbFootprintPrimitiveSelector } from './PcbFootprintPrimitiveSelector.mjs'
 import { PcbScene3dPackages } from './PcbScene3dPackages.mjs'
@@ -99,7 +100,7 @@ export class PcbScene3dBuilder {
             appearance3d
         )
 
-        return {
+        const sceneDescription = {
             sourceFormat: 'altium',
             board,
             components: components.map((component) =>
@@ -139,6 +140,11 @@ export class PcbScene3dBuilder {
                 }
             }
         }
+
+        return PcbScene3dBoardOutlineRefiner.refine(
+            sceneDescription,
+            documentModel
+        )
     }
 
     /**
@@ -729,6 +735,11 @@ export class PcbScene3dBuilder {
             boardOutline
         )
 
+        const drillCutouts = PcbScene3dDrillCutoutBuilder.buildCutouts(
+            pads,
+            vias
+        )
+
         return {
             ...normalized,
             denseOverlayArtwork,
@@ -743,11 +754,11 @@ export class PcbScene3dBuilder {
                 side
             ),
             tracks: normalized.tracks,
-            fills: PcbScene3dDrillCutoutBuilder.clipFills(
+            fills: PcbScene3dDrillCutoutBuilder.clipFillsWithCutouts(
                 fillsWithRegions,
-                pads,
-                vias
-            )
+                drillCutouts
+            ),
+            drillCutouts: drillCutouts.map((cutout) => cutout.points)
         }
     }
 

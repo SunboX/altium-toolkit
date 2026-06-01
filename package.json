@@ -1,6 +1,6 @@
 {
     "name": "altium-toolkit",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Altium document parsing and non-interactive rendering utilities",
     "keywords": [
         "altium",
@@ -23,6 +23,7 @@
     "exports": {
         ".": "./src/index.mjs",
         "./parser": "./src/parser.mjs",
+        "./netlist-query": "./src/netlist-query.mjs",
         "./renderers": "./src/renderers.mjs",
         "./scene3d": "./src/scene3d.mjs",
         "./workers/altium-parser.worker.mjs": "./src/workers/altium-parser.worker.mjs",

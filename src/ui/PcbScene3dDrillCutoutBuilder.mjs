@@ -11,6 +11,19 @@ export class PcbScene3dDrillCutoutBuilder {
     static #EPSILON = 0.001
 
     /**
+     * Builds all known drill cutout contours.
+     * @param {{ x?: number, y?: number, holeDiameter?: number, drillDiameter?: number, holeSlotLength?: number, slotLength?: number, rotation?: number, holeRotation?: number }[]} pads
+     * @param {{ x?: number, y?: number, holeDiameter?: number, drillDiameter?: number }[]} vias
+     * @returns {{ x: number, y: number, bounds: { minX: number, minY: number, maxX: number, maxY: number }, points: { x: number, y: number }[] }[]}
+     */
+    static buildCutouts(pads, vias) {
+        return [
+            ...PcbScene3dDrillCutoutBuilder.#buildPadCutouts(pads),
+            ...PcbScene3dDrillCutoutBuilder.#buildViaCutouts(vias)
+        ]
+    }
+
+    /**
      * Adds drill-shaped holes to every fill intersected by a pad or via drill.
      * @param {{ points?: { x: number, y: number }[], holes?: { x: number, y: number }[][], x1?: number, y1?: number, x2?: number, y2?: number }[]} fills
      * @param {{ x?: number, y?: number, holeDiameter?: number, drillDiameter?: number, holeSlotLength?: number, slotLength?: number, rotation?: number, holeRotation?: number }[]} pads
@@ -18,9 +31,20 @@ export class PcbScene3dDrillCutoutBuilder {
      * @returns {{ points?: { x: number, y: number }[], holes?: { x: number, y: number }[][], x1?: number, y1?: number, x2?: number, y2?: number }[]}
      */
     static clipFills(fills, pads, vias) {
-        const cutouts = PcbScene3dDrillCutoutBuilder.#buildCutouts(pads, vias)
+        return PcbScene3dDrillCutoutBuilder.clipFillsWithCutouts(
+            fills,
+            PcbScene3dDrillCutoutBuilder.buildCutouts(pads, vias)
+        )
+    }
 
-        if (!cutouts.length) {
+    /**
+     * Adds drill-shaped holes from precomputed cutouts.
+     * @param {{ points?: { x: number, y: number }[], holes?: { x: number, y: number }[][], x1?: number, y1?: number, x2?: number, y2?: number }[]} fills
+     * @param {{ x: number, y: number, bounds: { minX: number, minY: number, maxX: number, maxY: number }, points: { x: number, y: number }[] }[]} cutouts
+     * @returns {{ points?: { x: number, y: number }[], holes?: { x: number, y: number }[][], x1?: number, y1?: number, x2?: number, y2?: number }[]}
+     */
+    static clipFillsWithCutouts(fills, cutouts) {
+        if (!Array.isArray(cutouts) || !cutouts.length) {
             return fills
         }
 
@@ -46,19 +70,6 @@ export class PcbScene3dDrillCutoutBuilder {
                 ]
             }
         })
-    }
-
-    /**
-     * Builds all known drill cutout contours.
-     * @param {{ x?: number, y?: number, holeDiameter?: number, drillDiameter?: number, holeSlotLength?: number, slotLength?: number, rotation?: number, holeRotation?: number }[]} pads
-     * @param {{ x?: number, y?: number, holeDiameter?: number, drillDiameter?: number }[]} vias
-     * @returns {{ x: number, y: number, bounds: { minX: number, minY: number, maxX: number, maxY: number }, points: { x: number, y: number }[] }[]}
-     */
-    static #buildCutouts(pads, vias) {
-        return [
-            ...PcbScene3dDrillCutoutBuilder.#buildPadCutouts(pads),
-            ...PcbScene3dDrillCutoutBuilder.#buildViaCutouts(vias)
-        ]
     }
 
     /**
