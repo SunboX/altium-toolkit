@@ -360,3 +360,298 @@ test('renderPcbSvg keeps authored screw shafts while correcting tip-facing heads
         /<path class="pcb-footprint-arc" d="M 372 120 A 28 28 0 0 1 428 120" stroke-width="8" fill="none" \/>/
     )
 })
+
+test('renderPcbSvg mirrors PCB text around its local insertion point', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Mirrored label board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 400,
+                heightMil: 300,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 400, y2: 0 },
+                    { type: 'line', x1: 400, y1: 0, x2: 400, y2: 300 },
+                    { type: 'line', x1: 400, y1: 300, x2: 0, y2: 300 },
+                    { type: 'line', x1: 0, y1: 300, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [{ name: 'Top Layer' }],
+            primitiveLayers: [{ layerId: 33, name: 'Top Overlay' }],
+            polygons: [],
+            fills: [],
+            tracks: [],
+            arcs: [],
+            vias: [],
+            pads: [],
+            texts: [
+                {
+                    text: 'FAKE_LABEL',
+                    x: 140,
+                    y: 160,
+                    height: 42,
+                    rotation: 90,
+                    layerId: 33,
+                    mirrored: true,
+                    visible: true
+                }
+            ],
+            components: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /transform="translate\(140 160\) rotate\(90\) scale\(-1 1\)"/
+    )
+})
+
+test('renderPcbSvg renders inverted TrueType PCB text as knockout artwork', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Knockout label board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 500,
+                heightMil: 300,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 500, y2: 0 },
+                    { type: 'line', x1: 500, y1: 0, x2: 500, y2: 300 },
+                    { type: 'line', x1: 500, y1: 300, x2: 0, y2: 300 },
+                    { type: 'line', x1: 0, y1: 300, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [{ name: 'Top Layer' }],
+            primitiveLayers: [{ layerId: 33, name: 'Top Overlay' }],
+            polygons: [],
+            fills: [],
+            tracks: [],
+            arcs: [],
+            vias: [],
+            pads: [],
+            texts: [
+                {
+                    text: 'FAKE_KNOCKOUT',
+                    x: 180,
+                    y: 160,
+                    height: 100,
+                    rotation: 90,
+                    layerId: 33,
+                    mirrored: true,
+                    fontTypeName: 'TrueType',
+                    fontFamily: 'Consolas',
+                    isInverted: true,
+                    marginBorderWidth: 12,
+                    visible: true
+                }
+            ],
+            components: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /class="pcb-text pcb-text--layer-33 pcb-text--inverted"/
+    )
+    assert.match(
+        markup,
+        /<mask id="pcb-text-knockout-0"[^>]*mask-type="luminance"/
+    )
+    assert.match(markup, /class="pcb-text__knockout-fill"/)
+    assert.match(markup, /class="pcb-text__knockout-glyphs"/)
+    assert.match(markup, /font-size="89\.5"/)
+    assert.match(
+        markup,
+        /<rect class="pcb-text__knockout-fill" x="-12" y="-28\.11"/
+    )
+    assert.doesNotMatch(
+        markup,
+        /<text class="pcb-text pcb-text--layer-33"[^>]*>FAKE_KNOCKOUT<\/text>/
+    )
+})
+
+test('renderPcbSvg mirrors the bottom text layer without moving text anchors', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Mirrored text group board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 100,
+                heightMil: 80,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 100, y2: 0 },
+                    { type: 'line', x1: 100, y1: 0, x2: 100, y2: 80 },
+                    { type: 'line', x1: 100, y1: 80, x2: 0, y2: 80 },
+                    { type: 'line', x1: 0, y1: 80, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [{ name: 'Top Layer' }],
+            primitiveLayers: [{ layerId: 33, name: 'Top Overlay' }],
+            polygons: [],
+            fills: [],
+            tracks: [],
+            arcs: [],
+            vias: [],
+            pads: [],
+            texts: [
+                {
+                    text: 'FAKE_BOTTOM_MARK',
+                    x: 20,
+                    y: 30,
+                    height: 8,
+                    layerId: 33,
+                    rotation: 90,
+                    mirrored: true,
+                    visible: true
+                }
+            ],
+            components: [],
+            textGroupTransform: {
+                translateX: 100,
+                translateY: 0,
+                scaleX: -1,
+                scaleY: 1
+            }
+        }
+    })
+
+    assert.match(
+        markup,
+        /<g class="pcb-texts"[^>]*transform="translate\(100 0\) scale\(-1 1\)"/
+    )
+    assert.match(
+        markup,
+        /transform="translate\(20 30\) rotate\(90\) scale\(-1 1\)"/
+    )
+})
+
+test('renderPcbSvg keeps PCB labels above simplified component overlays', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Overlay order board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 500,
+                heightMil: 300,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 500, y2: 0 },
+                    { type: 'line', x1: 500, y1: 0, x2: 500, y2: 300 },
+                    { type: 'line', x1: 500, y1: 300, x2: 0, y2: 300 },
+                    { type: 'line', x1: 0, y1: 300, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [{ name: 'Top Layer' }],
+            primitiveLayers: [{ layerId: 33, name: 'Top Overlay' }],
+            polygons: [],
+            fills: [],
+            tracks: [],
+            arcs: [],
+            vias: [],
+            pads: [],
+            texts: [
+                {
+                    text: 'FAKE_FRONT_MARK',
+                    x: 180,
+                    y: 160,
+                    height: 48,
+                    layerId: 33,
+                    visible: true
+                }
+            ],
+            components: [
+                {
+                    designator: 'U1',
+                    x: 180,
+                    y: 160,
+                    rotation: 0,
+                    layer: 'Top Layer',
+                    pattern: 'QFN'
+                }
+            ]
+        }
+    })
+
+    assert.ok(
+        markup.indexOf('<g class="pcb-components">') <
+            markup.indexOf('<g class="pcb-texts"')
+    )
+})
+
+test('renderPcbSvg skips inverted TrueType duplicates when native knockout artwork exists', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Native knockout board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 1000,
+                heightMil: 1000,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 1000, y2: 0 },
+                    { type: 'line', x1: 1000, y1: 0, x2: 1000, y2: 1000 },
+                    { type: 'line', x1: 1000, y1: 1000, x2: 0, y2: 1000 },
+                    { type: 'line', x1: 0, y1: 1000, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [{ name: 'Top Layer' }],
+            primitiveLayers: [{ layerId: 33, name: 'Top Overlay' }],
+            polygons: [],
+            fills: [],
+            tracks: Array.from({ length: 260 }, (_, index) => ({
+                layerId: 33,
+                x1: 100 + index,
+                y1: 120,
+                x2: 100 + index,
+                y2: 880,
+                width: 1
+            })),
+            arcs: [],
+            vias: [],
+            pads: [],
+            shapeBasedRegions: [
+                {
+                    layerId: 33,
+                    points: [
+                        { x: 50, y: 80 },
+                        { x: 950, y: 80 },
+                        { x: 950, y: 760 },
+                        { x: 50, y: 760 }
+                    ],
+                    holes: [
+                        [
+                            { x: 200, y: 200 },
+                            { x: 300, y: 200 },
+                            { x: 300, y: 260 },
+                            { x: 200, y: 260 }
+                        ]
+                    ]
+                }
+            ],
+            texts: [
+                {
+                    text: 'FAKE_NATIVE_DUPLICATE',
+                    x: 180,
+                    y: 160,
+                    height: 100,
+                    rotation: 90,
+                    layerId: 33,
+                    mirrored: true,
+                    fontTypeName: 'TrueType',
+                    fontFamily: 'Consolas',
+                    isInverted: true,
+                    marginBorderWidth: 12,
+                    visible: true
+                }
+            ],
+            components: []
+        }
+    })
+
+    assert.match(markup, /class="pcb-footprint-region"/)
+    assert.doesNotMatch(markup, /FAKE_NATIVE_DUPLICATE/)
+    assert.doesNotMatch(markup, /pcb-text__knockout-fill/)
+})

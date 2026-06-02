@@ -7,7 +7,9 @@ import { PcbEdgeFacingGlyphNormalizer } from './PcbEdgeFacingGlyphNormalizer.mjs
 import { PcbEmbeddedFontFaceRenderer } from './PcbEmbeddedFontFaceRenderer.mjs'
 import { PcbFootprintPrimitiveSelector } from './PcbFootprintPrimitiveSelector.mjs'
 import { PcbCopperPrimitiveSplitter } from './PcbCopperPrimitiveSplitter.mjs'
+import { PcbNativeTextKnockoutDetector } from './PcbNativeTextKnockoutDetector.mjs'
 import { PcbRegionPrimitiveRenderer } from './PcbRegionPrimitiveRenderer.mjs'
+import { PcbScene3dBoardOutlineRefiner } from './PcbScene3dBoardOutlineRefiner.mjs'
 import { PcbTextPrimitiveRenderer } from './PcbTextPrimitiveRenderer.mjs'
 import { SchematicSvgUtils } from './SchematicSvgUtils.mjs'
 /**
@@ -27,7 +29,10 @@ export class PcbSvgRenderer {
         if (!pcb) {
             return '<section class="altium-renderer-empty">No PCB entities were recovered from this file.</section>'
         }
-        const outline = pcb.boardOutline
+        const outline = PcbScene3dBoardOutlineRefiner.refine(
+            { board: pcb.boardOutline },
+            documentModel
+        ).board
         const polygons = pcb.polygons || []
         const fills = pcb.fills || []
         const tracks = pcb.tracks || []
@@ -43,11 +48,6 @@ export class PcbSvgRenderer {
         const stackLayers = Array.isArray(pcb.layers) ? pcb.layers : []
         const primitiveLayers = pcb.primitiveLayers || []
         const displayLayers = stackLayers.length ? stackLayers : primitiveLayers
-        const texts = PcbTextPrimitiveRenderer.select(
-            primitiveLayers,
-            pcb.texts || [],
-            'top'
-        )
         const copperGroups = PcbCopperPrimitiveSplitter.split(
             polygons,
             fills,
@@ -65,6 +65,18 @@ export class PcbSvgRenderer {
                 'top'
             ),
             outline
+        )
+        const texts = PcbTextPrimitiveRenderer.select(
+            primitiveLayers,
+            pcb.texts || [],
+            'top',
+            {
+                nativeTextKnockouts:
+                    PcbNativeTextKnockoutDetector.hasNativeTextKnockouts(
+                        footprintPrimitives,
+                        outline
+                    )
+            }
         )
         const path = PcbSvgRenderer.#buildBoardPath(outline.segments)
         const clipPathId = 'pcb-board-clip'
@@ -256,6 +268,9 @@ export class PcbSvgRenderer {
             'pcb-footprint-region'
         )
         const textMarkup = PcbTextPrimitiveRenderer.render(texts)
+        const textGroupTransform = PcbSvgRenderer.#renderTextGroupTransform(
+            pcb.textGroupTransform
+        )
         const fontFaceMarkup = PcbEmbeddedFontFaceRenderer.buildMarkup(
             pcb.embeddedFonts || []
         )
@@ -355,17 +370,19 @@ export class PcbSvgRenderer {
             footprintArcMarkup +
             footprintRegionMarkup +
             '</g>' +
+            '<g class="pcb-components">' +
+            componentMarkup +
+            '</g>' +
             '<g class="pcb-texts" clip-path="url(#' +
             clipPathId +
-            ')">' +
+            ')"' +
+            textGroupTransform +
+            '>' +
             textMarkup +
             '</g>' +
             '<path class="board-outline board-outline--stroke" d="' +
             SchematicSvgUtils.escapeHtml(path) +
             '" />' +
-            '<g class="pcb-components">' +
-            componentMarkup +
-            '</g>' +
             '</svg></div></section>'
         )
     }
@@ -413,6 +430,62 @@ export class PcbSvgRenderer {
         }
 
         return path + ' Z'
+    }
+
+    /**
+     * Renders an optional transform for the whole PCB text layer.
+     * @param {{ translateX?: number, translateY?: number, scaleX?: number, scaleY?: number } | undefined} transform Text group transform.
+     * @returns {string}
+     */
+    static #renderTextGroupTransform(transform) {
+        if (!transform || typeof transform !== 'object') {
+            return ''
+        }
+
+        const translateX = Number(transform.translateX || 0)
+        const translateY = Number(transform.translateY || 0)
+        const scaleX =
+            transform.scaleX === null || transform.scaleX === undefined
+                ? 1
+                : Number(transform.scaleX)
+        const scaleY =
+            transform.scaleY === null || transform.scaleY === undefined
+                ? 1
+                : Number(transform.scaleY)
+        if (
+            !Number.isFinite(translateX) ||
+            !Number.isFinite(translateY) ||
+            !Number.isFinite(scaleX) ||
+            !Number.isFinite(scaleY) ||
+            (translateX === 0 &&
+                translateY === 0 &&
+                scaleX === 1 &&
+                scaleY === 1)
+        ) {
+            return ''
+        }
+
+        const parts = []
+        if (translateX !== 0 || translateY !== 0) {
+            parts.push(
+                'translate(' +
+                    SchematicSvgUtils.formatNumber(translateX) +
+                    ' ' +
+                    SchematicSvgUtils.formatNumber(translateY) +
+                    ')'
+            )
+        }
+        if (scaleX !== 1 || scaleY !== 1) {
+            parts.push(
+                'scale(' +
+                    SchematicSvgUtils.formatNumber(scaleX) +
+                    ' ' +
+                    SchematicSvgUtils.formatNumber(scaleY) +
+                    ')'
+            )
+        }
+
+        return ' transform="' + parts.join(' ') + '"'
     }
 
     /**

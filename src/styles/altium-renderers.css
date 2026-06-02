@@ -141,6 +141,7 @@
     --pcb-via-hole-fill: #0f746c;
     --pcb-footprint-fill: rgba(247, 230, 117, 0.14);
     --pcb-footprint-track-color: rgba(237, 172, 36, 1);
+    --pcb-text-knockout-fill: rgba(248, 246, 239, 0.96);
     --pcb-component-top-fill: rgba(244, 219, 198, 0.92);
     --pcb-component-bottom-fill: rgba(15, 116, 108, 0.84);
     --pcb-component-stroke: rgba(110, 64, 38, 0.28);
@@ -178,6 +179,8 @@
     fill: var(--pcb-board-fill);
     stroke: var(--pcb-board-stroke);
     stroke-width: 18;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .board-outline--stroke {
@@ -252,7 +255,7 @@
 }
 
 .pcb-footprint-region {
-    fill: var(--pcb-footprint-track-color);
+    fill: var(--pcb-footprint-region-fill, var(--pcb-footprint-track-color));
 }
 
 .pcb-footprint-track,
@@ -276,6 +279,14 @@
     font-weight: 700;
     font-family: Arial, sans-serif;
     pointer-events: none;
+}
+
+.pcb-text__knockout-fill {
+    fill: var(--pcb-text-knockout-fill);
+}
+
+.pcb-text__knockout-glyphs {
+    fill: #000;
 }
 
 .bom-panel {
