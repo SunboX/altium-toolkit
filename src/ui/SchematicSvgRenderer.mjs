@@ -21,6 +21,10 @@ import { SchematicImageRenderer } from './SchematicImageRenderer.mjs'
 
 const { createSvgText, escapeHtml, formatNumber, projectSchematicY } =
     SchematicSvgUtils
+const SECTION_HEADING_MIN_FONT_SIZE = 18
+const SECTION_HEADING_BASELINE_LIFT_RATIO = 0.36
+const SECTION_HEADING_LINE_Y_TOLERANCE = 0.75
+const SECTION_HEADING_LINE_X_PADDING = 15
 
 /**
  * Renders normalized schematic models into presentational SVG.
@@ -28,7 +32,7 @@ const { createSvgText, escapeHtml, formatNumber, projectSchematicY } =
 export class SchematicSvgRenderer {
     /**
      * Renders a normalized schematic model into SVG markup.
-     * @param {{ fileName?: string, summary: { title?: string }, schematic?: { sheet: { width: number, height: number, sourceWidth?: number, sourceHeight?: number, paperSize?: string, borderOn?: boolean, titleBlockOn?: boolean, marginWidth?: number, xZones?: number, yZones?: number, titleBlock?: { title?: string, revision?: string, documentNumber?: string, sheetNumber?: string, sheetTotal?: string, date?: string, drawnBy?: string } }, lines: { x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle?: number, isBus?: boolean, ownerIndex?: string, renderOrder?: number, recordType?: string }[], polygons?: { points: { x: number, y: number }[], color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], rectangles?: { x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], regions?: { x: number, y: number, width: number, height: number, color: string, fill: string, renderOrder?: number }[], ellipses?: { x: number, y: number, radiusX: number, radiusY: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, color: string, width: number, ownerIndex?: string, renderOrder?: number }[], directives?: { x: number, y: number, color: string, name: string, orientation?: number }[], texts: { x: number, y: number, text: string, color: string, recordType?: string, style?: number, fontSize?: number, fontFamily?: string, fontWeight?: number, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, anchor?: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }[], components: { x: number, y: number, designator: string }[], pins?: { x: number, y: number, length: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color: string, labelColor?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', ownerIndex?: string }[], ports?: { x: number, y: number, width: number, height: number, name: string, fill: string, color: string, direction?: 'left' | 'right' | 'up' | 'down', shape?: 'single' | 'double' | 'plain' }[], crosses?: { x: number, y: number, size: number, color: string }[] } }} documentModel
+     * @param {{ fileName?: string, summary: { title?: string }, schematic?: { sheet: { width: number, height: number, sourceWidth?: number, sourceHeight?: number, paperSize?: string, borderOn?: boolean, titleBlockOn?: boolean, marginWidth?: number, xZones?: number, yZones?: number, titleBlock?: { title?: string, revision?: string, documentNumber?: string, sheetNumber?: string, sheetTotal?: string, date?: string, drawnBy?: string } }, lines: { x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle?: number, isBus?: boolean, ownerIndex?: string, renderOrder?: number, recordType?: string }[], polygons?: { points: { x: number, y: number }[], color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], rectangles?: { x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], regions?: { x: number, y: number, width: number, height: number, color: string, fill: string, renderOrder?: number }[], ellipses?: { x: number, y: number, radiusX: number, radiusY: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, color: string, width: number, ownerIndex?: string, renderOrder?: number }[], directives?: { x: number, y: number, color: string, name: string, orientation?: number }[], texts: { x: number, y: number, text: string, color: string, recordType?: string, style?: number, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, anchor?: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }[], components: { x: number, y: number, designator: string }[], pins?: { x: number, y: number, length: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color: string, labelColor?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', ownerIndex?: string }[], ports?: { x: number, y: number, width: number, height: number, name: string, fill: string, color: string, direction?: 'left' | 'right' | 'up' | 'down', shape?: 'single' | 'double' | 'plain' }[], crosses?: { x: number, y: number, size: number, color: string }[] } }} documentModel
      * @returns {string}
      */
     static render(documentModel) {
@@ -37,8 +41,16 @@ export class SchematicSvgRenderer {
             return '<section class="altium-renderer-empty">No schematic entities were recovered from this file.</section>'
         }
 
-        const width = Math.max(schematic.sheet.width || 1000, 100)
-        const height = Math.max(schematic.sheet.height || 700, 100)
+        const renderedSheet = SchematicSvgRenderer.#resolveRenderedSheet(
+            schematic.sheet
+        )
+        const width = renderedSheet.width
+        const height = renderedSheet.height
+        const contentHeight = renderedSheet.contentHeight
+        const renderedSchematic =
+            renderedSheet.contentSheet === schematic.sheet
+                ? schematic
+                : { ...schematic, sheet: renderedSheet.contentSheet }
         const allTexts = schematic.texts || []
         const lines = schematic.lines.slice(0, 2500)
         const polygons = (schematic.polygons || []).slice(0, 1000)
@@ -68,27 +80,27 @@ export class SchematicSvgRenderer {
         const frameMarkup = SchematicSvgRenderer.#buildSheetChromeMarkup(
             width,
             height,
-            schematic.sheet,
+            renderedSheet.sheet,
             documentModel?.fileName
         )
         const regionMarkup = SchematicRegionRenderer.buildMarkup(
             regions,
-            height
+            contentHeight
         )
         const contentTransform = SchematicContentLayout.buildTransform(
             width,
-            height,
-            schematic
+            contentHeight,
+            renderedSchematic
         )
         const contentClipId = SchematicContentLayout.buildClipId(
             width,
             height,
-            schematic
+            renderedSchematic
         )
         const contentClipMarkup = SchematicContentLayout.buildClipMarkup(
             width,
             height,
-            schematic,
+            renderedSchematic,
             contentClipId
         )
         const ownerlessLines = lines.filter((line) => !line.ownerIndex)
@@ -117,26 +129,40 @@ export class SchematicSvgRenderer {
         )
         const polygonMarkup = ownerlessPolygons
             .map((polygon) =>
-                SchematicShapeRenderer.buildPolygonMarkup(polygon, height)
+                SchematicShapeRenderer.buildPolygonMarkup(
+                    polygon,
+                    contentHeight
+                )
             )
             .join('')
         const rectangleMarkup = ownerlessRectangles
             .map((rectangle) =>
-                SchematicShapeRenderer.buildRectangleMarkup(rectangle, height)
+                SchematicShapeRenderer.buildRectangleMarkup(
+                    rectangle,
+                    contentHeight
+                )
             )
             .join('')
         const ellipseMarkup = ownerlessEllipses
             .map((ellipse) =>
-                SchematicShapeRenderer.buildEllipseMarkup(ellipse, height)
+                SchematicShapeRenderer.buildEllipseMarkup(
+                    ellipse,
+                    contentHeight
+                )
             )
             .join('')
         const lineMarkup = ownerlessLines
             .map((line) =>
-                SchematicSvgRenderer.#buildSchematicLineMarkup(line, height)
+                SchematicSvgRenderer.#buildSchematicLineMarkup(
+                    line,
+                    contentHeight
+                )
             )
             .join('')
         const arcMarkup = ownerlessArcs
-            .map((arc) => SchematicShapeRenderer.buildArcMarkup(arc, height))
+            .map((arc) =>
+                SchematicShapeRenderer.buildArcMarkup(arc, contentHeight)
+            )
             .join('')
         const ownerGeometryMarkup =
             SchematicSvgRenderer.#buildOwnerGeometryMarkup(
@@ -145,41 +171,49 @@ export class SchematicSvgRenderer {
                 rectangles,
                 ellipses,
                 arcs,
-                height
+                contentHeight
             )
         const sheetSymbolMarkup =
             SchematicSheetSymbolRenderer.buildSheetSymbolMarkup(
                 sheetSymbols,
-                height
+                contentHeight
             )
         const sheetEntryMarkup =
             SchematicSheetSymbolRenderer.buildSheetEntryMarkup(
                 sheetEntries,
-                height
+                contentHeight
             )
         const busEntryMarkup = busEntries
             .map((busEntry) =>
                 SchematicSvgRenderer.#buildSchematicBusEntryMarkup(
                     busEntry,
-                    height
+                    contentHeight
                 )
             )
             .join('')
-        const authoredJunctionMarkup = authoredJunctions
+        const resolvedAuthoredJunctions =
+            SchematicSvgRenderer.#resolveAuthoredSchematicJunctions(
+                authoredJunctions,
+                lines
+            )
+        const authoredJunctionMarkup = resolvedAuthoredJunctions
             .map((junction) =>
                 SchematicSvgRenderer.#buildAuthoredSchematicJunctionMarkup(
                     junction,
-                    height
+                    contentHeight
                 )
             )
             .join('')
-        const imageMarkup = SchematicImageRenderer.buildMarkup(images, height)
+        const imageMarkup = SchematicImageRenderer.buildMarkup(
+            images,
+            contentHeight
+        )
 
         const textMarkup = resolvedTexts
             .map((text) =>
                 SchematicSvgRenderer.#buildSchematicTextMarkup(
                     text,
-                    height,
+                    contentHeight,
                     lines,
                     pins
                 )
@@ -190,8 +224,8 @@ export class SchematicSvgRenderer {
             .map((component) =>
                 SchematicSvgRenderer.#buildFallbackComponentMarkup(
                     component,
-                    height,
-                    schematic.sheet
+                    contentHeight,
+                    renderedSheet.contentSheet
                 )
             )
             .join('')
@@ -209,8 +243,8 @@ export class SchematicSvgRenderer {
             .map((pin) =>
                 SchematicPinSvgRenderer.buildMarkup(
                     pin,
-                    height,
-                    schematic.sheet,
+                    contentHeight,
+                    renderedSheet.contentSheet,
                     rotatedVerticalNumberOwners,
                     explicitOwnerPinNameLabels,
                     explicitOwnerPinLabelOffsets
@@ -219,24 +253,28 @@ export class SchematicSvgRenderer {
             .join('')
         const portMarkup = SchematicPortRenderer.buildMarkup(
             ports,
-            height,
-            schematic.sheet
+            contentHeight,
+            renderedSheet.contentSheet
         )
         const directiveMarkup = SchematicDirectiveRenderer.buildMarkup(
             directives,
-            height,
-            schematic.sheet
+            contentHeight,
+            renderedSheet.contentSheet
         )
         const junctionMarkup = SchematicJunctionRenderer.buildMarkup(
             lines,
             crosses,
             ports,
             resolvedTexts.filter((text) => text.recordType === '17'),
-            height
+            contentHeight,
+            resolvedAuthoredJunctions
         )
         const crossMarkup = crosses
             .map((cross) =>
-                SchematicSvgRenderer.#buildSchematicCrossMarkup(cross, height)
+                SchematicSvgRenderer.#buildSchematicCrossMarkup(
+                    cross,
+                    contentHeight
+                )
             )
             .join('')
 
@@ -325,6 +363,80 @@ export class SchematicSvgRenderer {
             '</g>' +
             '</svg></section>'
         )
+    }
+
+    /**
+     * Resolves the rendered dimensions and sheet metadata used by SVG output.
+     * @param {{ width?: number, height?: number, sourceWidth?: number, sourceHeight?: number, marginWidth?: number, paperSize?: string, borderOn?: boolean } | undefined} sheet
+     * @returns {{ width: number, height: number, contentHeight: number, sheet: object, contentSheet: object }}
+     */
+    static #resolveRenderedSheet(sheet) {
+        const width = Math.max(Number(sheet?.width || 1000), 100)
+        const height = Math.max(Number(sheet?.height || 700), 100)
+        const margin = Math.max(Number(sheet?.marginWidth || 20), 10)
+        const renderedHeight = SchematicSvgRenderer.#resolveRenderedSheetHeight(
+            sheet,
+            width,
+            height,
+            margin
+        )
+
+        if (renderedHeight === height) {
+            return {
+                width,
+                height,
+                contentHeight: height,
+                sheet: sheet || {},
+                contentSheet: sheet || {}
+            }
+        }
+        const contentHeight = renderedHeight - margin
+
+        return {
+            width,
+            height: renderedHeight,
+            contentHeight,
+            sheet: {
+                ...(sheet || {}),
+                width,
+                height: renderedHeight,
+                sourceWidth: width,
+                sourceHeight: renderedHeight
+            },
+            contentSheet: {
+                ...(sheet || {}),
+                width,
+                height: contentHeight,
+                sourceWidth: width,
+                sourceHeight: contentHeight
+            }
+        }
+    }
+
+    /**
+     * Adds top and bottom zone bands for preserved custom border sheets whose
+     * stored Y extent describes the inner drawing frame.
+     * @param {{ width?: number, height?: number, sourceWidth?: number, sourceHeight?: number, marginWidth?: number, paperSize?: string, borderOn?: boolean } | undefined} sheet
+     * @param {number} width
+     * @param {number} height
+     * @param {number} margin
+     * @returns {number}
+     */
+    static #resolveRenderedSheetHeight(sheet, width, height, margin) {
+        const sourceWidth = Number(sheet?.sourceWidth || 0)
+        const sourceHeight = Number(sheet?.sourceHeight || 0)
+
+        if (
+            !sheet?.borderOn ||
+            sheet?.paperSize ||
+            width !== sourceWidth ||
+            height !== sourceHeight ||
+            height <= margin * 2
+        ) {
+            return height
+        }
+
+        return height + margin * 2
     }
 
     /**
@@ -550,7 +662,7 @@ export class SchematicSvgRenderer {
 
     /**
      * Builds one free text primitive with font metadata.
-     * @param {{ x: number, y: number, text: string, color: string, recordType?: string, style?: number, fontSize?: number, fontFamily?: string, fontWeight?: number, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, anchor?: 'start' | 'middle' | 'end', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }} text
+     * @param {{ x: number, y: number, text: string, color: string, recordType?: string, style?: number, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, anchor?: 'start' | 'middle' | 'end', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }} text
      * @param {number} sheetHeight
      * @param {{ x1: number, y1: number, x2: number, y2: number }[]} lines
      * @param {{ x: number, y: number, length: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
@@ -578,6 +690,7 @@ export class SchematicSvgRenderer {
         const placement = SchematicSvgRenderer.#resolveSchematicTextPlacement(
             text,
             sheetHeight,
+            lines,
             matchedOwnerPin
         )
 
@@ -601,26 +714,137 @@ export class SchematicSvgRenderer {
 
     /**
      * Resolves final text placement for schematic free-text annotations.
-     * @param {{ x: number, y: number, text: string, recordType?: string, fontSize?: number, rotation?: number, anchor?: 'start' | 'middle' | 'end' }} text
+     * @param {{ x: number, y: number, text: string, ownerIndex?: string, recordType?: string, fontSize?: number, rotation?: number, anchor?: 'start' | 'middle' | 'end' }} text
      * @param {number} sheetHeight
+     * @param {{ x1: number, y1: number, x2: number, y2: number, lineStyle?: number }[]} lines
      * @param {{ x: number, y: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' } | null} matchedOwnerPin
      * @returns {{ x: number, y: number, anchor: 'start' | 'middle' | 'end' }}
      */
-    static #resolveSchematicTextPlacement(text, sheetHeight, matchedOwnerPin) {
+    static #resolveSchematicTextPlacement(
+        text,
+        sheetHeight,
+        lines,
+        matchedOwnerPin
+    ) {
         const mirroredOwnerPinPlacement =
             SchematicOwnerPinLabelLayout.resolveMirroredOwnerPinLabelPlacement(
                 text,
                 matchedOwnerPin
             )
+        const sourceY = mirroredOwnerPinPlacement?.y ?? text.y
+        const projectedY = projectSchematicY(sheetHeight, sourceY)
+        const fontSize =
+            SchematicTypography.resolveViewerFontSize(text.fontSize) || 0
+        const baselineLift =
+            SchematicSvgRenderer.#resolveSectionHeadingBaselineLift(
+                text,
+                lines,
+                sourceY,
+                fontSize,
+                matchedOwnerPin
+            )
 
         return {
             x: mirroredOwnerPinPlacement?.x ?? text.x,
-            y: projectSchematicY(
-                sheetHeight,
-                mirroredOwnerPinPlacement?.y ?? text.y
-            ),
+            y: projectedY - baselineLift,
             anchor: text.anchor || 'start'
         }
+    }
+
+    /**
+     * Lifts large section headings clear of authored dash-dot frame baselines.
+     * @param {{ x: number, y: number, ownerIndex?: string, recordType?: string, fontSize?: number, rotation?: number }} text
+     * @param {{ x1: number, y1: number, x2: number, y2: number, lineStyle?: number }[]} lines
+     * @param {number} sourceY
+     * @param {number} fontSize
+     * @param {{ x: number, y: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' } | null} matchedOwnerPin
+     * @returns {number}
+     */
+    static #resolveSectionHeadingBaselineLift(
+        text,
+        lines,
+        sourceY,
+        fontSize,
+        matchedOwnerPin
+    ) {
+        if (
+            !SchematicSvgRenderer.#isLargeOwnerlessFreeText(
+                text,
+                fontSize,
+                matchedOwnerPin
+            )
+        ) {
+            return 0
+        }
+
+        return SchematicSvgRenderer.#hasSameCoordinateDashDotFrameLine(
+            text,
+            lines,
+            sourceY
+        )
+            ? fontSize * SECTION_HEADING_BASELINE_LIFT_RATIO
+            : 0
+    }
+
+    /**
+     * Returns true when one text primitive behaves like a section heading.
+     * @param {{ ownerIndex?: string, recordType?: string, rotation?: number }} text
+     * @param {number} fontSize
+     * @param {{ x: number, y: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' } | null} matchedOwnerPin
+     * @returns {boolean}
+     */
+    static #isLargeOwnerlessFreeText(text, fontSize, matchedOwnerPin) {
+        if (matchedOwnerPin) return false
+        if (text.recordType !== '4') return false
+        if (String(text.ownerIndex || '').trim()) return false
+        if (fontSize < SECTION_HEADING_MIN_FONT_SIZE) return false
+
+        return SchematicSvgRenderer.#normalizeDegrees(text.rotation) === 0
+    }
+
+    /**
+     * Detects section frame lines that share the title baseline coordinate.
+     * @param {{ x: number }} text
+     * @param {{ x1: number, y1: number, x2: number, y2: number, lineStyle?: number }[]} lines
+     * @param {number} sourceY
+     * @returns {boolean}
+     */
+    static #hasSameCoordinateDashDotFrameLine(text, lines, sourceY) {
+        const textX = Number(text.x)
+        if (!Number.isFinite(textX) || !Number.isFinite(sourceY)) return false
+
+        return lines.some((line) => {
+            if (Number(line.lineStyle || 0) !== 3) return false
+
+            const y1 = Number(line.y1)
+            const y2 = Number(line.y2)
+            if (
+                !Number.isFinite(y1) ||
+                !Number.isFinite(y2) ||
+                Math.abs(y1 - y2) > SECTION_HEADING_LINE_Y_TOLERANCE ||
+                Math.abs(y1 - sourceY) > SECTION_HEADING_LINE_Y_TOLERANCE
+            ) {
+                return false
+            }
+
+            const minX =
+                Math.min(Number(line.x1), Number(line.x2)) -
+                SECTION_HEADING_LINE_X_PADDING
+            const maxX =
+                Math.max(Number(line.x1), Number(line.x2)) +
+                SECTION_HEADING_LINE_X_PADDING
+
+            return textX >= minX && textX <= maxX
+        })
+    }
+
+    /**
+     * Normalizes text rotation into a whole-degree clockwise range.
+     * @param {number | undefined} rotation
+     * @returns {number}
+     */
+    static #normalizeDegrees(rotation) {
+        return ((Math.round(Number(rotation || 0)) % 360) + 360) % 360
     }
 
     /**
@@ -690,6 +914,84 @@ export class SchematicSvgRenderer {
             ) +
             '" />'
         )
+    }
+
+    /**
+     * Resolves authored junction colors from their connected wire routes.
+     * @param {{ x: number, y: number, color: string }[]} junctions
+     * @param {{ x1: number, y1: number, x2: number, y2: number, color: string, ownerIndex?: string, isBus?: boolean, recordType?: string }[]} lines
+     * @returns {{ x: number, y: number, color: string }[]}
+     */
+    static #resolveAuthoredSchematicJunctions(junctions, lines) {
+        return junctions.map((junction) => ({
+            ...junction,
+            color: SchematicSvgRenderer.#resolveAuthoredSchematicJunctionColor(
+                junction,
+                lines
+            )
+        }))
+    }
+
+    /**
+     * Returns the connected wire color for one authored junction.
+     * @param {{ x: number, y: number, color: string }} junction
+     * @param {{ x1: number, y1: number, x2: number, y2: number, color: string, ownerIndex?: string, isBus?: boolean, recordType?: string }[]} lines
+     * @returns {string}
+     */
+    static #resolveAuthoredSchematicJunctionColor(junction, lines) {
+        const connectedLine = lines.find(
+            (line) =>
+                SchematicSvgRenderer.#isElectricalSchematicLine(line) &&
+                SchematicSvgRenderer.#schematicLineContainsPoint(line, junction)
+        )
+
+        return connectedLine?.color || junction.color
+    }
+
+    /**
+     * Returns true when one normalized line can carry schematic net color.
+     * @param {{ ownerIndex?: string, isBus?: boolean, recordType?: string } | null | undefined} line
+     * @returns {boolean}
+     */
+    static #isElectricalSchematicLine(line) {
+        if (line?.ownerIndex || line?.isBus === true) {
+            return false
+        }
+
+        if (!Object.prototype.hasOwnProperty.call(line || {}, 'recordType')) {
+            return true
+        }
+
+        return !['6', '7', '26'].includes(String(line.recordType || ''))
+    }
+
+    /**
+     * Returns true when one schematic line segment contains the given point.
+     * @param {{ x1: number, y1: number, x2: number, y2: number }} line
+     * @param {{ x: number, y: number }} point
+     * @returns {boolean}
+     */
+    static #schematicLineContainsPoint(line, point) {
+        const dx = Number(line.x2) - Number(line.x1)
+        const dy = Number(line.y2) - Number(line.y1)
+        const pointDx = Number(point.x) - Number(line.x1)
+        const pointDy = Number(point.y) - Number(line.y1)
+        const lengthSquared = dx * dx + dy * dy
+
+        if (!lengthSquared) {
+            return (
+                Math.abs(Number(line.x1) - Number(point.x)) <= 0.01 &&
+                Math.abs(Number(line.y1) - Number(point.y)) <= 0.01
+            )
+        }
+
+        const cross = Math.abs(pointDx * dy - pointDy * dx)
+        if (cross > 0.01) {
+            return false
+        }
+
+        const dot = pointDx * dx + pointDy * dy
+        return dot >= -0.01 && dot <= lengthSquared + 0.01
     }
 
     /**

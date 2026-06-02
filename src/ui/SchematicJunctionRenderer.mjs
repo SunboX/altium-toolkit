@@ -18,6 +18,7 @@ export class SchematicJunctionRenderer {
      * @param {{ x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down' }[]} [ports]
      * @param {{ x: number, y: number, style?: number, powerPortDirection?: 'up' | 'down' | 'left' | 'right' }[]} [powerPorts]
      * @param {number} sheetHeight
+     * @param {{ x: number, y: number }[]} [authoredJunctions]
      * @returns {string}
      */
     static buildMarkup(
@@ -25,13 +26,15 @@ export class SchematicJunctionRenderer {
         crosses,
         ports = [],
         powerPorts = [],
-        sheetHeight
+        sheetHeight,
+        authoredJunctions = []
     ) {
         return SchematicJunctionRenderer.#resolveJunctions(
             lines,
             crosses,
             ports,
-            powerPorts
+            powerPorts,
+            authoredJunctions
         )
             .map(
                 (junction) =>
@@ -57,9 +60,16 @@ export class SchematicJunctionRenderer {
      * @param {{ x: number, y: number }[]} crosses
      * @param {{ x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down' }[]} ports
      * @param {{ x: number, y: number, style?: number, powerPortDirection?: 'up' | 'down' | 'left' | 'right' }[]} powerPorts
+     * @param {{ x: number, y: number }[]} authoredJunctions
      * @returns {{ x: number, y: number, color: string }[]}
      */
-    static #resolveJunctions(lines, crosses, ports, powerPorts) {
+    static #resolveJunctions(
+        lines,
+        crosses,
+        ports,
+        powerPorts,
+        authoredJunctions
+    ) {
         const wireLines = lines.filter((line) =>
             SchematicJunctionRenderer.#isElectricalWireLine(line)
         )
@@ -69,6 +79,11 @@ export class SchematicJunctionRenderer {
         const visiblePowerPorts = powerPorts.filter((powerPort) =>
             SchematicJunctionRenderer.#isDrawablePowerPort(powerPort)
         )
+        const authoredJunctionKeys = new Set(
+            authoredJunctions.map((junction) =>
+                SchematicJunctionRenderer.#pointKey(junction)
+            )
+        )
 
         return SchematicJunctionRenderer.#collectCandidatePoints(
             wireLines,
@@ -77,6 +92,9 @@ export class SchematicJunctionRenderer {
         )
             .filter(
                 (point) =>
+                    !authoredJunctionKeys.has(
+                        SchematicJunctionRenderer.#pointKey(point)
+                    ) &&
                     !SchematicJunctionRenderer.#hasNearbyCross(point, crosses)
             )
             .flatMap((point) => {

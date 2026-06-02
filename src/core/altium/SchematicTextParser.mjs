@@ -33,7 +33,7 @@ export class SchematicTextParser {
     /**
      * Builds a font table from the sheet header.
      * @param {Record<string, string | string[]> | undefined} fields
-     * @returns {Record<string, { size: number, family: string, bold: boolean, rotation: number }>}
+     * @returns {Record<string, { size: number, family: string, bold: boolean, italic: boolean, rotation: number }>}
      */
     static extractSchematicFonts(fields) {
         const count = ParserUtils.parseNumericField(fields, 'FontIdCount') || 0
@@ -47,6 +47,7 @@ export class SchematicTextParser {
                     ParserUtils.getField(fields, 'FontName' + index)
                 ),
                 bold: ParserUtils.parseBoolean(fields?.['Bold' + index]),
+                italic: ParserUtils.parseBoolean(fields?.['Italic' + index]),
                 rotation:
                     ParserUtils.parseNumericField(fields, 'Rotation' + index) ||
                     0
@@ -61,8 +62,8 @@ export class SchematicTextParser {
      * @param {Record<string, string | string[]>} fields
      * @param {Record<string, string>} metadata
      * @param {{ width: number, marginWidth: number, titleBlockOn?: boolean }} sheet
-     * @param {Record<string, { size: number, family: string, bold: boolean, rotation: number }>} fonts
-     * @returns {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] } | null}
+     * @param {Record<string, { size: number, family: string, bold: boolean, italic?: boolean, rotation: number }>} fonts
+     * @returns {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] } | null}
      */
     static normalizeSchematicTextRecord(fields, metadata, sheet, fonts) {
         const x = ParserUtils.parseNumericField(fields, 'Location.X')
@@ -121,6 +122,7 @@ export class SchematicTextParser {
             fontSize: SchematicTextParser.#toSvgFontSize(font.size),
             fontFamily: font.family,
             fontWeight: font.bold ? 700 : 400,
+            ...(font.italic ? { fontStyle: 'italic' } : {}),
             rotation,
             sourceOrientation:
                 sourceOrientation === null ? undefined : sourceOrientation,
@@ -155,8 +157,8 @@ export class SchematicTextParser {
      * @param {{ fields: Record<string, string | string[]> }[]} records
      * @param {Record<string, string>} metadata
      * @param {number} sheetWidth
-     * @param {Record<string, { size: number, family: string, bold: boolean, rotation: number }>} fonts
-     * @returns {{ title: string, revision: string, documentNumber: string, sheetNumber: string, sheetTotal: string, date: string, drawnBy: string, footerHints: Partial<Record<'title' | 'documentNumber' | 'revision' | 'sheetNumber' | 'sheetTotal', { x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number }>> }}
+     * @param {Record<string, { size: number, family: string, bold: boolean, italic?: boolean, rotation: number }>} fonts
+     * @returns {{ title: string, revision: string, documentNumber: string, sheetNumber: string, sheetTotal: string, date: string, drawnBy: string, footerHints: Partial<Record<'title' | 'documentNumber' | 'revision' | 'sheetNumber' | 'sheetTotal', { x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string }>> }}
      */
     static extractSchematicTitleBlock(records, metadata, sheetWidth, fonts) {
         const footerTexts = records
@@ -248,8 +250,8 @@ export class SchematicTextParser {
     /**
      * Normalizes one visible footer text record into a title-block layout hint.
      * @param {Record<string, string | string[]>} fields
-     * @param {Record<string, { size: number, family: string, bold: boolean, rotation: number }>} fonts
-     * @returns {{ text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number } | null}
+     * @param {Record<string, { size: number, family: string, bold: boolean, italic?: boolean, rotation: number }>} fonts
+     * @returns {{ text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string } | null}
      */
     static #normalizeTitleBlockFooterRecord(fields, fonts) {
         const text = ParserUtils.getDisplayText(fields)
@@ -274,14 +276,15 @@ export class SchematicTextParser {
             ),
             fontSize: font.size,
             fontFamily: font.family,
-            fontWeight: font.bold ? 700 : 400
+            fontWeight: font.bold ? 700 : 400,
+            ...(font.italic ? { fontStyle: 'italic' } : {})
         }
     }
 
     /**
      * Maps visible footer rows onto title-block fields.
-     * @param {{ text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number }[]} footerTexts
-     * @returns {Partial<Record<'title' | 'documentNumber' | 'revision' | 'sheetNumber' | 'sheetTotal', { text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number }>>}
+     * @param {{ text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string }[]} footerTexts
+     * @returns {Partial<Record<'title' | 'documentNumber' | 'revision' | 'sheetNumber' | 'sheetTotal', { text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string }>>}
      */
     static #collectSchematicTitleBlockFooterHints(footerTexts) {
         const rows = SchematicTextParser.#groupTitleBlockFooterRows(footerTexts)
@@ -325,8 +328,8 @@ export class SchematicTextParser {
 
     /**
      * Groups footer texts by their shared baseline row.
-     * @param {{ text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number }[]} footerTexts
-     * @returns {Array<{ text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number }[]>}
+     * @param {{ text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string }[]} footerTexts
+     * @returns {Array<{ text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string }[]>}
      */
     static #groupTitleBlockFooterRows(footerTexts) {
         const tolerance = 8
@@ -372,7 +375,7 @@ export class SchematicTextParser {
     /**
      * Extracts a visible footer `Drawn By` value from the bottom-most footer
      * row when hidden metadata does not provide one.
-     * @param {{ text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number }[]} footerTexts
+     * @param {{ text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string }[]} footerTexts
      * @param {Record<string, string>} metadata
      * @returns {string}
      */
@@ -397,8 +400,8 @@ export class SchematicTextParser {
 
     /**
      * Removes the non-rendered text payload from stored footer hints.
-     * @param {Partial<Record<'title' | 'documentNumber' | 'revision' | 'sheetNumber' | 'sheetTotal', { text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number }>>} footerHints
-     * @returns {Partial<Record<'title' | 'documentNumber' | 'revision' | 'sheetNumber' | 'sheetTotal', { x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number }>>}
+     * @param {Partial<Record<'title' | 'documentNumber' | 'revision' | 'sheetNumber' | 'sheetTotal', { text: string, x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string }>>} footerHints
+     * @returns {Partial<Record<'title' | 'documentNumber' | 'revision' | 'sheetNumber' | 'sheetTotal', { x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string }>>}
      */
     static #stripSchematicTitleBlockHintText(footerHints) {
         return Object.fromEntries(
@@ -622,13 +625,14 @@ export class SchematicTextParser {
 
     /**
      * Returns the default schematic font when no sheet font entry exists.
-     * @returns {{ size: number, family: string, bold: boolean, rotation: number }}
+     * @returns {{ size: number, family: string, bold: boolean, italic: boolean, rotation: number }}
      */
     static #defaultSchematicFont() {
         return {
             size: 10,
             family: 'Times New Roman',
             bold: false,
+            italic: false,
             rotation: 0
         }
     }
@@ -670,9 +674,9 @@ export class SchematicTextParser {
 
     /**
      * Adds note box metadata to one decoded schematic note record.
-     * @param {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end' }} textRecord
+     * @param {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end' }} textRecord
      * @param {Record<string, string | string[]>} fields
-     * @returns {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }}
+     * @returns {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }}
      */
     static #normalizeSchematicNoteRecord(textRecord, fields) {
         const noteLines = SchematicTextParser.#decodeSchematicNoteLines(

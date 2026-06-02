@@ -132,7 +132,7 @@ export class PcbTextPrimitiveRenderer {
             metrics.lineHeight
         )
         const rectX = -layout.anchorX
-        const rectY = layout.anchorY - layout.height
+        const rectY = -layout.anchorY
         const cornerRadius = Math.min(
             padding,
             layout.width / 2,
@@ -360,7 +360,21 @@ export class PcbTextPrimitiveRenderer {
             return null
         }
 
-        context.font = PcbTextPrimitiveRenderer.#buildCanvasFont(text, fontSize)
+        const canvasFont = PcbTextPrimitiveRenderer.#buildCanvasFont(
+            text,
+            fontSize
+        )
+        if (
+            !PcbTextPrimitiveRenderer.#canMeasureCanvasFont(
+                text,
+                canvasFont,
+                fontSize
+            )
+        ) {
+            return null
+        }
+
+        context.font = canvasFont
 
         const measured = lines.map((line) => context.measureText(line || ' '))
         const ascent = PcbTextPrimitiveRenderer.#resolveMeasuredExtent(
@@ -386,6 +400,29 @@ export class PcbTextPrimitiveRenderer {
             descent,
             lineHeight
         }
+    }
+
+    /**
+     * Checks whether canvas text metrics can be trusted for the requested
+     * imported font.
+     * @param {{ fontMetrics?: { averageAdvanceWidth?: number, unitsPerEm?: number } }} text Text record.
+     * @param {string} canvasFont Full canvas font shorthand.
+     * @param {number} fontSize Text font size.
+     * @returns {boolean}
+     */
+    static #canMeasureCanvasFont(text, canvasFont, fontSize) {
+        const fonts = globalThis.document?.fonts
+        if (typeof fonts?.check === 'function') {
+            return fonts.check(
+                PcbTextPrimitiveRenderer.#buildPrimaryCanvasFont(text, fontSize)
+            )
+        }
+
+        if (PcbTextPrimitiveRenderer.#fontMetricsAverageWidthRatio(text)) {
+            return false
+        }
+
+        return Boolean(canvasFont)
     }
 
     /**
@@ -415,6 +452,25 @@ export class PcbTextPrimitiveRenderer {
         const style = text?.isItalic ? 'italic' : 'normal'
         const family = PcbTextPrimitiveRenderer.#buildCanvasFontFamily(
             text?.fontFamily || text?.fontName
+        )
+
+        return `${style} ${weight} ${fontSize}px ${family}`
+    }
+
+    /**
+     * Builds a single-family font shorthand for readiness checks.
+     * @param {{ fontFamily?: string, fontName?: string, isBold?: boolean, fontWeight?: number, isItalic?: boolean }} text Text record.
+     * @param {number} fontSize Text font size.
+     * @returns {string}
+     */
+    static #buildPrimaryCanvasFont(text, fontSize) {
+        const weight =
+            text?.isBold || Number(text?.fontWeight) >= 600 ? '700' : '400'
+        const style = text?.isItalic ? 'italic' : 'normal'
+        const family = PcbTextPrimitiveRenderer.#quoteFontFamily(
+            PcbTextPrimitiveRenderer.#cleanFontFamily(
+                text?.fontFamily || text?.fontName
+            )
         )
 
         return `${style} ${weight} ${fontSize}px ${family}`

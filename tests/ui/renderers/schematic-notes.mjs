@@ -90,7 +90,7 @@ test('renderSchematicSvg keeps compact one-line notes readable', () => {
     )
     assert.match(
         markup,
-        /<text class="schematic-note-text" x="51" y="84.50"[^>]*font-size="9"[^>]*>Use this marker only in low mode</
+        /<text class="schematic-note-text" x="47" y="83.15"[^>]*font-size="9"[^>]*>Use this marker only in low mode</
     )
     assert.match(
         markup,

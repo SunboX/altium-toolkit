@@ -15,7 +15,7 @@ const MINIMUM_NOTE_TEXT_SIZE = 4
 export class SchematicNoteRenderer {
     /**
      * Builds one boxed schematic note/callout with wrapped text rows.
-     * @param {{ x: number, y: number, color: string, fontSize?: number, fontFamily?: string, fontWeight?: number, cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }} text
+     * @param {{ x: number, y: number, color: string, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }} text
      * @param {number} sheetHeight
      * @returns {string}
      */
@@ -52,6 +52,18 @@ export class SchematicNoteRenderer {
         )
         const noteStroke = text.showBorder ? borderColor : 'none'
         const noteSourceLines = text.noteLines || []
+        const compactSingleLineNote =
+            SchematicNoteRenderer.#isCompactSingleLineNote(
+                noteSourceLines,
+                height,
+                requestedTextSize
+            )
+        const horizontalTextMargin =
+            SchematicNoteRenderer.#resolveHorizontalTextMargin(
+                textMargin,
+                compactSingleLineNote,
+                text
+            )
         const verticalTextMargin =
             SchematicNoteRenderer.#resolveVerticalTextMargin(
                 textMargin,
@@ -60,14 +72,10 @@ export class SchematicNoteRenderer {
             )
         const layout = SchematicNoteRenderer.#resolveTextLayout(
             noteSourceLines,
-            Math.max(width - textMargin * 2, requestedTextSize),
+            Math.max(width - horizontalTextMargin * 2, requestedTextSize),
             Math.max(height - verticalTextMargin * 2, requestedTextSize),
             requestedTextSize,
-            SchematicNoteRenderer.#isCompactSingleLineNote(
-                noteSourceLines,
-                height,
-                requestedTextSize
-            )
+            compactSingleLineNote
         )
         const noteLines = layout.noteLines
         const textSize = layout.textSize
@@ -80,10 +88,11 @@ export class SchematicNoteRenderer {
                     left,
                     right,
                     top,
-                    textMargin,
+                    horizontalTextMargin,
                     verticalTextMargin,
                     lineHeight,
                     textSize,
+                    compactSingleLineNote,
                     text
                 )
             )
@@ -311,6 +320,25 @@ export class SchematicNoteRenderer {
     }
 
     /**
+     * Resolves horizontal text padding for one note box.
+     * @param {number} textMargin
+     * @param {boolean} compactSingleLineNote
+     * @param {{ showBorder?: boolean }} text
+     * @returns {number}
+     */
+    static #resolveHorizontalTextMargin(
+        textMargin,
+        compactSingleLineNote,
+        text
+    ) {
+        if (compactSingleLineNote && text.showBorder === false) {
+            return 0
+        }
+
+        return textMargin
+    }
+
+    /**
      * Reduces vertical padding for short note rectangles so readable text is
      * centered instead of scaled down to satisfy the default margin.
      * @param {number} textMargin
@@ -426,7 +454,8 @@ export class SchematicNoteRenderer {
      * @param {number} verticalTextMargin
      * @param {number} lineHeight
      * @param {number} textSize
-     * @param {{ color: string, fontFamily?: string, fontWeight?: number }} text
+     * @param {boolean} compactSingleLineNote
+     * @param {{ color: string, fontFamily?: string, fontWeight?: number, fontStyle?: string }} text
      * @returns {string}
      */
     static #buildNoteLineMarkup(
@@ -439,10 +468,18 @@ export class SchematicNoteRenderer {
         verticalTextMargin,
         lineHeight,
         textSize,
+        compactSingleLineNote,
         text
     ) {
         const x = left + horizontalTextMargin
-        const y = top + verticalTextMargin + textSize + index * lineHeight
+        const y =
+            top +
+            verticalTextMargin +
+            SchematicNoteRenderer.#resolveBaselineOffset(
+                textSize,
+                compactSingleLineNote
+            ) +
+            index * lineHeight
 
         if (/^_+$/.test(String(line || '').trim())) {
             return (
@@ -483,9 +520,37 @@ export class SchematicNoteRenderer {
             escapeHtml(text.fontFamily || 'Times New Roman') +
             '" font-weight="' +
             formatNumber(text.fontWeight || 400) +
+            SchematicNoteRenderer.#buildFontStyleAttribute(text.fontStyle) +
             '" xml:space="preserve">' +
             escapeHtml(line) +
             '</text>'
         )
+    }
+
+    /**
+     * Builds an optional note font-style attribute.
+     * @param {string | undefined} fontStyle
+     * @returns {string}
+     */
+    static #buildFontStyleAttribute(fontStyle) {
+        if (!fontStyle || fontStyle === 'normal') {
+            return ''
+        }
+
+        return '" font-style="' + escapeHtml(fontStyle)
+    }
+
+    /**
+     * Resolves the text baseline offset for a rendered note line.
+     * @param {number} textSize
+     * @param {boolean} compactSingleLineNote
+     * @returns {number}
+     */
+    static #resolveBaselineOffset(textSize, compactSingleLineNote) {
+        if (compactSingleLineNote) {
+            return textSize * 0.85
+        }
+
+        return textSize
     }
 }

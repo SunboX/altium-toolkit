@@ -46,7 +46,7 @@ export class SchematicSvgUtils {
      * @param {string} text
      * @param {string} color
      * @param {'start' | 'end' | 'middle'} anchor
-     * @param {{ fontSize?: number, fontFamily?: string, fontWeight?: number, rotation?: number, segments?: { text: string, overline?: boolean }[] }} [options]
+     * @param {{ fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, segments?: { text: string, overline?: boolean }[] }} [options]
      * @returns {string}
      */
     static createSvgText(className, x, y, text, color, anchor, options = {}) {
@@ -102,7 +102,7 @@ export class SchematicSvgUtils {
      * Creates optional inline SVG text attributes for typography and rotation.
      * @param {number} x
      * @param {number} y
-     * @param {{ fontSize?: number, fontFamily?: string, fontWeight?: number, rotation?: number }} options
+     * @param {{ fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number }} options
      * @returns {string}
      */
     static #buildSvgTextStyleAttributes(x, y, options) {
@@ -128,6 +128,13 @@ export class SchematicSvgUtils {
             attributes +=
                 ' font-weight="' +
                 SchematicSvgUtils.escapeHtml(String(options.fontWeight)) +
+                '"'
+        }
+
+        if (options.fontStyle && options.fontStyle !== 'normal') {
+            attributes +=
+                ' font-style="' +
+                SchematicSvgUtils.escapeHtml(options.fontStyle) +
                 '"'
         }
 

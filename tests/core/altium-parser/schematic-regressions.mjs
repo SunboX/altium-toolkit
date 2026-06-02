@@ -270,6 +270,9 @@ test('parseAltiumArrayBuffer resolves mirrored multipart transistor sections fro
             .map((pin) => pin.designator)
             .sort((left, right) => Number(left) - Number(right))
     }))
+    const labelModes = documentModel.schematic.pins
+        .filter((pin) => ['700', '720'].includes(pin.ownerIndex))
+        .map((pin) => pin.labelMode)
 
     assert.deepEqual(designators, [
         { ownerIndex: '700', text: 'Q1A' },
@@ -279,9 +282,10 @@ test('parseAltiumArrayBuffer resolves mirrored multipart transistor sections fro
         { ownerIndex: '700', pins: ['1', '2', '6'] },
         { ownerIndex: '720', pins: ['3', '4', '5'] }
     ])
+    assert.deepEqual(labelModes, Array(6).fill('hidden'))
     assert.equal(
         (markup.match(/class="schematic-pin-number"/g) || []).length,
-        6
+        0
     )
     assert.match(markup, />Q1A</)
     assert.match(markup, />Q1B</)
@@ -611,6 +615,9 @@ test('parseAltiumArrayBuffer keeps record-8 symbol circles and avoids duplicate 
             isMirrored: text.isMirrored
         }))
         .sort((left, right) => left.text.localeCompare(right.text))
+    const ownerPinModes = documentModel.schematic.pins
+        .filter((pin) => pin.ownerIndex === '700')
+        .map((pin) => pin.labelMode)
 
     assert.deepEqual(documentModel.schematic.ellipses, [
         {
@@ -667,21 +674,10 @@ test('parseAltiumArrayBuffer keeps record-8 symbol circles and avoids duplicate 
     assert.equal((markup.match(/>G<\/text>/g) || []).length, 1)
     assert.equal((markup.match(/>S<\/text>/g) || []).length, 1)
     assert.equal((markup.match(/>D<\/text>/g) || []).length, 1)
-    assert.match(
-        markup,
-        /<text class="schematic-pin-number" x="198" y="95" fill="var\(--schematic-text-color\)" text-anchor="middle" font-size="9" font-family="Times New Roman" font-weight="400" transform="rotate\(-90 198 95\)">1</
-    )
-    assert.match(
-        markup,
-        /<text class="schematic-pin-number" x="179" y="56" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400">2</
-    )
-    assert.match(
-        markup,
-        /<text class="schematic-pin-number" x="248" y="56" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">3</
-    )
+    assert.deepEqual(ownerPinModes, Array(3).fill('hidden'))
     assert.equal(
         (markup.match(/class="schematic-pin-number"/g) || []).length,
-        3
+        0
     )
 })
 

@@ -27,6 +27,7 @@ import { SchematicImageParser } from './SchematicImageParser.mjs'
 import { SchematicNetlistBuilder } from './SchematicNetlistBuilder.mjs'
 import { SchematicComponentTextResolver } from './SchematicComponentTextResolver.mjs'
 import { SchematicStreamExtractor } from './SchematicStreamExtractor.mjs'
+import { SchematicWireNormalizer } from './SchematicWireNormalizer.mjs'
 import { CircuitJsonModelAdapter } from '../circuit-json/CircuitJsonModelAdapter.mjs'
 const {
     countMatchingKeys,
@@ -281,7 +282,7 @@ export class AltiumParser {
             )
         }
 
-        const lines = [
+        let lines = [
             ...lineRecords.map((record, index) => ({
                 x1: parseNumericField(record.fields, 'Location.X') || 0,
                 y1: parseNumericField(record.fields, 'Location.Y') || 0,
@@ -325,8 +326,22 @@ export class AltiumParser {
                 )
             )
         ]
-        const polygons =
+        const pins = parseSchematicPins(pinRecords)
+        const junctions = SchematicJunctionParser.parseSchematicJunctions(
+            recordIndexAwareRecords
+        )
+        lines = SchematicWireNormalizer.extendCollapsedPolylineEndpoints(
+            lines,
+            pins,
+            junctions
+        )
+        let polygons =
             SchematicPrimitiveParser.parseSchematicPolygons(polygonRecords)
+        ;({ lines, polygons } =
+            SchematicWireNormalizer.normalizeStandaloneCalloutArrowheads(
+                lines,
+                polygons
+            ))
         const arcs = SchematicPrimitiveParser.parseSchematicArcs(arcRecords)
         const ellipses =
             SchematicPrimitiveParser.parseSchematicEllipses(ellipseRecords)
@@ -348,9 +363,6 @@ export class AltiumParser {
         const { sheetSymbols, sheetEntries } = SchematicSheetParser.parse(
             recordIndexAwareRecords
         )
-        const junctions = SchematicJunctionParser.parseSchematicJunctions(
-            recordIndexAwareRecords
-        )
         const busEntries = SchematicBusEntryParser.parseSchematicBusEntries(
             recordIndexAwareRecords
         )
@@ -360,7 +372,6 @@ export class AltiumParser {
                 arrayBuffer
             )
 
-        const pins = parseSchematicPins(pinRecords)
         const ports = parseSchematicPorts(portRecords, lines)
         const crosses = parseSchematicCrosses(crossRecords)
         let texts = drawableTextRecords

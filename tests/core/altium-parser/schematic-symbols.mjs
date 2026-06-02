@@ -433,6 +433,49 @@ test('parseAltiumArrayBuffer fills compact four-pin passive owner numbers', () =
 })
 
 /**
+ * Verifies compact four-pin owners with explicit numeric labels suppress
+ * repeated source terminal names instead of drawing them inside the symbol.
+ */
+test('parseAltiumArrayBuffer suppresses repeated compact four-pin terminal names', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=260|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=14|Location.X=90|Location.Y=70|Corner.X=130|Corner.Y=110' +
+            '|Color=128|AreaColor=11599871|IsSolid=T|OwnerIndex=787|OwnerPartId=1',
+        '|RECORD=2|Name=NODE_A|Designator=1|Location.X=90|Location.Y=100' +
+            '|PinLength=20|PinConglomerate=50|Electrical=4|OwnerIndex=787|OwnerPartId=1',
+        '|RECORD=2|Name=NODE_B|Designator=2|Location.X=90|Location.Y=80' +
+            '|PinLength=20|PinConglomerate=50|Electrical=4|OwnerIndex=787|OwnerPartId=1',
+        '|RECORD=2|Name=NODE_A|Designator=3|Location.X=130|Location.Y=80' +
+            '|PinLength=20|PinConglomerate=48|Electrical=4|OwnerIndex=787|OwnerPartId=1',
+        '|RECORD=2|Name=NODE_B|Designator=4|Location.X=130|Location.Y=100' +
+            '|PinLength=20|PinConglomerate=48|Electrical=4|OwnerIndex=787|OwnerPartId=1'
+    ]
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'explicit-compact-four-pin-labels.SchDoc',
+        new TextEncoder().encode(records.join('')).buffer
+    )
+    const ownerPins = documentModel.schematic.pins
+        .filter((pin) => pin.ownerIndex === '787')
+        .map((pin) => ({
+            designator: pin.designator,
+            name: pin.name,
+            labelMode: pin.labelMode
+        }))
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.deepEqual(ownerPins, [
+        { designator: '1', name: 'NODE_A', labelMode: 'number-only' },
+        { designator: '2', name: 'NODE_B', labelMode: 'number-only' },
+        { designator: '3', name: 'NODE_A', labelMode: 'number-only' },
+        { designator: '4', name: 'NODE_B', labelMode: 'number-only' }
+    ])
+    assert.doesNotMatch(markup, /class="schematic-pin-name"/)
+})
+
+/**
  * Verifies compact two-column owners can recover omitted numeric labels from
  * their side geometry while preserving semantic pin names.
  */
@@ -632,11 +675,11 @@ test('parseAltiumArrayBuffer fills single-column header pin number gaps', () => 
     )
     assert.match(
         markup,
-        /text class="schematic-pin-number" x="118" y="49"[^>]*>1</
+        /text class="schematic-pin-number" x="110" y="49"[^>]*>1</
     )
     assert.match(
         markup,
-        /text class="schematic-pin-name" x="124" y="53"[^>]*>PIN1</
+        /text class="schematic-pin-name" x="128" y="53"[^>]*>PIN1</
     )
 })
 
@@ -852,6 +895,54 @@ test('parseAltiumArrayBuffer hides owner-drawn terminal glyph pin names', () => 
 })
 
 /**
+ * Verifies compact transistor-like symbols hide internal terminal pin labels
+ * even when the source also carries numeric pin designators.
+ */
+test('parseAltiumArrayBuffer hides numbered owner-drawn terminal glyph pin labels', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=220|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=2|OwnerIndex=913|OwnerPartId=1|PinConglomerate=33|PinLength=20' +
+            '|Location.X=80|Location.Y=130|Name=C|Designator=3',
+        '|RECORD=2|OwnerIndex=913|OwnerPartId=1|PinConglomerate=32|PinLength=20' +
+            '|Location.X=90|Location.Y=120|Name=B|Designator=1',
+        '|RECORD=2|OwnerIndex=913|OwnerPartId=1|PinConglomerate=35|PinLength=20' +
+            '|Location.X=80|Location.Y=110|Name=E|Designator=2',
+        '|RECORD=13|OwnerIndex=913|OwnerPartId=1|IndexInSheet=3|Location.X=80|Location.Y=130|Corner.X=90|Corner.Y=123|LineWidth=1|Color=16711680',
+        '|RECORD=13|OwnerIndex=913|OwnerPartId=1|IndexInSheet=4|Location.X=90|Location.Y=117|Corner.X=80|Corner.Y=110|LineWidth=1|Color=16711680',
+        '|RECORD=13|OwnerIndex=913|OwnerPartId=1|IndexInSheet=5|Location.X=90|Location.Y=129|Corner.X=90|Corner.Y=111|LineWidth=1|Color=16711680',
+        '|RECORD=7|OwnerIndex=913|OwnerPartId=1|IndexInSheet=6|LocationCount=3|X1=80|Y1=110|X2=83|Y2=115|X3=86|Y3=111|IsSolid=T|Color=16711680|AreaColor=16711680',
+        '|RECORD=34|OwnerIndex=913|Location.X=112|Location.Y=134|Color=8388608|FontID=1|Text=Q8|Name=Designator',
+        '|RECORD=41|OwnerIndex=913|Location.X=90|Location.Y=100|Color=8388608|FontID=1|Text=GEN3|Name=Comment'
+    ]
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'numbered-terminal-glyph-labels.SchDoc',
+        new TextEncoder().encode(records.join('')).buffer
+    )
+    const ownerPins = documentModel.schematic.pins.filter(
+        (pin) => pin.ownerIndex === '913'
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.deepEqual(
+        ownerPins.map((pin) => ({
+            designator: pin.designator,
+            name: pin.name,
+            labelMode: pin.labelMode
+        })),
+        [
+            { designator: '3', name: 'C', labelMode: 'hidden' },
+            { designator: '1', name: 'B', labelMode: 'hidden' },
+            { designator: '2', name: 'E', labelMode: 'hidden' }
+        ]
+    )
+    assert.doesNotMatch(markup, /class="schematic-pin-number"/)
+    assert.doesNotMatch(markup, /class="schematic-pin-name"/)
+})
+
+/**
  * Verifies nova-sheet record-14 package bodies are parsed as filled rectangles
  * instead of diagonal line segments.
  */
@@ -930,4 +1021,45 @@ test('parseAltiumArrayBuffer keeps the nova-sheet inductor coil arcs as record-1
             ownerIndex: '5602'
         }
     ])
+})
+
+/**
+ * Verifies schematic pins without an authored color render as symbol ink, not
+ * as net wires, while explicit pin colors are still preserved.
+ */
+test('parseAltiumArrayBuffer defaults omitted pin colors to symbol ink', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=180|CustomY=120|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=13|Location.X=60|Location.Y=80|Corner.X=100|Corner.Y=80' +
+            '|LineWidth=1|Color=16711680',
+        '|RECORD=2|OwnerIndex=700|OwnerPartId=1|PinConglomerate=58|PinLength=30' +
+            '|Location.X=100|Location.Y=80|Name=NODE_A|Designator=5',
+        '|RECORD=2|OwnerIndex=700|OwnerPartId=1|PinConglomerate=56|PinLength=30' +
+            '|Location.X=130|Location.Y=60|Name=NODE_B|Designator=6|Color=255'
+    ]
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'symbol-pin-color.SchDoc',
+        new TextEncoder().encode(records.join('')).buffer
+    )
+    const defaultPin = documentModel.schematic.pins.find(
+        (pin) => pin.designator === '5'
+    )
+    const explicitPin = documentModel.schematic.pins.find(
+        (pin) => pin.designator === '6'
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.equal(defaultPin.color, '#000000')
+    assert.equal(explicitPin.color, '#ff0000')
+    assert.match(
+        markup,
+        /<line x1="60" y1="40" x2="100" y2="40" stroke="var\(--schematic-accent-ink-color\)" stroke-width="1" \/>/
+    )
+    assert.match(
+        markup,
+        /<line class="schematic-pin-line" x1="100" y1="40" x2="70" y2="40" stroke="var\(--schematic-text-color\)" \/>/
+    )
 })

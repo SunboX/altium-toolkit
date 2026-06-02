@@ -338,16 +338,59 @@ test('renderSchematicSvg prefers explicit power-port direction over wire inferen
     assert.match(markup, /x1="150" y1="50" x2="150" y2="38"/)
     assert.match(
         markup,
-        /<text class="schematic-power-port-label" x="150" y="34" fill="var\(--schematic-power-color\)" text-anchor="middle" font-size="9"/
+        /<text class="schematic-power-port-label" x="150" y="36" fill="var\(--schematic-power-color\)" text-anchor="middle" font-size="9"/
     )
     assert.doesNotMatch(markup, /x1="150" y1="50" x2="138" y2="50"/)
 })
 
 /**
- * Verifies upward rail-port labels stay clear of nearby horizontal net
- * segments while keeping the recovered schematic color mapping.
+ * Verifies rail power ports render Altium's T-shaped cap instead of a bare
+ * vertical stem that visually runs into the label.
  */
-test('renderSchematicSvg offsets upward rail labels away from parallel wires', () => {
+test('renderSchematicSvg renders rail power ports with a T cap', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Rail cap schematic' },
+        schematic: {
+            sheet: { width: 200, height: 100 },
+            lines: [
+                { x1: 150, y1: 50, x2: 180, y2: 50, color: '#000080', width: 1 }
+            ],
+            texts: [
+                {
+                    x: 150,
+                    y: 50,
+                    text: 'RAIL_A',
+                    color: '#800000',
+                    hidden: false,
+                    recordType: '17',
+                    style: 2,
+                    fontSize: 10,
+                    fontFamily: 'Times New Roman',
+                    fontWeight: 400,
+                    rotation: 0,
+                    powerPortDirection: 'up',
+                    anchor: 'middle'
+                }
+            ],
+            components: [],
+            pins: []
+        }
+    })
+
+    assert.match(markup, /schematic-power-port--rail/)
+    assert.match(markup, /x1="150" y1="50" x2="150" y2="38"/)
+    assert.match(markup, /x1="144" y1="38" x2="156" y2="38"/)
+    assert.match(
+        markup,
+        /<text class="schematic-power-port-label" x="150" y="36" fill="var\(--schematic-power-color\)" text-anchor="middle" font-size="9"[^>]*>RAIL_A<\/text>/
+    )
+})
+
+/**
+ * Verifies upward rail-port labels stay anchored to the rail cap even when
+ * unrelated horizontal net segments pass nearby.
+ */
+test('renderSchematicSvg anchors upward rail labels above parallel wires', () => {
     const markup = SchematicSvgRenderer.render({
         summary: { title: 'Power label clearance' },
         schematic: {
@@ -386,11 +429,17 @@ test('renderSchematicSvg offsets upward rail labels away from parallel wires', (
     })
 
     assert.match(markup, /x1="150" y1="50" x2="150" y2="38"/)
+    assert.match(markup, /x1="144" y1="38" x2="156" y2="38"/)
     assert.match(
         markup,
-        /<text class="schematic-power-port-label" x="150" y="43" fill="var\(--schematic-power-color\)" text-anchor="middle" font-size="9"/
+        /<text class="schematic-power-port-label" x="150" y="36" fill="var\(--schematic-power-color\)" text-anchor="middle" font-size="9"/
+    )
+    assert.doesNotMatch(
+        markup,
+        /schematic-power-port-label" x="150" y="23\.75"/
     )
     assert.doesNotMatch(markup, /schematic-power-port-label" x="150" y="34"/)
+    assert.doesNotMatch(markup, /schematic-power-port-label" x="150" y="43"/)
 })
 
 /**

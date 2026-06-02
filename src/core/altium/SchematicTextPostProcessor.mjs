@@ -243,7 +243,7 @@ export class SchematicTextPostProcessor {
      * or off-sheet port keep their original left-to-right flow.
      * @param {{ x: number, y: number, text: string, name?: string, ownerIndex?: string, recordType?: string, rotation?: number, anchor?: 'start' | 'middle' | 'end' }[]} texts
      * @param {{ x1: number, y1: number, x2: number, y2: number, ownerIndex?: string }[]} lines
-     * @param {{ x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
+     * @param {{ x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', designator?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', symbolOuter?: number }[]} pins
      * @param {{ x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down' }[]} ports
      * @returns {{ x: number, y: number, text: string, name?: string, ownerIndex?: string, recordType?: string, rotation?: number, anchor?: 'start' | 'middle' | 'end' }[]}
      */
@@ -258,44 +258,161 @@ export class SchematicTextPostProcessor {
                 return text
             }
 
+            const pinOffsetText =
+                SchematicTextPostProcessor.#offsetWireLabelPastRightPinNumber(
+                    text,
+                    pins
+                )
             const hasNearbyRightDesignator = texts.some(
                 (candidate) =>
                     candidate &&
                     candidate.name === 'Designator' &&
                     !candidate.rotation &&
-                    candidate.x > text.x &&
-                    candidate.x - text.x <= 80 &&
-                    Math.abs(candidate.y - text.y) <= 2
+                    candidate.x > pinOffsetText.x &&
+                    candidate.x - pinOffsetText.x <= 80 &&
+                    Math.abs(candidate.y - pinOffsetText.y) <= 2
             )
 
             if (!hasNearbyRightDesignator) {
-                return text
+                return pinOffsetText
             }
 
             if (
                 SchematicTextPostProcessor.#hasPinConnectedAtWireStart(
-                    text,
+                    pinOffsetText,
                     lines,
                     pins
                 ) ||
                 SchematicTextPostProcessor.#hasLineConnectedAtWireStart(
-                    text,
+                    pinOffsetText,
                     lines
                 ) ||
                 SchematicTextPostProcessor.#hasPortConnectedAtWireStart(
-                    text,
+                    pinOffsetText,
                     lines,
                     ports
                 )
             ) {
-                return text
+                return pinOffsetText
             }
 
             return {
-                ...text,
+                ...pinOffsetText,
                 anchor: 'end'
             }
         })
+    }
+
+    /**
+     * Moves a start-anchored horizontal wire label rightward when it starts at
+     * the outer endpoint of a visible right-facing pin number.
+     * @param {{ x: number, y: number, text: string, recordType?: string, rotation?: number, anchor?: 'start' | 'middle' | 'end' }} text
+     * @param {{ x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', designator?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', symbolOuter?: number }[]} pins
+     * @returns {{ x: number, y: number, text: string, recordType?: string, rotation?: number, anchor?: 'start' | 'middle' | 'end' }}
+     */
+    static #offsetWireLabelPastRightPinNumber(text, pins) {
+        const requiredX = pins.reduce((maxX, pin) => {
+            if (
+                !SchematicTextPostProcessor.#isVisibleRightPinNumber(pin) ||
+                !SchematicTextPostProcessor.#textStartsAtPinOuterEndpoint(
+                    text,
+                    pin
+                )
+            ) {
+                return maxX
+            }
+
+            return Math.max(
+                maxX,
+                SchematicTextPostProcessor.#resolveRightPinNumberTextEndX(pin) +
+                    4
+            )
+        }, text.x)
+
+        if (requiredX <= text.x) {
+            return text
+        }
+
+        return {
+            ...text,
+            x: requiredX
+        }
+    }
+
+    /**
+     * Returns true when one pin renders a right-side number label.
+     * @param {{ orientation: 'left' | 'right' | 'top' | 'bottom', designator?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number' }} pin
+     * @returns {boolean}
+     */
+    static #isVisibleRightPinNumber(pin) {
+        const labelMode = pin?.labelMode || 'name-and-number'
+
+        return (
+            pin?.orientation === 'right' &&
+            labelMode !== 'hidden' &&
+            labelMode !== 'name-only' &&
+            String(pin.designator || '').trim() !== ''
+        )
+    }
+
+    /**
+     * Returns true when a text record starts on one pin's outer wire endpoint.
+     * @param {{ x: number, y: number }} text
+     * @param {{ x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
+     * @returns {boolean}
+     */
+    static #textStartsAtPinOuterEndpoint(text, pin) {
+        const endpoint =
+            SchematicTextPostProcessor.#projectPinOuterEndpoint(pin)
+
+        return (
+            endpoint !== null &&
+            Math.abs(endpoint.x - text.x) <= 2 &&
+            Math.abs(endpoint.y - text.y) <= 2
+        )
+    }
+
+    /**
+     * Estimates the x coordinate immediately after one rendered right pin
+     * number.
+     * @param {{ x: number, designator?: string, symbolOuter?: number }} pin
+     * @returns {number}
+     */
+    static #resolveRightPinNumberTextEndX(pin) {
+        return (
+            Number(pin.x) +
+            SchematicTextPostProcessor.#resolveHorizontalPinNumberClearance(
+                pin.symbolOuter
+            ) +
+            SchematicTextPostProcessor.#estimatePinNumberWidth(pin.designator)
+        )
+    }
+
+    /**
+     * Returns the horizontal clearance used by authored outer pin markers.
+     * @param {number | undefined} symbolOuter
+     * @returns {number}
+     */
+    static #resolveHorizontalPinNumberClearance(symbolOuter) {
+        switch (Number(symbolOuter || 0)) {
+            case 34:
+                return 17
+            case 1:
+            case 2:
+            case 33:
+                return 8
+            default:
+                return 2
+        }
+    }
+
+    /**
+     * Estimates one schematic pin-number label width in viewer SVG units.
+     * @param {string | undefined} designator
+     * @returns {number}
+     */
+    static #estimatePinNumberWidth(designator) {
+        return Math.max(String(designator || '').trim().length * 5, 5)
     }
 
     /**

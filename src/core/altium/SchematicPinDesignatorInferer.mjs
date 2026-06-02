@@ -9,8 +9,8 @@ export class SchematicPinDesignatorInferer {
     /**
      * Infers omitted source-order pin numbers for compact four-pin symbols
      * whose printable records keep enough numeric hints to prove the sequence.
-     * @param {{ x: number, y: number, length: number, designator: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
-     * @returns {{ x: number, y: number, length: number, designator: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[] | null}
+     * @param {{ x: number, y: number, length: number, name?: string, designator: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
+     * @returns {{ x: number, y: number, length: number, name?: string, designator: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[] | null}
      */
     static inferSequentialCompactFourPinDesignators(pins) {
         if (
@@ -40,7 +40,16 @@ export class SchematicPinDesignatorInferer {
             }
         }
 
-        if (explicitCount < 2 || explicitCount === pins.length) {
+        if (explicitCount < 2) {
+            return null
+        }
+
+        if (
+            explicitCount === pins.length &&
+            !SchematicPinDesignatorInferer.#hasRepeatedCompactTerminalNames(
+                pins
+            )
+        ) {
             return null
         }
 
@@ -48,6 +57,30 @@ export class SchematicPinDesignatorInferer {
             ...pin,
             designator: String(index + 1)
         }))
+    }
+
+    /**
+     * Returns true when a compact four-pin owner repeats internal terminal
+     * names, so visible pin numbers are the useful external labels.
+     * @param {{ name?: string }[]} pins
+     * @returns {boolean}
+     */
+    static #hasRepeatedCompactTerminalNames(pins) {
+        const names = pins.map((pin) => String(pin.name || '').trim())
+
+        if (names.some((name) => !name)) {
+            return false
+        }
+
+        const counts = new Map()
+        for (const name of names) {
+            counts.set(name, (counts.get(name) || 0) + 1)
+        }
+
+        return (
+            counts.size < pins.length &&
+            [...counts.values()].every((count) => count > 1)
+        )
     }
 
     /**

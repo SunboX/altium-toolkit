@@ -26,28 +26,30 @@ export class SchematicTypography {
 
     /**
      * Builds the default font options used for synthetic schematic labels.
-     * @param {{ fonts?: Record<string, { size: number, family: string, bold: boolean }> }} sheet
-     * @returns {{ fontSize: number, fontFamily: string, fontWeight: number }}
+     * @param {{ fonts?: Record<string, { size: number, family: string, bold: boolean, italic?: boolean }> }} sheet
+     * @returns {{ fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string }}
      */
     static buildDefaultSchematicFontOptions(sheet) {
         const font = sheet?.fonts?.['1'] || {
             size: 10,
             family: 'Times New Roman',
-            bold: false
+            bold: false,
+            italic: false
         }
 
         return {
             fontSize: SchematicTypography.#toSvgFontSize(font.size),
             fontFamily: font.family || 'Times New Roman',
-            fontWeight: font.bold ? 700 : 400
+            fontWeight: font.bold ? 700 : 400,
+            fontStyle: font.italic ? 'italic' : undefined
         }
     }
 
     /**
      * Builds default font options with the viewer-wide one-point reduction
      * already applied.
-     * @param {{ fonts?: Record<string, { size: number, family: string, bold: boolean }> }} sheet
-     * @returns {{ fontSize: number | undefined, fontFamily: string, fontWeight: number }}
+     * @param {{ fonts?: Record<string, { size: number, family: string, bold: boolean, italic?: boolean }> }} sheet
+     * @returns {{ fontSize: number | undefined, fontFamily: string, fontWeight: number, fontStyle?: string }}
      */
     static buildViewerSchematicFontOptions(sheet) {
         return SchematicTypography.withViewerFontSize(
@@ -59,14 +61,15 @@ export class SchematicTypography {
      * Builds render options for one schematic text label, including the signed
      * SVG rotation derived from the original Altium orientation and mirrored
      * source state.
-     * @param {{ fontSize?: number, fontFamily?: string, fontWeight?: number, rotation?: number, sourceOrientation?: number, isMirrored?: boolean }} text
-     * @returns {{ fontSize?: number, fontFamily?: string, fontWeight?: number, rotation?: number }}
+     * @param {{ fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean }} text
+     * @returns {{ fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number }}
      */
     static buildSchematicTextRenderOptions(text) {
         return {
             fontSize: SchematicTypography.resolveViewerFontSize(text.fontSize),
             fontFamily: text.fontFamily,
             fontWeight: text.fontWeight,
+            fontStyle: text.fontStyle,
             rotation: SchematicTypography.#resolveSignedTextRotation(
                 text.rotation,
                 text.sourceOrientation,
@@ -77,8 +80,8 @@ export class SchematicTypography {
 
     /**
      * Applies the viewer-wide one-point text reduction to one option bag.
-     * @param {{ fontSize?: number, fontFamily?: string, fontWeight?: number, rotation?: number }} options
-     * @returns {{ fontSize?: number, fontFamily?: string, fontWeight?: number, rotation?: number }}
+     * @param {{ fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number }} options
+     * @returns {{ fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number }}
      */
     static withViewerFontSize(options) {
         return {

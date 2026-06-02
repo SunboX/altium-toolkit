@@ -26,7 +26,16 @@ export class AsciiRecordParser {
 
             for (const chunk of chunks) {
                 const candidate = chunk.trim()
-                if (!AsciiRecordParser.#isRecordCandidate(candidate)) continue
+                if (!AsciiRecordParser.#isRecordCandidate(candidate)) {
+                    if (
+                        AsciiRecordParser.#isRecordFieldPrefixFragment(
+                            candidate
+                        )
+                    ) {
+                        pendingPrefix += candidate
+                    }
+                    continue
+                }
 
                 const headerPrefix =
                     AsciiRecordParser.#extractHeaderFieldPrefix(candidate)
@@ -63,6 +72,24 @@ export class AsciiRecordParser {
         if (!candidate.startsWith('|')) return false
         if (!candidate.includes('=')) return false
         return candidate.split('|').length >= 4
+    }
+
+    /**
+     * Returns true when a short printable fragment contains fields that belong
+     * to the next record marker in the same run.
+     * @param {string} candidate
+     * @returns {boolean}
+     */
+    static #isRecordFieldPrefixFragment(candidate) {
+        if (!candidate.startsWith('|')) return false
+        if (!candidate.includes('=')) return false
+        if (AsciiRecordParser.#hasRecordMarker(candidate)) return false
+
+        const segments = candidate.split('|').filter(Boolean)
+        return segments.every((segment) => {
+            const separatorIndex = segment.indexOf('=')
+            return separatorIndex > 0
+        })
     }
 
     /**

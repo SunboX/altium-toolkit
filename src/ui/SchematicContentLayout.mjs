@@ -195,7 +195,7 @@ export class SchematicContentLayout {
             ' ' +
             formatNumber(targetMinY) +
             ') scale(' +
-            formatNumber(scale) +
+            SchematicContentLayout.#formatScale(scale) +
             ') translate(' +
             formatNumber(-bounds.minX) +
             ' ' +
@@ -252,20 +252,28 @@ export class SchematicContentLayout {
             return ''
         }
 
-        const pivotX = margin
-        const pivotY = height - margin
         const topLimit = margin + contentPadding * 0.2
         const bottomLimit = height - margin - footerReserve
         const rightLimit = width - margin
+        const usedWidth = bounds.maxX - bounds.minX
+        const usedHeight = bounds.maxY - bounds.minY
+
+        if (usedWidth <= 0 || usedHeight <= 0) {
+            return ''
+        }
+
         const scale = Math.min(
             targetScale,
-            ...SchematicContentLayout.#resolvePivotScaleLimits(
-                bounds,
-                pivotX,
-                pivotY,
+            SchematicContentLayout.#resolveContentScaleLimit(
+                bounds.minX,
+                bounds.maxX,
                 margin,
+                rightLimit
+            ),
+            SchematicContentLayout.#resolveContentScaleLimit(
+                bounds.minY,
+                bounds.maxY,
                 topLimit,
-                rightLimit,
                 bottomLimit
             )
         )
@@ -274,10 +282,18 @@ export class SchematicContentLayout {
             return ''
         }
 
-        const projectedMinX = pivotX + (bounds.minX - pivotX) * scale
-        const projectedMaxX = pivotX + (bounds.maxX - pivotX) * scale
-        const projectedMinY = pivotY + (bounds.minY - pivotY) * scale
-        const projectedMaxY = pivotY + (bounds.maxY - pivotY) * scale
+        const targetMinX =
+            SchematicContentLayout.#resolveCenteredContentTargetMinX(
+                bounds,
+                scale,
+                margin,
+                rightLimit
+            )
+        const projectedMinX = targetMinX
+        const projectedMaxX = targetMinX + usedWidth * scale
+        const targetMinY = bottomLimit - usedHeight * scale
+        const projectedMinY = targetMinY
+        const projectedMaxY = bottomLimit
 
         if (
             projectedMinX < margin - 0.01 ||
@@ -290,17 +306,71 @@ export class SchematicContentLayout {
 
         return (
             ' transform="translate(' +
-            formatNumber(pivotX) +
+            formatNumber(targetMinX) +
             ' ' +
-            formatNumber(pivotY) +
+            formatNumber(targetMinY) +
             ') scale(' +
-            formatNumber(scale) +
+            SchematicContentLayout.#formatScale(scale) +
             ') translate(' +
-            formatNumber(-pivotX) +
+            formatNumber(-bounds.minX) +
             ' ' +
-            formatNumber(-pivotY) +
+            formatNumber(-bounds.minY) +
             ')"'
         )
+    }
+
+    /**
+     * Resolves one scale cap that keeps a horizontally centered content
+     * envelope inside the sheet frame.
+     * @param {number} minCoordinate
+     * @param {number} maxCoordinate
+     * @param {number} minLimit
+     * @param {number} maxLimit
+     * @returns {number}
+     */
+    static #resolveContentScaleLimit(
+        minCoordinate,
+        maxCoordinate,
+        minLimit,
+        maxLimit
+    ) {
+        const usedWidth = maxCoordinate - minCoordinate
+        const availableWidth = maxLimit - minLimit
+
+        return usedWidth > 0 && availableWidth > 0
+            ? availableWidth / usedWidth
+            : Infinity
+    }
+
+    /**
+     * Formats SVG transform scales with enough precision to avoid visible
+     * placement drift on large schematic sheets.
+     * @param {number} value
+     * @returns {string}
+     */
+    static #formatScale(value) {
+        return Number(value).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+    }
+
+    /**
+     * Resolves the target SVG x-coordinate for a scaled content envelope.
+     * @param {{ minX: number, maxX: number }} bounds
+     * @param {number} scale
+     * @param {number} leftLimit
+     * @param {number} rightLimit
+     * @returns {number}
+     */
+    static #resolveCenteredContentTargetMinX(
+        bounds,
+        scale,
+        leftLimit,
+        rightLimit
+    ) {
+        const scaledWidth = (bounds.maxX - bounds.minX) * scale
+        const availableWidth = rightLimit - leftLimit
+        const remainingWidth = Math.max(availableWidth - scaledWidth, 0)
+
+        return leftLimit + remainingWidth / 2
     }
 
     /**
@@ -436,11 +506,43 @@ export class SchematicContentLayout {
         const heightSlackRatio =
             (matchingSheet.height - requiredHeight) / requiredHeight
 
-        return widthSlackRatio <= RELAXED_STANDARD_PAGE_MAX_SLACK_RATIO &&
-            heightSlackRatio <= RELAXED_STANDARD_PAGE_MAX_SLACK_RATIO &&
-            matchingSheet.width < width
-            ? matchingSheet
-            : null
+        if (
+            widthSlackRatio > RELAXED_STANDARD_PAGE_MAX_SLACK_RATIO ||
+            heightSlackRatio > RELAXED_STANDARD_PAGE_MAX_SLACK_RATIO ||
+            matchingSheet.width >= width
+        ) {
+            return null
+        }
+
+        return {
+            ...matchingSheet,
+            width: SchematicContentLayout.#resolveTightVirtualDimension(
+                requiredWidth,
+                matchingSheet.width,
+                margin
+            )
+        }
+    }
+
+    /**
+     * Drops near-zero standard-page rounding slack from the scale axis so
+     * custom sheets that almost fill a standard source size do not render with
+     * a visible artificial gutter.
+     * @param {number} requiredDimension
+     * @param {number} candidateDimension
+     * @param {number} margin
+     * @returns {number}
+     */
+    static #resolveTightVirtualDimension(
+        requiredDimension,
+        candidateDimension,
+        margin
+    ) {
+        const slack = candidateDimension - requiredDimension
+
+        return slack > 0 && slack <= margin
+            ? requiredDimension
+            : candidateDimension
     }
 
     /**

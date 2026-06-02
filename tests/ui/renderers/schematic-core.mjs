@@ -571,7 +571,7 @@ test('renderSchematicSvg inverts schematic Y coordinates for SVG', () => {
     assert.match(markup, /schematic-power-port--rail/)
     assert.match(
         markup,
-        /<text class="schematic-power-port-label" x="120" y="14" fill="var\(--schematic-power-color\)" text-anchor="middle" font-size="9"/
+        /<text class="schematic-power-port-label" x="120" y="16" fill="var\(--schematic-power-color\)" text-anchor="middle" font-size="9"/
     )
     assert.match(markup, /transform="rotate\(-90 160 40\)"/)
     assert.match(

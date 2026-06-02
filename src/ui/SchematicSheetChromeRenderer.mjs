@@ -515,6 +515,10 @@ export class SchematicSheetChromeRenderer {
             SchematicSheetChromeRenderer.#buildSheetValue(titleBlock)
         const sheetValueHint =
             SchematicSheetChromeRenderer.#buildSheetValueFooterHint(titleBlock)
+        const footerValueOptions =
+            SchematicSheetChromeRenderer.#resolveTitleBlockFooterValueOptions(
+                titleBlock
+            )
 
         return (
             '<g class="sheet-title-block">' +
@@ -702,7 +706,8 @@ export class SchematicSheetChromeRenderer {
                 valueRowY,
                 sheet?.paperSize || 'A4',
                 'var(--schematic-text-color)',
-                'middle'
+                'middle',
+                footerValueOptions
             ) +
             SchematicSheetChromeRenderer.#buildTitleBlockValueMarkup(
                 x + titleBlockWidth * 0.415,
@@ -718,7 +723,8 @@ export class SchematicSheetChromeRenderer {
                 footerDateY,
                 renderedDate,
                 'var(--schematic-text-color)',
-                'start'
+                'start',
+                footerValueOptions
             ) +
             createSvgText(
                 'sheet-title-value',
@@ -726,7 +732,8 @@ export class SchematicSheetChromeRenderer {
                 footerFileY,
                 renderedFileName,
                 'var(--schematic-text-color)',
-                'start'
+                'start',
+                footerValueOptions
             ) +
             createSvgText(
                 'sheet-title-value',
@@ -734,7 +741,8 @@ export class SchematicSheetChromeRenderer {
                 footerFileY,
                 titleBlock.drawnBy || '',
                 'var(--schematic-default-ink-color)',
-                'middle'
+                'middle',
+                footerValueOptions
             ) +
             '</g>'
         )
@@ -759,8 +767,8 @@ export class SchematicSheetChromeRenderer {
     /**
      * Resolves default serif typography for synthesized footer values that do
      * not have their own recovered hint styling.
-     * @param {{ footerHints?: Partial<Record<'title' | 'documentNumber' | 'revision', { fontFamily: string }>> }} titleBlock
-     * @returns {{ fontSize: number, fontFamily: string, fontWeight: number }}
+     * @param {{ footerHints?: Partial<Record<'title' | 'documentNumber' | 'revision', { fontFamily: string, fontStyle?: string }>> }} titleBlock
+     * @returns {{ fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string }}
      */
     static #resolveTitleBlockFooterValueOptions(titleBlock) {
         return {
@@ -769,7 +777,10 @@ export class SchematicSheetChromeRenderer {
                 titleBlock?.footerHints?.revision?.fontFamily ||
                 titleBlock?.footerHints?.title?.fontFamily ||
                 'Times New Roman',
-            fontWeight: 400
+            fontWeight: 400,
+            fontStyle:
+                titleBlock?.footerHints?.revision?.fontStyle ||
+                titleBlock?.footerHints?.title?.fontStyle
         }
     }
 
@@ -779,7 +790,7 @@ export class SchematicSheetChromeRenderer {
      * @param {number} x
      * @param {number} y
      * @param {string} text
-     * @param {{ fontSize: number, fontFamily: string, fontWeight: number }} options
+     * @param {{ fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string }} options
      * @returns {string}
      */
     static #buildTitleBlockLabelMarkup(x, y, text, options) {
@@ -800,7 +811,7 @@ export class SchematicSheetChromeRenderer {
      * @param {number} resolvedY
      * @param {string} text
      * @param {string} fallbackColor
-     * @param {{ x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number } | undefined} footerHint
+     * @param {{ x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string } | undefined} footerHint
      * @param {number} sheetHeight
      * @param {boolean} [preserveHintX=true]
      * @returns {string}
@@ -838,7 +849,8 @@ export class SchematicSheetChromeRenderer {
             {
                 fontSize: footerHint.fontSize,
                 fontFamily: footerHint.fontFamily,
-                fontWeight: footerHint.fontWeight
+                fontWeight: footerHint.fontWeight,
+                fontStyle: footerHint.fontStyle
             }
         )
     }
@@ -850,7 +862,7 @@ export class SchematicSheetChromeRenderer {
      * @param {number} fallbackY
      * @param {string} text
      * @param {string} fallbackColor
-     * @param {{ x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number } | undefined} footerHint
+     * @param {{ x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string } | undefined} footerHint
      * @param {number} sheetHeight
      * @param {boolean} [preserveHintX=true]
      * @returns {string}
@@ -888,15 +900,16 @@ export class SchematicSheetChromeRenderer {
             {
                 fontSize: footerHint.fontSize,
                 fontFamily: footerHint.fontFamily,
-                fontWeight: footerHint.fontWeight
+                fontWeight: footerHint.fontWeight,
+                fontStyle: footerHint.fontStyle
             }
         )
     }
 
     /**
      * Builds one combined sheet-value hint from the recovered sheet-number row.
-     * @param {{ footerHints?: Partial<Record<'sheetNumber' | 'sheetTotal', { x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number }>> }} titleBlock
-     * @returns {{ x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number } | undefined}
+     * @param {{ footerHints?: Partial<Record<'sheetNumber' | 'sheetTotal', { x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string }>> }} titleBlock
+     * @returns {{ x: number, y: number, color: string, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string } | undefined}
      */
     static #buildSheetValueFooterHint(titleBlock) {
         const sheetNumberHint = titleBlock?.footerHints?.sheetNumber
@@ -912,7 +925,8 @@ export class SchematicSheetChromeRenderer {
             color: sheetNumberHint.color,
             fontSize: sheetNumberHint.fontSize,
             fontFamily: sheetNumberHint.fontFamily,
-            fontWeight: sheetNumberHint.fontWeight
+            fontWeight: sheetNumberHint.fontWeight,
+            fontStyle: sheetNumberHint.fontStyle
         }
     }
 

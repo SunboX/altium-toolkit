@@ -66,7 +66,8 @@ export class SchematicPinSvgRenderer {
                 const defaultNumberX =
                     geometry.bodyX -
                     SchematicPinSvgRenderer.#resolveHorizontalPinNumberClearance(
-                        outerMarkerStyle
+                        outerMarkerStyle,
+                        pin
                     )
                 const numberX = hasExplicitOwnerPinName
                     ? SchematicOwnerPinLabelLayout.resolveExplicitOwnerPinNumberX(
@@ -98,7 +99,11 @@ export class SchematicPinSvgRenderer {
                 texts.push(
                     SchematicPinSvgRenderer.#buildPinNameTextMarkup(
                         'schematic-pin-name',
-                        geometry.bodyX + (labelMode === 'name-only' ? 10 : 4),
+                        geometry.bodyX +
+                            SchematicPinSvgRenderer.#resolveHorizontalPinNameInset(
+                                pin,
+                                labelMode
+                            ),
                         projectedY + 3,
                         pin,
                         labelColor,
@@ -114,7 +119,8 @@ export class SchematicPinSvgRenderer {
                 const defaultNumberX =
                     geometry.bodyX +
                     SchematicPinSvgRenderer.#resolveHorizontalPinNumberClearance(
-                        outerMarkerStyle
+                        outerMarkerStyle,
+                        pin
                     )
                 const numberX = hasExplicitOwnerPinName
                     ? SchematicOwnerPinLabelLayout.resolveExplicitOwnerPinNumberX(
@@ -146,7 +152,11 @@ export class SchematicPinSvgRenderer {
                 texts.push(
                     SchematicPinSvgRenderer.#buildPinNameTextMarkup(
                         'schematic-pin-name',
-                        geometry.bodyX - (labelMode === 'name-only' ? 10 : 4),
+                        geometry.bodyX -
+                            SchematicPinSvgRenderer.#resolveHorizontalPinNameInset(
+                                pin,
+                                labelMode
+                            ),
                         projectedY + 3,
                         pin,
                         labelColor,
@@ -363,11 +373,12 @@ export class SchematicPinSvgRenderer {
     }
 
     /**
-     * Returns the horizontal pin-number clearance needed by an authored marker.
+     * Returns the horizontal pin-number clearance needed by the pin geometry.
      * @param {'single-in' | 'single-out' | 'double' | null} markerStyle
+     * @param {{ length?: number }} pin
      * @returns {number}
      */
-    static #resolveHorizontalPinNumberClearance(markerStyle) {
+    static #resolveHorizontalPinNumberClearance(markerStyle, pin) {
         switch (markerStyle) {
             case 'double':
                 return 17
@@ -375,8 +386,38 @@ export class SchematicPinSvgRenderer {
             case 'single-out':
                 return 8
             default:
-                return 2
+                return SchematicPinSvgRenderer.#resolveLongPinInset(pin, 2)
         }
+    }
+
+    /**
+     * Returns the horizontal pin-name inset used inside the symbol body.
+     * @param {{ length?: number }} pin
+     * @param {'hidden' | 'number-only' | 'name-only' | 'name-and-number'} labelMode
+     * @returns {number}
+     */
+    static #resolveHorizontalPinNameInset(pin, labelMode) {
+        if (labelMode === 'name-only') {
+            return 10
+        }
+
+        return SchematicPinSvgRenderer.#resolveLongPinInset(pin, 4)
+    }
+
+    /**
+     * Adds extra text clearance for long connector-style pin stubs.
+     * @param {{ length?: number }} pin
+     * @param {number} fallback
+     * @returns {number}
+     */
+    static #resolveLongPinInset(pin, fallback) {
+        const length = Math.abs(Number(pin?.length || 0))
+
+        if (length < 30) {
+            return fallback
+        }
+
+        return fallback === 2 ? 10 : 8
     }
 
     /**

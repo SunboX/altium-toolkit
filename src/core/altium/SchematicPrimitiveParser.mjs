@@ -96,10 +96,12 @@ export class SchematicPrimitiveParser {
                     return null
                 }
 
+                const color = toColor(record.fields.Color, '#000000')
+
                 return {
                     points,
-                    color: toColor(record.fields.Color, '#a44a1b'),
-                    fill: toColor(record.fields.AreaColor, '#ffe16f'),
+                    color,
+                    fill: toColor(record.fields.AreaColor, color),
                     isSolid: parseBoolean(record.fields.IsSolid),
                     transparent: parseBoolean(record.fields.Transparent),
                     lineWidth:
@@ -699,18 +701,87 @@ export class SchematicPrimitiveParser {
         }
 
         const points = []
+        let previousX = null
+        let previousY = null
 
         for (let index = 1; index <= locationCount; index += 1) {
             const x = parseNumericField(fields, 'X' + index)
             const y = parseNumericField(fields, 'Y' + index)
 
-            if (x === null || y === null) {
+            if (x === null && y === null) {
                 break
             }
 
-            points.push({ x, y })
+            const pointX = x === null ? previousX : x
+            const pointY = y === null ? previousY : y
+
+            if (pointX === null || pointY === null) {
+                break
+            }
+
+            const point =
+                index === locationCount
+                    ? SchematicPrimitiveParser.#resolveCollapsedFinalPolygonPoint(
+                          x,
+                          y,
+                          pointX,
+                          pointY,
+                          points
+                      )
+                    : { x: pointX, y: pointY }
+
+            points.push(point)
+            previousX = point.x
+            previousY = point.y
         }
 
         return points
+    }
+
+    /**
+     * Recovers a closed polygon's final omitted axis when carrying the previous
+     * point would collapse the last side into a duplicate point.
+     * @param {number | null} sourceX
+     * @param {number | null} sourceY
+     * @param {number} pointX
+     * @param {number} pointY
+     * @param {{ x: number, y: number }[]} points
+     * @returns {{ x: number, y: number }}
+     */
+    static #resolveCollapsedFinalPolygonPoint(
+        sourceX,
+        sourceY,
+        pointX,
+        pointY,
+        points
+    ) {
+        const previousPoint = points.at(-1)
+        const firstPoint = points[0]
+
+        if (!previousPoint || !firstPoint) {
+            return { x: pointX, y: pointY }
+        }
+
+        if (
+            sourceY === null &&
+            sourceX !== null &&
+            firstPoint.y !== previousPoint.y
+        ) {
+            if (pointX === previousPoint.x && pointY === previousPoint.y) {
+                return { x: pointX, y: firstPoint.y }
+            }
+        }
+
+        if (
+            sourceX === null &&
+            sourceY !== null &&
+            firstPoint.x !== previousPoint.x
+        ) {
+            if (pointX === previousPoint.x && pointY === previousPoint.y) {
+                return { x: firstPoint.x, y: pointY }
+            }
+        }
+
+        return { x: pointX, y: pointY }
     }
 }

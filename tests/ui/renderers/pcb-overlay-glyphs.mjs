@@ -464,12 +464,98 @@ test('renderPcbSvg renders inverted TrueType PCB text as knockout artwork', () =
     assert.match(markup, /font-size="89\.5"/)
     assert.match(
         markup,
-        /<rect class="pcb-text__knockout-fill" x="-12" y="-28\.11"/
+        /<rect class="pcb-text__knockout-fill" x="-12" y="-85\.39"/
     )
     assert.doesNotMatch(
         markup,
         /<text class="pcb-text pcb-text--layer-33"[^>]*>FAKE_KNOCKOUT<\/text>/
     )
+})
+
+test('renderPcbSvg keeps embedded metric text boxes independent from browser fallback fonts', () => {
+    const originalDocument = globalThis.document
+    globalThis.document = {
+        createElement(tagName) {
+            if (tagName !== 'canvas') {
+                return null
+            }
+
+            return {
+                getContext() {
+                    return {
+                        font: '',
+                        measureText() {
+                            return {
+                                width: 333,
+                                actualBoundingBoxAscent: 90,
+                                actualBoundingBoxDescent: 10
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    try {
+        const markup = PcbSvgRenderer.render({
+            summary: { title: 'Metric-stable label board' },
+            pcb: {
+                boardOutline: {
+                    minX: 0,
+                    minY: 0,
+                    widthMil: 500,
+                    heightMil: 300,
+                    segments: [
+                        { type: 'line', x1: 0, y1: 0, x2: 500, y2: 0 },
+                        { type: 'line', x1: 500, y1: 0, x2: 500, y2: 300 },
+                        { type: 'line', x1: 500, y1: 300, x2: 0, y2: 300 },
+                        { type: 'line', x1: 0, y1: 300, x2: 0, y2: 0 }
+                    ]
+                },
+                layers: [{ name: 'Top Layer' }],
+                primitiveLayers: [{ layerId: 33, name: 'Top Overlay' }],
+                polygons: [],
+                fills: [],
+                tracks: [],
+                arcs: [],
+                vias: [],
+                pads: [],
+                texts: [
+                    {
+                        text: 'GLYPH_BOX',
+                        x: 120,
+                        y: 140,
+                        height: 100,
+                        layerId: 33,
+                        fontTypeName: 'TrueType',
+                        fontFamily: 'Synthetic Mono',
+                        fontMetrics: {
+                            emScaleFromPcbHeight: 0.5,
+                            averageAdvanceWidth: 500,
+                            unitsPerEm: 1000
+                        },
+                        isInverted: true,
+                        marginBorderWidth: 5,
+                        visible: true
+                    }
+                ],
+                components: []
+            }
+        })
+
+        assert.match(
+            markup,
+            /<rect class="pcb-text__knockout-fill" x="-5" y="-46" width="235" height="60"/
+        )
+        assert.doesNotMatch(markup, /width="343" height="110"/)
+    } finally {
+        if (originalDocument) {
+            globalThis.document = originalDocument
+        } else {
+            delete globalThis.document
+        }
+    }
 })
 
 test('renderPcbSvg mirrors the bottom text layer without moving text anchors', () => {

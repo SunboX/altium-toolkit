@@ -71,6 +71,11 @@ export class SchematicPinParser {
                         record.fields,
                         'SymBol_Outer'
                     ) || undefined,
+                color: ParserUtils.toColor(record.fields.Color, '#000000'),
+                labelColor: ParserUtils.toColor(
+                    record.fields.TextColor,
+                    '#1f1f1f'
+                ),
                 ownerIndex
             })
         }
@@ -397,7 +402,7 @@ export class SchematicPinParser {
      * Expands a schematic polyline record into drawable line segments.
      * @param {Record<string, string | string[]>} fields
      * @param {{ isBus?: boolean, recordType?: string }} [options]
-     * @returns {{ x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle: number, isBus?: boolean, recordType?: string }[]}
+     * @returns {{ x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle: number, isBus?: boolean, recordType?: string, omittedEndpointAxis?: 'x' | 'y', sourceLocationCount?: number }[]}
      */
     static parseSchematicPolyline(fields, options = {}) {
         const points = SchematicPinParser.#collectSchematicPointList(fields)
@@ -408,17 +413,27 @@ export class SchematicPinParser {
         for (let index = 1; index < points.length; index += 1) {
             const previous = points[index - 1]
             const current = points[index]
+            const omittedEndpointAxis =
+                SchematicPinParser.#resolveOmittedPointAxis(current)
 
             segments.push({
                 x1: previous.x,
                 y1: previous.y,
                 x2: current.x,
                 y2: current.y,
-                color: ParserUtils.toColor(fields.Color, '#a44a1b'),
+                color: ParserUtils.toColor(
+                    fields.Color,
+                    SchematicPinParser.#resolveDefaultPolylineColor(
+                        fields,
+                        options.recordType
+                    )
+                ),
                 width: ParserUtils.parseNumericField(fields, 'LineWidth') || 1,
                 lineStyle,
                 isBus: options.isBus === true ? true : undefined,
-                recordType: options.recordType || undefined
+                recordType: options.recordType || undefined,
+                omittedEndpointAxis: omittedEndpointAxis || undefined,
+                sourceLocationCount: points.length
             })
         }
 
@@ -449,7 +464,10 @@ export class SchematicPinParser {
                 y1: previous.y,
                 x2: current.x,
                 y2: current.y,
-                color: ParserUtils.toColor(fields.Color, '#a44a1b'),
+                color: ParserUtils.toColor(
+                    fields.Color,
+                    SchematicPinParser.#resolveDefaultPolylineColor(fields, '7')
+                ),
                 width: ParserUtils.parseNumericField(fields, 'LineWidth') || 1,
                 lineStyle
             })
@@ -463,7 +481,10 @@ export class SchematicPinParser {
             y1: lastPoint.y,
             x2: firstPoint.x,
             y2: firstPoint.y,
-            color: ParserUtils.toColor(fields.Color, '#a44a1b'),
+            color: ParserUtils.toColor(
+                fields.Color,
+                SchematicPinParser.#resolveDefaultPolylineColor(fields, '7')
+            ),
             width: ParserUtils.parseNumericField(fields, 'LineWidth') || 1,
             lineStyle
         })
@@ -490,6 +511,21 @@ export class SchematicPinParser {
     }
 
     /**
+     * Resolves the fallback stroke color for schematic drawing primitives.
+     * @param {Record<string, string | string[]>} fields
+     * @param {string | undefined} recordType
+     * @returns {string}
+     */
+    static #resolveDefaultPolylineColor(fields, recordType) {
+        const resolvedRecordType =
+            recordType || ParserUtils.getField(fields, 'RECORD')
+
+        return resolvedRecordType === '6' || resolvedRecordType === '7'
+            ? '#000000'
+            : '#a44a1b'
+    }
+
+    /**
      * Collects a schematic point list, carrying forward a missing coordinate
      * axis from the preceding point when Altium omitted an unchanged value.
      * @param {Record<string, string | string[]>} fields
@@ -500,6 +536,7 @@ export class SchematicPinParser {
             fields,
             'LocationCount'
         )
+        const closesPolygon = ParserUtils.getField(fields, 'RECORD') === '7'
 
         if (locationCount === null || locationCount < 2) {
             return []
@@ -524,17 +561,92 @@ export class SchematicPinParser {
                 break
             }
 
-            points.push({ x: pointX, y: pointY })
-            previousX = pointX
-            previousY = pointY
+            const point =
+                closesPolygon && index === locationCount
+                    ? SchematicPinParser.#resolveCollapsedFinalPolygonPoint(
+                          x,
+                          y,
+                          pointX,
+                          pointY,
+                          points
+                      )
+                    : { x: pointX, y: pointY }
+
+            points.push({ ...point, sourceX: x, sourceY: y })
+            previousX = point.x
+            previousY = point.y
         }
 
         return points
     }
 
     /**
+     * Resolves which coordinate axis was omitted on one source point.
+     * @param {{ sourceX?: number | null, sourceY?: number | null }} point
+     * @returns {'x' | 'y' | null}
+     */
+    static #resolveOmittedPointAxis(point) {
+        if (point.sourceX === null && point.sourceY !== null) {
+            return 'x'
+        }
+
+        if (point.sourceX !== null && point.sourceY === null) {
+            return 'y'
+        }
+
+        return null
+    }
+
+    /**
+     * Recovers a closed polygon's final omitted axis when carrying the previous
+     * point would collapse the last side into a duplicate point.
+     * @param {number | null} sourceX
+     * @param {number | null} sourceY
+     * @param {number} pointX
+     * @param {number} pointY
+     * @param {{ x: number, y: number }[]} points
+     * @returns {{ x: number, y: number }}
+     */
+    static #resolveCollapsedFinalPolygonPoint(
+        sourceX,
+        sourceY,
+        pointX,
+        pointY,
+        points
+    ) {
+        const previousPoint = points.at(-1)
+        const firstPoint = points[0]
+
+        if (!previousPoint || !firstPoint) {
+            return { x: pointX, y: pointY }
+        }
+
+        if (
+            sourceY === null &&
+            sourceX !== null &&
+            firstPoint.y !== previousPoint.y
+        ) {
+            if (pointX === previousPoint.x && pointY === previousPoint.y) {
+                return { x: pointX, y: firstPoint.y }
+            }
+        }
+
+        if (
+            sourceX === null &&
+            sourceY !== null &&
+            firstPoint.x !== previousPoint.x
+        ) {
+            if (pointX === previousPoint.x && pointY === previousPoint.y) {
+                return { x: firstPoint.x, y: pointY }
+            }
+        }
+
+        return { x: pointX, y: pointY }
+    }
+
+    /**
      * Deduces the visible pins for one schematic symbol owner.
-     * @param {{ x: number, y: number, length: number, conglomerate?: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, ownerIndex: string }[]} pins
+     * @param {{ x: number, y: number, length: number, conglomerate?: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color?: string, labelColor?: string, ownerIndex: string }[]} pins
      * @returns {{ x: number, y: number, length: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color: string, labelColor: string, labelMode: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', ownerIndex: string }[]}
      */
     static #normalizeSchematicPinGroup(pins) {
@@ -626,8 +738,8 @@ export class SchematicPinParser {
 
         return normalizedPins.map(({ conglomerate, ...pin }) => ({
             ...pin,
-            color: '#0000ff',
-            labelColor: '#1f1f1f',
+            color: pin.color || '#000000',
+            labelColor: pin.labelColor || '#1f1f1f',
             labelMode
         }))
     }
@@ -649,7 +761,7 @@ export class SchematicPinParser {
             pins.length < 3 ||
             pins.length > 4 ||
             orientationCount < 3 ||
-            pins.some((pin) => String(pin.designator || '').trim())
+            !SchematicPinParser.#hasOptionalNumericPinDesignators(pins)
         ) {
             return false
         }
@@ -661,6 +773,19 @@ export class SchematicPinParser {
         return semanticNames.every((name) =>
             SchematicPinParser.#isTransistorTerminalName(name)
         )
+    }
+
+    /**
+     * Returns true when compact owner-drawn terminal glyph pins have either no
+     * external designators or ordinary numeric pin numbers.
+     * @param {{ designator: string }[]} pins
+     * @returns {boolean}
+     */
+    static #hasOptionalNumericPinDesignators(pins) {
+        return pins.every((pin) => {
+            const designator = String(pin.designator || '').trim()
+            return !designator || /^\d+$/.test(designator)
+        })
     }
 
     /**
@@ -726,8 +851,8 @@ export class SchematicPinParser {
 
     /**
      * Removes duplicate pin records emitted for alternate display modes.
-     * @param {{ x: number, y: number, length: number, conglomerate?: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, ownerIndex: string }[]} pins
-     * @returns {{ x: number, y: number, length: number, conglomerate?: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, ownerIndex: string }[]}
+     * @param {{ x: number, y: number, length: number, conglomerate?: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color?: string, labelColor?: string, ownerIndex: string }[]} pins
+     * @returns {{ x: number, y: number, length: number, conglomerate?: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color?: string, labelColor?: string, ownerIndex: string }[]}
      */
     static #dedupeSchematicPins(pins) {
         const seen = new Set()
