@@ -341,7 +341,7 @@ export class PcbSvgRenderer {
             '"><path d="' +
             SchematicSvgUtils.escapeHtml(path) +
             '" /></clipPath></defs>' +
-            '<path class="board-outline" d="' +
+            '<path class="board-outline pcb-layer pcb-layer--edge-cuts" data-layer-name="Edge.Cuts" d="' +
             SchematicSvgUtils.escapeHtml(path) +
             '" />' +
             '<g class="pcb-copper-layers" clip-path="url(#' +
@@ -380,7 +380,7 @@ export class PcbSvgRenderer {
             '>' +
             textMarkup +
             '</g>' +
-            '<path class="board-outline board-outline--stroke" d="' +
+            '<path class="board-outline board-outline--stroke pcb-layer pcb-layer--edge-cuts" data-layer-name="Edge.Cuts" d="' +
             SchematicSvgUtils.escapeHtml(path) +
             '" />' +
             '</svg></div></section>'

@@ -137,6 +137,7 @@
     --pcb-copper-fill: rgba(196, 118, 70, 0.24);
     --pcb-copper-solid-fill: rgba(196, 118, 70, 0.78);
     --pcb-track-color: #c7522d;
+    --pcb-track-opacity: 1;
     --pcb-via-ring-fill: rgba(232, 236, 233, 0.92);
     --pcb-via-hole-fill: #0f746c;
     --pcb-footprint-fill: rgba(247, 230, 117, 0.14);
@@ -201,6 +202,11 @@
     fill: none;
     stroke-linecap: round;
     stroke-linejoin: round;
+}
+
+.pcb-track,
+.pcb-arc {
+    opacity: var(--pcb-track-opacity, 1);
 }
 
 .pcb-copper--surface .pcb-polygon {

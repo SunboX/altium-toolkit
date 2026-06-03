@@ -19,6 +19,9 @@ export class PcbScene3dBuilder {
     static #DENSE_OVERLAY_MIN_TRACK_COUNT = 250
     static #DENSE_OVERLAY_KNOCKOUT_COLOR = 0x2f6a2c
     static #PRECISE_BODY_MATCH_TOLERANCE_MIL = 5
+    static #UNMATCHED_BODY_OVERHANG_RATIO = 0.25
+    static #UNMATCHED_BODY_MIN_OVERHANG_MIL = 150
+    static #UNMATCHED_BODY_MAX_OVERHANG_MIL = 600
     static #TRUETYPE_TEXT_WIDTH_RATIO = 0.55
 
     /**
@@ -1159,14 +1162,39 @@ export class PcbScene3dBuilder {
     static #isBodyPositionNearBoard(componentBody, board) {
         const bodyX = Number(componentBody?.positionMil?.x || 0)
         const bodyY = Number(componentBody?.positionMil?.y || 0)
-        const minX = Number(board?.minX || 0) - 600
-        const minY = Number(board?.minY || 0) - 600
+        const xOverhang = PcbScene3dBuilder.#resolveUnmatchedBodyOverhang(
+            board?.widthMil
+        )
+        const yOverhang = PcbScene3dBuilder.#resolveUnmatchedBodyOverhang(
+            board?.heightMil
+        )
+        const minX = Number(board?.minX || 0) - xOverhang
+        const minY = Number(board?.minY || 0) - yOverhang
         const maxX =
-            Number(board?.minX || 0) + Number(board?.widthMil || 0) + 600
+            Number(board?.minX || 0) + Number(board?.widthMil || 0) + xOverhang
         const maxY =
-            Number(board?.minY || 0) + Number(board?.heightMil || 0) + 600
+            Number(board?.minY || 0) + Number(board?.heightMil || 0) + yOverhang
 
         return bodyX >= minX && bodyX <= maxX && bodyY >= minY && bodyY <= maxY
+    }
+
+    /**
+     * Resolves a proportional unresolved-body margin for one board axis.
+     * @param {number | string | undefined} spanMil Board axis span.
+     * @returns {number}
+     */
+    static #resolveUnmatchedBodyOverhang(spanMil) {
+        const proportional =
+            Math.max(Number(spanMil || 0), 0) *
+            PcbScene3dBuilder.#UNMATCHED_BODY_OVERHANG_RATIO
+
+        return Math.min(
+            PcbScene3dBuilder.#UNMATCHED_BODY_MAX_OVERHANG_MIL,
+            Math.max(
+                proportional,
+                PcbScene3dBuilder.#UNMATCHED_BODY_MIN_OVERHANG_MIL
+            )
+        )
     }
 
     /**

@@ -46,17 +46,82 @@ export class PcbScene3dBoardOutlineRefiner {
             return sceneDescription
         }
 
+        const refinedBoard = {
+            ...board,
+            minX: candidate.minX,
+            minY: candidate.minY,
+            widthMil: candidate.widthMil,
+            heightMil: candidate.heightMil,
+            centerX: candidate.minX + candidate.widthMil / 2,
+            centerY: candidate.minY + candidate.heightMil / 2,
+            segments: candidate.segments
+        }
+
         return {
             ...sceneDescription,
-            board: {
-                ...board,
-                minX: candidate.minX,
-                minY: candidate.minY,
-                widthMil: candidate.widthMil,
-                heightMil: candidate.heightMil,
-                centerX: candidate.minX + candidate.widthMil / 2,
-                centerY: candidate.minY + candidate.heightMil / 2,
-                segments: candidate.segments
+            board: refinedBoard,
+            components: PcbScene3dBoardOutlineRefiner.#realignLocalPlacements(
+                sceneDescription?.components,
+                board,
+                refinedBoard
+            ),
+            externalPlacements:
+                PcbScene3dBoardOutlineRefiner.#realignLocalPlacements(
+                    sceneDescription?.externalPlacements,
+                    board,
+                    refinedBoard
+                )
+        }
+    }
+
+    /**
+     * Realigns precomputed local placements to a refined board center.
+     * @param {object[] | undefined} placements Scene placements.
+     * @param {{ centerX?: number, centerY?: number }} previousBoard Previous board.
+     * @param {{ centerX?: number, centerY?: number }} refinedBoard Refined board.
+     * @returns {object[] | undefined}
+     */
+    static #realignLocalPlacements(placements, previousBoard, refinedBoard) {
+        if (!Array.isArray(placements)) {
+            return placements
+        }
+
+        const deltaX =
+            Number(previousBoard?.centerX || 0) -
+            Number(refinedBoard?.centerX || 0)
+        const deltaY =
+            Number(previousBoard?.centerY || 0) -
+            Number(refinedBoard?.centerY || 0)
+
+        if (!deltaX && !deltaY) {
+            return placements
+        }
+
+        return placements.map((placement) =>
+            PcbScene3dBoardOutlineRefiner.#realignLocalPlacement(
+                placement,
+                deltaX,
+                deltaY
+            )
+        )
+    }
+
+    /**
+     * Applies one local origin delta to a scene placement.
+     * @param {object} placement Scene placement.
+     * @param {number} deltaX Local X delta.
+     * @param {number} deltaY Local Y delta.
+     * @returns {object}
+     */
+    static #realignLocalPlacement(placement, deltaX, deltaY) {
+        const positionMil = placement?.positionMil || {}
+
+        return {
+            ...placement,
+            positionMil: {
+                ...positionMil,
+                x: Number(positionMil.x || 0) + deltaX,
+                y: Number(positionMil.y || 0) + deltaY
             }
         }
     }

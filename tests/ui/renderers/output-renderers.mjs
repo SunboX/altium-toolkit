@@ -118,6 +118,46 @@ test('renderPcbSvg renders board outline, copper primitives, and placements', ()
 })
 
 /**
+ * Verifies the rendered board outline is addressable as the Edge.Cuts layer so
+ * host layer controls can hide both outline paths.
+ */
+test('renderPcbSvg tags board outline paths as the Edge.Cuts layer', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Edge cuts board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 100,
+                heightMil: 80,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 100, y2: 0 },
+                    { type: 'line', x1: 100, y1: 0, x2: 100, y2: 80 },
+                    { type: 'line', x1: 100, y1: 80, x2: 0, y2: 80 },
+                    { type: 'line', x1: 0, y1: 80, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [{ name: 'Top Layer' }],
+            polygons: [],
+            fills: [],
+            tracks: [],
+            vias: [],
+            pads: [],
+            texts: [],
+            components: []
+        }
+    })
+    const outlinePaths = markup.match(/<path class="board-outline[^"]*"[^>]*>/g)
+
+    assert.equal(outlinePaths?.length, 2)
+    for (const outlinePath of outlinePaths) {
+        assert.match(outlinePath, /class="[^"]*pcb-layer[^"]*"/)
+        assert.match(outlinePath, /class="[^"]*pcb-layer--edge-cuts[^"]*"/)
+        assert.match(outlinePath, /data-layer-name="Edge\.Cuts"/)
+    }
+})
+
+/**
  * Verifies PCB renderer uses primitive layer names when the formal board stack
  * is absent.
  */
@@ -476,7 +516,7 @@ test('renderPcbSvg keeps wrapped board-outline corner arcs on the short sweep', 
 
     assert.match(
         markup,
-        /<path class="board-outline" d="M 3031\.50 3611\.42 L 3031\.50 2412\.20 A 50 50 0 0 1 3081\.50 2362\.20 L 4201\.97 2362\.20 A 50 50 0 0 1 4251\.97 2412\.20 L 4251\.97 3611\.42 A 50 50 0 0 1 4201\.97 3661\.42 L 3081\.50 3661\.42 A 50 50 0 0 1 3031\.50 3611\.42 L 3031\.50 3611\.42 Z" \/>/
+        /<path class="board-outline[^"]*"[^>]*d="M 3031\.50 3611\.42 L 3031\.50 2412\.20 A 50 50 0 0 1 3081\.50 2362\.20 L 4201\.97 2362\.20 A 50 50 0 0 1 4251\.97 2412\.20 L 4251\.97 3611\.42 A 50 50 0 0 1 4201\.97 3661\.42 L 3081\.50 3661\.42 A 50 50 0 0 1 3031\.50 3611\.42 L 3031\.50 3611\.42 Z" \/>/
     )
     assert.doesNotMatch(markup, /A 50 50 0 0 0/)
 })
@@ -1458,6 +1498,23 @@ test('pcb viewer stylesheet defines surface and subsurface copper styling', asyn
     assert.match(css, /--pcb-subsurface-track-color:/)
     assert.match(css, /\.pcb-copper--surface \.pcb-polygon\s*\{/)
     assert.match(css, /\.pcb-copper--subsurface \.pcb-polygon\s*\{/)
+})
+
+/**
+ * Verifies copper track artwork exposes an opacity variable that host controls
+ * can adjust without rewriting the recovered stroke colors.
+ */
+test('pcb viewer stylesheet exposes copper track opacity controls', async () => {
+    const cssPath = new URL(
+        '../../../src/styles/altium-renderers.css',
+        import.meta.url
+    )
+    const css = await readFile(cssPath, 'utf8')
+
+    assert.match(
+        css,
+        /\.pcb-track,\s*\.pcb-arc\s*\{[\s\S]*opacity:\s*var\(--pcb-track-opacity,\s*1\);/
+    )
 })
 
 /**

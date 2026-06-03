@@ -6,6 +6,9 @@ export { BomTableRenderer } from './ui/BomTableRenderer.mjs'
 export { PcbArcUtils } from './ui/PcbArcUtils.mjs'
 export { PcbEdgeFacingGlyphNormalizer } from './ui/PcbEdgeFacingGlyphNormalizer.mjs'
 export { PcbFootprintPrimitiveSelector } from './ui/PcbFootprintPrimitiveSelector.mjs'
+export { PcbInteractionIndex } from './ui/PcbInteractionIndex.mjs'
+export { PcbInteractionItemRegistry } from './ui/PcbInteractionItemRegistry.mjs'
+export { PcbInteractionLayerModel } from './ui/PcbInteractionLayerModel.mjs'
 export {
     PcbSideResolvedRenderModel,
     isCopperPrimitive,

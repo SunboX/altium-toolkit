@@ -52,7 +52,7 @@ test('renderPcbSvg refines rasterized board outlines from board regions', () => 
 
     assert.match(
         markup,
-        /<path class="board-outline" d="M 0 100 L 0 0 L 100 0 L 100 76 L 96 88 L 88 96 L 76 100 L 0 100 Z" \/>/
+        /<path class="board-outline[^"]*"[^>]*d="M 0 100 L 0 0 L 100 0 L 100 76 L 96 88 L 88 96 L 76 100 L 0 100 Z" \/>/
     )
     assert.doesNotMatch(markup, /L 72 96 L 80 96/)
 })
