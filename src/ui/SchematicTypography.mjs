@@ -9,19 +9,34 @@ export class SchematicTypography {
     /**
      * Returns true when the schematic already contains a visible designator text
      * close to one component origin.
-     * @param {{ x?: number, y?: number }} component
+     * @param {{ x?: number, y?: number, designator?: string }} component
      * @param {{ x: number, y: number, name?: string }[]} texts
      * @returns {boolean}
      */
     static hasNearbyVisibleDesignatorText(component, texts) {
-        return texts.some(
-            (text) =>
+        const designatorPattern =
+            SchematicTypography.#componentDesignatorPattern(
+                component?.designator
+            )
+
+        return texts.some((text) => {
+            if (
                 String(text.name || '')
                     .trim()
-                    .toLowerCase() === 'designator' &&
+                    .toLowerCase() !== 'designator'
+            ) {
+                return false
+            }
+
+            if (designatorPattern?.test(String(text.text || '').trim())) {
+                return true
+            }
+
+            return (
                 Math.abs(Number(text.x) - Number(component.x)) <= 80 &&
                 Math.abs(Number(text.y) - Number(component.y)) <= 80
-        )
+            )
+        })
     }
 
     /**
@@ -55,6 +70,34 @@ export class SchematicTypography {
         return SchematicTypography.withViewerFontSize(
             SchematicTypography.buildDefaultSchematicFontOptions(sheet)
         )
+    }
+
+    /**
+     * Builds a strict matcher for a base designator or one multipart suffix.
+     * @param {string | undefined} designator Component designator.
+     * @returns {RegExp | null}
+     */
+    static #componentDesignatorPattern(designator) {
+        const normalizedDesignator = String(designator || '').trim()
+        if (!normalizedDesignator || normalizedDesignator === 'U?') {
+            return null
+        }
+
+        return new RegExp(
+            '^' +
+                SchematicTypography.#escapeRegExp(normalizedDesignator) +
+                '[A-Z]?$',
+            'i'
+        )
+    }
+
+    /**
+     * Escapes user-controlled text for inclusion in a regular expression.
+     * @param {string} value Source text.
+     * @returns {string}
+     */
+    static #escapeRegExp(value) {
+        return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     }
 
     /**

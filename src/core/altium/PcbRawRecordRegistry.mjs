@@ -365,82 +365,149 @@ export class PcbRawRecordRegistry {
     static #sliceSubrecordListRecords(descriptor, headerBytes, dataBytes) {
         const count = PcbRawRecordRegistry.#readRecordCount(headerBytes)
         const bytes = PcbRawRecordRegistry.#toUint8Array(dataBytes)
-        const records = []
-        let offset = 0
+        const boundaries = PcbRawRecordRegistry.#findSubrecordListBoundaries(
+            bytes,
+            0,
+            descriptor,
+            count
+        )
 
-        for (let index = 0; index < count; index += 1) {
-            const remainingCount = count - index - 1
-            const record = PcbRawRecordRegistry.#readSubrecordListRecordAt(
-                bytes,
-                offset,
-                descriptor,
-                remainingCount
-            )
-
-            if (!record) {
-                return []
-            }
-
-            records.push({ ...record, recordIndex: index })
-            offset += record.byteLength
+        if (!boundaries) {
+            return []
         }
 
-        return records
+        return boundaries.map((boundary, index) => {
+            const endOffset = boundaries[index + 1]?.offset ?? bytes.byteLength
+
+            return {
+                recordBytes: bytes.slice(boundary.offset, endOffset),
+                offset: boundary.offset,
+                byteLength: endOffset - boundary.offset,
+                payloadByteLength: null,
+                encoding: 'subrecord-list',
+                objectId: descriptor.typeId,
+                recordIndex: index
+            }
+        })
     }
 
     /**
-     * Reads one subrecord-list primitive record at an offset.
+     * Finds all subrecord-list record boundaries without recursive validation.
      * @param {Uint8Array} bytes
      * @param {number} offset
      * @param {object} descriptor
-     * @param {number} remainingCount
-     * @returns {object | null}
+     * @param {number} count
+     * @returns {{ offset: number, minimumEnd: number }[] | null}
      */
-    static #readSubrecordListRecordAt(
-        bytes,
-        offset,
-        descriptor,
-        remainingCount
-    ) {
-        if (
-            offset + 1 > bytes.byteLength ||
-            bytes[offset] !== descriptor.typeId
-        ) {
+    static #findSubrecordListBoundaries(bytes, offset, descriptor, count) {
+        if (!count) {
+            return []
+        }
+
+        const firstMinimumEnd =
+            PcbRawRecordRegistry.#readMinimumSubrecordListEnd(
+                bytes,
+                offset,
+                descriptor
+            )
+
+        if (!firstMinimumEnd) {
             return null
         }
 
-        const minimumEnd = PcbRawRecordRegistry.#readMinimumSubrecordListEnd(
-            bytes,
-            offset,
-            descriptor
-        )
+        const boundaries = [{ offset, minimumEnd: firstMinimumEnd }]
+        const alternativeScanOffsets = [null]
+        let depth = 1
+        let scanOffset = firstMinimumEnd
 
-        if (!minimumEnd) {
-            return null
+        while (depth < count) {
+            const candidate =
+                PcbRawRecordRegistry.#findNextSubrecordListCandidate(
+                    bytes,
+                    scanOffset,
+                    descriptor
+                )
+
+            if (!candidate) {
+                let foundAlternative = false
+
+                while (depth > 1 && !foundAlternative) {
+                    depth -= 1
+                    boundaries.length = depth
+
+                    const alternativeOffset = alternativeScanOffsets[depth]
+                    alternativeScanOffsets.length = depth
+
+                    if (alternativeOffset !== null) {
+                        scanOffset = alternativeOffset
+                        foundAlternative = true
+                    }
+                }
+
+                if (!foundAlternative) {
+                    return null
+                }
+
+                continue
+            }
+
+            boundaries[depth] = {
+                offset: candidate.offset,
+                minimumEnd: candidate.minimumEnd
+            }
+            alternativeScanOffsets[depth] = candidate.alternativeOffset
+            depth += 1
+            scanOffset = candidate.minimumEnd
         }
 
-        const endOffset = remainingCount
-            ? PcbRawRecordRegistry.#findNextSubrecordListRecordOffset(
-                  bytes,
-                  minimumEnd,
-                  descriptor,
-                  remainingCount
-              )
-            : bytes.byteLength
+        return boundaries
+    }
 
-        if (!endOffset) {
-            return null
+    /**
+     * Finds the next plausible subrecord-list record boundary.
+     * @param {Uint8Array} bytes
+     * @param {number} offset
+     * @param {object} descriptor
+     * @returns {{ offset: number, minimumEnd: number, alternativeOffset: number | null } | null}
+     */
+    static #findNextSubrecordListCandidate(bytes, offset, descriptor) {
+        let cursor = offset
+
+        while (cursor < bytes.byteLength) {
+            const minimumEnd =
+                PcbRawRecordRegistry.#readMinimumSubrecordListEnd(
+                    bytes,
+                    cursor,
+                    descriptor
+                )
+            const unknownSubrecord = PcbRawRecordRegistry.#readSubrecordAt(
+                bytes,
+                cursor
+            )
+
+            if (minimumEnd) {
+                const alternativeOffset =
+                    unknownSubrecord?.nextOffset ?? cursor + 1
+
+                return {
+                    offset: cursor,
+                    minimumEnd,
+                    alternativeOffset:
+                        alternativeOffset < bytes.byteLength
+                            ? alternativeOffset
+                            : null
+                }
+            }
+
+            if (!unknownSubrecord) {
+                cursor += 1
+                continue
+            }
+
+            cursor = unknownSubrecord.nextOffset
         }
 
-        return {
-            recordBytes: bytes.slice(offset, endOffset),
-            offset,
-            byteLength: endOffset - offset,
-            payloadByteLength: null,
-            encoding: 'subrecord-list',
-            objectId: descriptor.typeId,
-            recordIndex: 0
-        }
+        return null
     }
 
     /**
@@ -482,82 +549,6 @@ export class PcbRawRecordRegistry {
         }
 
         return cursor
-    }
-
-    /**
-     * Finds the next known subrecord-list primitive boundary.
-     * @param {Uint8Array} bytes
-     * @param {number} offset
-     * @param {object} descriptor
-     * @param {number} remainingCount
-     * @returns {number | null}
-     */
-    static #findNextSubrecordListRecordOffset(
-        bytes,
-        offset,
-        descriptor,
-        remainingCount
-    ) {
-        let cursor = offset
-
-        while (cursor < bytes.byteLength) {
-            if (
-                PcbRawRecordRegistry.#canReadSubrecordListSequence(
-                    bytes,
-                    cursor,
-                    descriptor,
-                    remainingCount
-                )
-            ) {
-                return cursor
-            }
-
-            const unknownSubrecord = PcbRawRecordRegistry.#readSubrecordAt(
-                bytes,
-                cursor
-            )
-            cursor = unknownSubrecord ? unknownSubrecord.nextOffset : cursor + 1
-        }
-
-        return null
-    }
-
-    /**
-     * Checks whether the remaining subrecord-list records are readable.
-     * @param {Uint8Array} bytes
-     * @param {number} offset
-     * @param {object} descriptor
-     * @param {number} remainingCount
-     * @returns {boolean}
-     */
-    static #canReadSubrecordListSequence(
-        bytes,
-        offset,
-        descriptor,
-        remainingCount
-    ) {
-        const minimumEnd = PcbRawRecordRegistry.#readMinimumSubrecordListEnd(
-            bytes,
-            offset,
-            descriptor
-        )
-
-        if (!minimumEnd) {
-            return false
-        }
-
-        if (remainingCount <= 1) {
-            return true
-        }
-
-        return (
-            PcbRawRecordRegistry.#findNextSubrecordListRecordOffset(
-                bytes,
-                minimumEnd,
-                descriptor,
-                remainingCount - 1
-            ) !== null
-        )
     }
 
     /**

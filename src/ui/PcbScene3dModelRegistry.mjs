@@ -209,6 +209,49 @@ export class PcbScene3dModelRegistry {
     }
 
     /**
+     * Resolves a project-level full board assembly model for one PCB document.
+     * @param {{ fileName?: string }} documentModel
+     * @returns {{ origin: 'board-assembly', file?: File | Blob | null, name: string, relativePath: string, format: string } | null}
+     */
+    resolveBoardAssemblyModel(documentModel) {
+        const normalizedBoardBaseName = PcbScene3dModelRegistry.#normalizeToken(
+            PcbScene3dModelRegistry.#basenameWithoutExtension(
+                documentModel?.fileName
+            )
+        )
+        if (!normalizedBoardBaseName) {
+            return null
+        }
+
+        const rankedMatches = this.#modelFiles
+            .filter(
+                (file) =>
+                    file.normalizedBaseName === normalizedBoardBaseName &&
+                    PcbScene3dModelRegistry.#isBoardAssemblyPath(
+                        file.relativePath
+                    )
+            )
+            .sort(
+                (left, right) =>
+                    PcbScene3dModelRegistry.#formatRank(left.format) -
+                    PcbScene3dModelRegistry.#formatRank(right.format)
+            )
+
+        if (!rankedMatches.length) {
+            return null
+        }
+
+        const matchedFile = rankedMatches[0]
+        return {
+            origin: 'board-assembly',
+            file: matchedFile.file,
+            name: matchedFile.name,
+            relativePath: matchedFile.relativePath,
+            format: matchedFile.format
+        }
+    }
+
+    /**
      * Normalizes one embedded payload for registry lookup.
      * @param {{ id?: string, checksum?: number | null, name?: string, format?: string, payloadText?: string, sourceStream?: string }} model
      * @returns {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string } | null}
@@ -293,6 +336,37 @@ export class PcbScene3dModelRegistry {
      */
     static #formatRank(format) {
         return format === 'wrl' ? 0 : 1
+    }
+
+    /**
+     * Checks whether one model path is in a conventional board model folder.
+     * @param {string | undefined} relativePath
+     * @returns {boolean}
+     */
+    static #isBoardAssemblyPath(relativePath) {
+        return String(relativePath || '')
+            .replaceAll('\\', '/')
+            .split('/')
+            .some(
+                (part) =>
+                    PcbScene3dModelRegistry.#normalizeToken(part) === '3dbodies'
+            )
+    }
+
+    /**
+     * Returns one path basename without its extension.
+     * @param {string | undefined} filePath
+     * @returns {string}
+     */
+    static #basenameWithoutExtension(filePath) {
+        const baseName =
+            String(filePath || '')
+                .replaceAll('\\', '/')
+                .split('/')
+                .filter(Boolean)
+                .at(-1) || ''
+
+        return baseName.replace(/\.[^.]+$/u, '')
     }
 
     /**

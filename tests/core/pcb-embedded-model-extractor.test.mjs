@@ -30,7 +30,7 @@ class PcbEmbeddedModelTestFactory {
 
         streams.set(
             'Models/Data',
-            PcbEmbeddedModelTestFactory.#createLengthPrefixedTextStream([
+            PcbEmbeddedModelTestFactory.createLengthPrefixedTextStream([
                 'EMBED=TRUE|MODELSOURCE=Undefined|ID={7AE6DAB5-7AAC-4AE4-A725-B155EF16B48A}|ROTX=0.000|ROTY=0.000|ROTZ=270.000|DZ=118110|CHECKSUM=-827837266|NAME=SOT-23_Y.stp'
             ])
         )
@@ -76,7 +76,7 @@ class PcbEmbeddedModelTestFactory {
      * @param {string[]} records
      * @returns {Uint8Array}
      */
-    static #createLengthPrefixedTextStream(records) {
+    static createLengthPrefixedTextStream(records) {
         const encodedRecords = records.map((record) =>
             new TextEncoder().encode(record + '\u0000')
         )
@@ -147,4 +147,96 @@ test('PcbEmbeddedModelExtractor extracts embedded STEP payloads and body placeme
             standoffHeightMil: -0.0684
         }
     ])
+})
+
+/**
+ * Verifies embedded model payload labels distinguish common CAD exchange
+ * formats beyond STEP.
+ */
+test('PcbEmbeddedModelExtractor classifies SolidWorks and Parasolid model payloads', () => {
+    const streams = new Map()
+
+    streams.set(
+        'Models/Data',
+        PcbEmbeddedModelTestFactory.createLengthPrefixedTextStream([
+            'ID={MODEL-A}|CHECKSUM=1|NAME=bracket.SLDPRT',
+            'ID={MODEL-B}|CHECKSUM=2|NAME=fixture.x_t',
+            'ID={MODEL-C}|CHECKSUM=3|NAME=cover.x_b'
+        ])
+    )
+    streams.set('Models/0', new TextEncoder().encode('solidworks-binary-ish'))
+    streams.set('Models/1', new TextEncoder().encode('schema = 1;'))
+    streams.set('Models/2', new Uint8Array([0x10, 0x20, 0x30]))
+
+    const extracted = PcbEmbeddedModelExtractor.extractFromStreams(streams)
+
+    assert.deepEqual(
+        extracted.models.map((model) => ({
+            name: model.name,
+            format: model.format
+        })),
+        [
+            { name: 'bracket.SLDPRT', format: 'solidworks' },
+            { name: 'fixture.x_t', format: 'parasolid-text' },
+            { name: 'cover.x_b', format: 'parasolid-binary' }
+        ]
+    )
+})
+
+/**
+ * Verifies embedded model metadata mismatches are reported as structured
+ * integrity diagnostics without preventing recoverable payload extraction.
+ */
+test('PcbEmbeddedModelExtractor reports embedded model integrity issues', () => {
+    const streams = new Map()
+
+    streams.set(
+        'Models/Data',
+        PcbEmbeddedModelTestFactory.createLengthPrefixedTextStream([
+            'ID={MODEL-A}|CHECKSUM=42|NAME=anchor-a.step',
+            'ID={MODEL-B}|CHECKSUM=42|NAME=anchor-b.step',
+            'ID={MODEL-C}|CHECKSUM=77|NAME=missing.step'
+        ])
+    )
+    streams.set('Models/0', new TextEncoder().encode('ISO-10303-21;'))
+    streams.set('Models/1', new TextEncoder().encode('ISO-10303-21;'))
+    streams.set(
+        'ComponentBodies6/Data',
+        new TextEncoder().encode(
+            [
+                'MODELID={MODEL-C}',
+                'MODEL.CHECKSUM=77',
+                'MODEL.EMBED=TRUE',
+                'MODEL.NAME=missing.step',
+                'MODEL.2D.X=0mil',
+                'MODEL.2D.Y=0mil'
+            ].join('|')
+        )
+    )
+
+    const extracted = PcbEmbeddedModelExtractor.extractFromStreams(streams)
+
+    assert.deepEqual(
+        extracted.integrity.issues.map((issue) => issue.code),
+        [
+            'pcb.model.payload-missing',
+            'pcb.model.checksum-duplicate',
+            'pcb.model.body-unresolved',
+            'pcb.model.payload-unreferenced',
+            'pcb.model.payload-unreferenced'
+        ]
+    )
+    assert.equal(extracted.models.length, 2)
+    assert.equal(extracted.integrity.issues[0].sourceStream, 'Models/2')
+    assert.deepEqual(extracted.integrity.issues[1].modelIds, [
+        '{MODEL-A}',
+        '{MODEL-B}'
+    ])
+    assert.equal(extracted.integrity.issues[2].modelId, '{MODEL-C}')
+    assert.deepEqual(
+        extracted.integrity.issues
+            .filter((issue) => issue.code === 'pcb.model.payload-unreferenced')
+            .map((issue) => issue.modelId),
+        ['{MODEL-A}', '{MODEL-B}']
+    )
 })

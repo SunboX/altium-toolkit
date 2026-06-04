@@ -60,6 +60,10 @@ test('PcbBinaryPrimitiveParser decodes via streams', () => {
                 tailSignature: 'a0a1a2a3a4a5a6a7a8a9aaabacadaeaf',
                 positiveTolerance: 0.8,
                 negativeTolerance: -0.6,
+                holeTolerance: {
+                    positive: 0.8,
+                    negative: -0.6
+                },
                 drillLayerPairType: 7,
                 diameterStackMode: 1,
                 diameterByLayer: [
@@ -94,6 +98,10 @@ test('PcbBinaryPrimitiveParser decodes variable-length via streams', () => {
     assert.equal(vias[0].tailSignature, 'b0b1b2b3b4b5b6b7b8b9babbbcbdbebf')
     assert.equal(vias[0].positiveTolerance, 1.2)
     assert.equal(vias[0].negativeTolerance, -0.4)
+    assert.deepEqual(vias[0].holeTolerance, {
+        positive: 1.2,
+        negative: -0.4
+    })
     assert.equal(vias[0].drillLayerPairType, 8)
     assert.equal(vias[1].x, 11235.2291)
     assert.equal(vias[1].layerId, 74)
@@ -115,4 +123,20 @@ test('PcbBinaryPrimitiveParser decodes compact via streams', () => {
     assert.equal(vias[0].layerStartId, 1)
     assert.equal(vias[0].layerEndId, 32)
     assert.equal(vias[1].x, 11300)
+})
+
+/**
+ * Verifies unset via hole-tolerance sentinels do not leak as huge mil values
+ * while propagation-delay metadata is preserved.
+ */
+test('PcbBinaryPrimitiveParser decodes via tolerance sentinel and propagation delay', () => {
+    const { headerBytes, dataBytes } =
+        PcbBinaryPrimitiveTestFactory.createViaStreamWithUnsetToleranceAndPropagation()
+    const vias = PcbBinaryPrimitiveParser.parseViaStream(headerBytes, dataBytes)
+
+    assert.equal(vias.length, 1)
+    assert.equal(vias[0].positiveTolerance, undefined)
+    assert.equal(vias[0].negativeTolerance, undefined)
+    assert.equal(vias[0].holeTolerance, undefined)
+    assert.equal(vias[0].propagationDelayPs, 62.5)
 })

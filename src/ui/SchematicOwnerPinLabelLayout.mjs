@@ -8,6 +8,38 @@
  */
 export class SchematicOwnerPinLabelLayout {
     /**
+     * Resolves one native-facing pin text placement in renderer coordinates
+     * before sheet Y projection. The returned `yOffset` is applied after
+     * projection, matching SVG text baseline behavior.
+     * @param {{ x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', symbolOuter?: number }} pin
+     * @param {'name' | 'number'} labelKind
+     * @param {{ labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', rotateTopNumber?: boolean }} [options]
+     * @returns {{ x: number, yOffset: number, anchor: 'start' | 'middle' | 'end', rotation: number } | null}
+     */
+    static resolveNativePinTextPlacement(pin, labelKind, options = {}) {
+        const labelMode = options.labelMode || 'name-and-number'
+        const markerStyle =
+            SchematicOwnerPinLabelLayout.#resolveOuterPinMarkerStyle(pin)
+
+        if (labelKind === 'number') {
+            return SchematicOwnerPinLabelLayout.#resolveNumberPlacement(
+                pin,
+                markerStyle,
+                options
+            )
+        }
+
+        if (labelKind === 'name') {
+            return SchematicOwnerPinLabelLayout.#resolveNamePlacement(
+                pin,
+                labelMode
+            )
+        }
+
+        return null
+    }
+
+    /**
      * Builds one owner/pin label key.
      * @param {string | undefined} ownerIndex
      * @param {string | undefined} name
@@ -168,6 +200,180 @@ export class SchematicOwnerPinLabelLayout {
                 return baseX + delta
             default:
                 return baseX
+        }
+    }
+
+    /**
+     * Resolves schematic pin-number placement.
+     * @param {{ x: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
+     * @param {'single-in' | 'single-out' | 'double' | null} markerStyle
+     * @param {{ rotateTopNumber?: boolean }} options
+     * @returns {{ x: number, yOffset: number, anchor: 'start' | 'middle' | 'end', rotation: number } | null}
+     */
+    static #resolveNumberPlacement(pin, markerStyle, options) {
+        switch (pin.orientation) {
+            case 'left':
+                return {
+                    x:
+                        Number(pin.x) -
+                        SchematicOwnerPinLabelLayout.#resolveHorizontalPinNumberClearance(
+                            markerStyle,
+                            pin
+                        ),
+                    yOffset: -1,
+                    anchor: 'end',
+                    rotation: 0
+                }
+            case 'right':
+                return {
+                    x:
+                        Number(pin.x) +
+                        SchematicOwnerPinLabelLayout.#resolveHorizontalPinNumberClearance(
+                            markerStyle,
+                            pin
+                        ),
+                    yOffset: -1,
+                    anchor: 'start',
+                    rotation: 0
+                }
+            case 'top':
+                return {
+                    x: Number(pin.x) - 2,
+                    yOffset: -6,
+                    anchor: 'middle',
+                    rotation: options.rotateTopNumber === false ? 0 : -90
+                }
+            case 'bottom':
+                return {
+                    x: Number(pin.x) - 2,
+                    yOffset: 7,
+                    anchor: 'middle',
+                    rotation: -90
+                }
+            default:
+                return null
+        }
+    }
+
+    /**
+     * Resolves schematic pin-name placement.
+     * @param {{ x: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
+     * @param {'hidden' | 'number-only' | 'name-only' | 'name-and-number'} labelMode
+     * @returns {{ x: number, yOffset: number, anchor: 'start' | 'middle' | 'end', rotation: number } | null}
+     */
+    static #resolveNamePlacement(pin, labelMode) {
+        switch (pin.orientation) {
+            case 'left':
+                return {
+                    x:
+                        Number(pin.x) +
+                        SchematicOwnerPinLabelLayout.#resolveHorizontalPinNameInset(
+                            pin,
+                            labelMode
+                        ),
+                    yOffset: 3,
+                    anchor: 'start',
+                    rotation: 0
+                }
+            case 'right':
+                return {
+                    x:
+                        Number(pin.x) -
+                        SchematicOwnerPinLabelLayout.#resolveHorizontalPinNameInset(
+                            pin,
+                            labelMode
+                        ),
+                    yOffset: 3,
+                    anchor: 'end',
+                    rotation: 0
+                }
+            case 'top':
+                return {
+                    x: Number(pin.x),
+                    yOffset: 4,
+                    anchor: 'end',
+                    rotation: -90
+                }
+            case 'bottom':
+                return {
+                    x: Number(pin.x) + 4,
+                    yOffset: -4,
+                    anchor: 'start',
+                    rotation: -90
+                }
+            default:
+                return null
+        }
+    }
+
+    /**
+     * Returns the horizontal pin-number clearance needed by the pin geometry.
+     * @param {'single-in' | 'single-out' | 'double' | null} markerStyle
+     * @param {{ length?: number }} pin
+     * @returns {number}
+     */
+    static #resolveHorizontalPinNumberClearance(markerStyle, pin) {
+        switch (markerStyle) {
+            case 'double':
+                return 17
+            case 'single-in':
+            case 'single-out':
+                return 8
+            default:
+                return SchematicOwnerPinLabelLayout.#resolveLongPinInset(pin, 2)
+        }
+    }
+
+    /**
+     * Returns the horizontal pin-name inset used inside the symbol body.
+     * @param {{ length?: number }} pin
+     * @param {'hidden' | 'number-only' | 'name-only' | 'name-and-number'} labelMode
+     * @returns {number}
+     */
+    static #resolveHorizontalPinNameInset(pin, labelMode) {
+        if (labelMode === 'name-only') {
+            return 10
+        }
+
+        return SchematicOwnerPinLabelLayout.#resolveLongPinInset(pin, 4)
+    }
+
+    /**
+     * Adds extra text clearance for long connector-style pin stubs.
+     * @param {{ length?: number }} pin
+     * @param {number} fallback
+     * @returns {number}
+     */
+    static #resolveLongPinInset(pin, fallback) {
+        const length = Math.abs(Number(pin?.length || 0))
+
+        if (length < 30) {
+            return fallback
+        }
+
+        return fallback === 2 ? 10 : 8
+    }
+
+    /**
+     * Resolves one authored outer pin marker style from the stored symbol flag.
+     * @param {{ symbolOuter?: number, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
+     * @returns {'single-in' | 'single-out' | 'double' | null}
+     */
+    static #resolveOuterPinMarkerStyle(pin) {
+        if (pin.orientation !== 'left' && pin.orientation !== 'right') {
+            return null
+        }
+
+        switch (Number(pin.symbolOuter || 0)) {
+            case 1:
+            case 33:
+                return 'single-out'
+            case 2:
+                return 'single-in'
+            case 34:
+                return 'double'
+            default:
+                return null
         }
     }
 }

@@ -235,8 +235,68 @@ export class PcbTextPrimitiveParser {
         if (payload.byteLength >= 133) {
             extendedFields.textboxRectJustification = payload.getUint8(132)
         }
+        if (fontType === 2 && payload.byteLength >= 157) {
+            extendedFields.barcode =
+                PcbTextPrimitiveParser.#parseBarcodeFields(payload)
+        }
 
         return extendedFields
+    }
+
+    /**
+     * Parses barcode-specific fields from modern barcode text records.
+     * @param {DataView} payload Text payload.
+     * @returns {{ kind: number, kindName: string, renderMode: number, renderModeName: string, fullWidth: number, fullHeight: number, marginX: number, marginY: number, minBarWidth: number, showText: boolean, inverted: boolean }}
+     */
+    static #parseBarcodeFields(payload) {
+        const kind = payload.getUint8(133)
+        const renderMode = payload.getUint8(134)
+
+        return {
+            kind,
+            kindName: PcbTextPrimitiveParser.#barcodeKindName(kind),
+            renderMode,
+            renderModeName:
+                PcbTextPrimitiveParser.#barcodeRenderModeName(renderMode),
+            fullWidth: PcbTextPrimitiveParser.#readMil(payload, 135),
+            fullHeight: PcbTextPrimitiveParser.#readMil(payload, 139),
+            marginX: PcbTextPrimitiveParser.#readMil(payload, 143),
+            marginY: PcbTextPrimitiveParser.#readMil(payload, 147),
+            minBarWidth: PcbTextPrimitiveParser.#readMil(payload, 151),
+            showText: payload.getUint8(155) !== 0,
+            inverted: payload.getUint8(156) !== 0
+        }
+    }
+
+    /**
+     * Resolves a barcode kind label.
+     * @param {number} kind Barcode kind id.
+     * @returns {string}
+     */
+    static #barcodeKindName(kind) {
+        return (
+            {
+                0: 'code39',
+                1: 'code128',
+                2: 'ean13',
+                3: 'qr'
+            }[Number(kind)] || 'unknown'
+        )
+    }
+
+    /**
+     * Resolves a barcode render-mode label.
+     * @param {number} mode Barcode render mode id.
+     * @returns {string}
+     */
+    static #barcodeRenderModeName(mode) {
+        return (
+            {
+                0: 'minimum',
+                1: 'fit-text',
+                2: 'full-size'
+            }[Number(mode)] || 'unknown'
+        )
     }
 
     /**

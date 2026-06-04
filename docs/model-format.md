@@ -35,10 +35,13 @@ the object form can call
 
 - `schema`: normalized model schema id, currently
   `urn:altium-toolkit:normalized-model:a1`
-- `kind`: `schematic`, `pcb`, `pcb-library`, or `project`
-- `fileType`: `SchDoc`, `PcbDoc`, `PcbLib`, or `PrjPcb`
+- `kind`: `schematic`, `pcb`, `pcb-library`, `project`,
+  `integrated-library`, or `design-bundle`
+- `fileType`: `SchDoc`, `PcbDoc`, `PcbLib`, `PrjPcb`, `IntLib`, or
+  `ProjectDesignBundle`
 - `fileName`: original file name passed to the parser
-- `diagnostics`: parser warnings and recovery notes
+- `diagnostics`: parser warnings and recovery notes. Each diagnostic carries a
+  machine-readable `code` plus `severity` and `message`.
 - `bom`: grouped component metadata where available
 
 ## Schema Contracts
@@ -58,6 +61,61 @@ primitives, wires, labels, power ports, sheet symbols, images, net metadata, and
 component ownership hints. Coordinates remain in recovered document units until
 the SVG renderer maps them into SVG space.
 
+`schematic.recordTypes` summarizes the native schematic `RECORD` ids seen in
+the document. Each entry includes the numeric `recordType`, stable `name`,
+semantic `family`, parser `supported` flag, and observed `count`. Bezier and
+pie-chart primitives are exposed as first-class `schematic.beziers` and
+`schematic.pies` arrays for deterministic SVG rendering. Rounded rectangles are
+exposed through `schematic.roundedRectangles`, and IEEE drawing symbols are
+exposed through `schematic.ieeeSymbols` with a stable `symbolName`. The registry
+also names schematic families such as notes, compile masks, harness records,
+blankets, and hyperlinks so consumers can inspect supported parser coverage
+without stringly typed local maps.
+
+Record-28 text frames are preserved both as drawable note text and as a
+read-only `schematic.textFrames` contract with frame rectangle, alignment,
+border width, fill/border state, font, margin, and render-order metadata.
+Polyline records preserve authored endpoint marker kind and size on the first
+and last rendered segment when present.
+
+`schematic.directiveSemantics` exposes first-class schematic directives beside
+their drawable geometry. It groups No ERC markers, parameter sets,
+differential-pair directives, compile masks, and blankets. Parameter sets carry
+owner-linked child parameter rows and a `parameterMap`, which lets consumers
+distinguish hidden directive metadata from visible sheet text.
+
+`schematic.ownership` is a read-only sidecar built from raw record
+`OwnerIndex` and `IndexInSheet` values. It exposes stable record keys,
+`childrenByParentKey`, `parentsByChildKey`, and `recordsByIndexInSheet` so
+consumers can inspect component, sheet-symbol, and directive children without
+reimplementing owner-index lookup rules.
+
+Schematic project parameters and special strings can be resolved without
+mutating source parser models through `SchematicProjectParameterResolver`.
+The resolver supports dot-prefixed project parameters, equals-prefixed template
+fields, and simple quoted-literal concatenation expressions. Schematic SVG
+rendering accepts `projectParameters` and uses the resolver for visible sheet
+text and title-block fields.
+
+`schematic.renderDiagnostics` is an optional structured sidecar for rendering
+fallback decisions. Font-family fallbacks are emitted with code
+`schematic.font.family-fallback`, the raw source family, resolved deterministic
+family, and matching top-level warning diagnostic.
+
+The normalized schematic net model is single-sheet. `schematic.nets` is built
+from the wires, labels, ports, pins, junctions, bus entries, and sheet entries
+present in the parsed `.SchDoc`. Project-level hierarchy, repeated channels,
+variants, and cross-sheet compilation metadata are preserved through the
+`.PrjPcb` parser, but this schema does not currently emit a compiled
+multi-sheet design netlist.
+
+Embedded schematic images preserve the raw record geometry and expose
+browser-facing payload metadata. When an embedded stream contains a native
+PNG/JPEG/GIF/SVG/WebP payload alongside a preview, `mimeType` and `dataBase64`
+refer to the native payload while `sourceMimeType` records the preview format.
+Alpha-bearing 32-bit BMP previews are converted to PNG and marked with
+`hasAlpha` so SVG renderers can display transparency deterministically.
+
 ## PCB Fields
 
 PCB documents include recovered `pcb` data with board outline geometry,
@@ -73,6 +131,19 @@ the registry id, source stream, primitive family/type, byte offsets, byte
 counts, parse status, encoding style, and a base64 payload for unsupported or
 partially decoded primitive stream data.
 
+Barcode PCB text records preserve their barcode kind, render mode, authored
+full size, margins, minimum bar width, show-text flag, and inverted state. SVG
+rendering uses those fields to emit deterministic vector barcode groups with
+semantic data attributes.
+
+`pcb.mechanicalLayerPairs` lists paired mechanical layer ids and display names.
+`pcb.layerFlipMetadata.mechanicalFlipMap` gives the bidirectional layer-id map
+needed when bottom-side components or footprints are mirrored between paired
+mechanical overlays.
+
+PCB printable and sidecar property streams are decoded as UTF-8 first, with
+Windows-1252 and GB18030 fallbacks for legacy text-backed properties.
+
 Component-owned PCB primitives are exposed directly from native Altium owner
 indexes. `pcb.componentPrimitives[componentIndex]` returns the grouped pads,
 tracks, arcs, fills, vias, regions, texts, and component bodies linked to that
@@ -80,6 +151,10 @@ component; missing sparse component indexes are represented as `null`. The
 compatibility list `pcb.componentPrimitiveGroups` carries the same group objects
 in placement order. Board-owned or net-owned primitives without a native
 `componentIndex` are intentionally left out of these component groups.
+`pcb.ownership` is the broader primitive ownership sidecar. It groups public
+primitive keys by component index, net index, and polygon index, while
+`primitiveOwners` records the component/net/polygon owner for each decoded
+primitive where that metadata exists.
 
 Component annotations may also include `uniqueId`, `parameters`, and
 `parameterSource` when the PCB contains `PrimitiveParameters/Data` entries keyed
@@ -92,6 +167,29 @@ Component-owned Texts6 comment/value records are marked with `role: 'comment'`
 and `isComment`; unresolved annotation slots are additionally marked with
 `isPlaceholder`.
 
+Component rows may include schematic and library provenance in
+`component.provenance`: channel offsets, source unique-id and hierarchy
+segments, source library references, footprint descriptions, annotation
+autoposition values, and pin/part swapping flags. This metadata is read-only
+and is carried before any project-level schematic compilation is attempted.
+
+Pick-and-place coordinates are exposed as `pnp` at the model root and mirrored
+under `pcb.pickPlace`. The default `positionMode` is `altium-pick-place`, which
+uses the center of component-owned pad anchors when available and falls back to
+the component origin. `pnp.modes.componentOrigin.entries` exposes the same
+components using authored component-origin coordinates. Entries preserve the
+authored component rotation while using the normalized PCB coordinate frame.
+
+`pcb.statistics` provides a deterministic board QA summary for regression
+diffs and reports. It includes outline dimensions and centroid, drill and slot
+counts, plated/non-plated hole counts, primitive-width histograms, and a
+layer-stack summary with per-layer primitive counts. When stack metadata is
+available, layer entries also carry material, copper thickness/weight,
+dielectric thickness, dielectric constant, and dissipation factor, plus
+aggregate material and role counts. The `planning` section summarizes keepout
+regions, room-related rules and names, board-region flex/rigid counts, locked
+3D regions, bending-line counts, and board-region layer-stack usage.
+
 Decoded pad primitives preserve raw `padFlags` plus named tenting and testpoint
 flags. Pad shape codes are kept as raw `shapeTop` / `shapeMid` / `shapeBottom`
 values and mirrored through normalized `shape*Name` labels plus
@@ -102,14 +200,64 @@ pad-cache thermal-relief fields through `padCache`, corrected cache-validity
 fields for plane/thermal/power relief, raw paste/solder mask modes, effective
 mask expansions, and side-specific `hasTop*MaskOpening` /
 `hasBottom*MaskOpening` booleans for renderers that need layer-accurate paste
-and solder-mask decisions.
+and solder-mask decisions. Pad and via drill tolerances use
+`positiveTolerance`, `negativeTolerance`, and grouped `holeTolerance`; unset
+native sentinel values are omitted instead of exposed as numeric mil values.
+
+Decoded via primitives preserve stack mode, per-layer diameters, removed-pad
+metadata, solder-mask-from-hole-edge flags, back solder-mask expansion,
+`drillLayerPairType`, optional `propagationDelayPs`, and sidecar-linked
+`viaProtection` metadata. `pcb.viaStructures` exposes the read-only sidecar
+contract: `structures` describes IPC-4761-style protection definitions and
+feature rows, `links` maps structure definitions to via primitive indexes, and
+`byPrimitiveIndex` provides the same lookup in object form.
+Linked via-protection records also add `drill` metadata to matching vias with
+`holeKind`, `plating`, `renderState`, and `ipc4761Type`. Render states are
+normalized as `open`, `covered`, `filled`, or `capped` for SVG and 3D
+consumers.
+
+PCB dimensions from `Dimensions6/Data` are exposed through `pcb.dimensions`.
+Dimension entries preserve native kind codes and raw fields while adding a
+normalized `kind` (`linear`, `angular`, `radial`, `datum`, `baseline`, or
+`ordinate`), reference points, optional text location, prefix/suffix, precision,
+measured value, angle value, and unit.
+
+`pcb.extendedPrimitiveInformation` exposes
+`ExtendedPrimitiveInformation/Data` entries keyed by primitive index and, when
+available, primitive object id. Matching decoded primitives receive an
+`extendedPrimitiveInformation` object with raw paste and solder mask-expansion
+modes, source labels, and manual expansion values.
+
+`pcb.customPadShapes` exposes `CustomShapes/Data` entries keyed by anchor pad
+primitive index. Matching normalized pads receive a `customShape` object whose
+layer entries reference the normalized region, shape-region, arc, track, and
+fill geometry that forms the custom pad shape.
+
+`pcb.unions` exposes `UnionNames/Data` and `SmartUnions/Data` metadata.
+Smart-union type ids are normalized to stable labels such as `via-stitching`,
+`via-shielding`, `drill-table`, `length-tuning`, and `layer-stack-table`.
+Primitive records referenced by smart unions receive `unionMemberships`.
+
+Differential-pair records are exposed through `pcb.differentialPairs`.
+`Classes6/Data` entries whose kind identifies differential-pair classes are
+joined into `pcb.differentialPairClasses`; each pair lists `classNames`, and
+each class lists resolved `pairNames` plus `unresolvedMembers` for members that
+were present in the class table but absent from `DifferentialPairs6/Data`.
+
+PCB text primitives preserve authored special-string expressions in `text`.
+When parser callers supply project parameters through extraction context,
+matched text records also expose `rawText`, `resolvedText`, and
+`specialString` metadata. The resolver supports dot-prefixed project parameter
+references and simple quoted-literal concatenation expressions.
 
 PCB design rules preserve native rule-specific `constraints` as strings and add
 typed views for common consumers. `ruleType` exposes a normalized rule kind and
 category, `constraintValues` parses common numeric units such as mil, mm, inch,
-degrees, percentages, and booleans, and `typedConstraints` maps common Width and
-Clearance rule fields to semantic names such as `minWidth`,
-`preferredWidth`, `maxWidth`, `minClearance`, and `genericClearance`.
+degrees, percentages, and booleans, and `typedConstraints` maps common rule
+fields to semantic names. Covered families include width, clearance, routing
+topology/corners/priority, fanout, length, matched length, solder-mask sliver,
+silkscreen clearances, component clearance, annular ring, vias-under-SMD,
+testpoint style, and testpoint usage rules.
 
 Board-planning regions are decoded separately from copper regions through
 `pcb.boardRegions`. These entries retain their contour geometry and now add
@@ -131,7 +279,23 @@ parameters, component metadata, primitive order, unknown record markers, and
 decoded pads, tracks, arcs, vias, fills, texts, and regions. Each footprint also
 preserves raw mixed-format primitive records with the same registry metadata
 shape used by PcbDoc raw records. Library-level `embeddedFonts` uses the same
-payload and metric shape as PCB documents.
+payload and metric shape as PCB documents. Library-level `embeddedModels` and
+`componentBodies` preserve embedded 3D payloads and body references when
+present.
+`pcbLibrary.indexes.footprintsByName` provides read-only footprint lookup and
+search metadata, including source storage, primitive counts, pad/text counts,
+and keyword tokens from footprint and component parameters. Footprint entries
+may also preserve implementation rows, component-model rows, and pin display
+mode metadata when those records are available from extraction.
+Footprints carry the same advanced field shapes as PCB documents when available:
+extended mask/paste sidecars attached to primitives, custom pad shape geometry,
+barcode text metadata, embedded model references, and projection diagnostics for
+component bodies. `pcbLibrary.renderManifest` exposes stable footprint SVG keys,
+per-layer SVG keys, layer descriptors, and embedded asset descriptors. Asset
+descriptors may include native format, wrapper type, byte size, checksum, and
+structured diagnostics when extraction supplied that metadata.
+`LibrarySearchIndex` provides exact, keyword, and fuzzy symbol/footprint lookup
+helpers over parsed library read models.
 
 ## Project Fields
 
@@ -142,9 +306,66 @@ output groups. Reachable schematic documents follow the durable project
 metadata convention used by Altium: schematic stubs with only `DocumentPath` and
 `DocumentUniqueId` remain listed, but richer schematic document entries are
 preferred in `project.documentGroups.reachableSchematics`.
+`project.classGeneration` preserves `[PrjClassGen]` policies and any
+per-document class-generation options, including differential-pair class and
+room-transfer policy flags when present.
+
+Project parsing is metadata-only. It does not load referenced schematics or
+emit a compiled multi-sheet netlist; consumers that need a design-wide netlist
+should combine project metadata with separately parsed schematic documents.
+
+`ProjectAnnotationParser` parses read-only annotation mapping files into
+`annotations.mappings`, `bySourceDesignator`, and `byCompiledDesignator`.
+`ProjectDesignBundleBuilder.build({ projectModel, documentModels,
+annotationModels })` composes already parsed project, schematic, PCB, and
+annotation models into a `design-bundle` payload. The bundle exposes `project`,
+`variants`, `sheets`, `components`, `schematic_hierarchy`, `pnp`, `nets`,
+`annotations`, and `indexes` so multi-document consumers can use one normalized
+JSON object above single-document parser output. Passing `variantName` adds
+`effectiveVariant`, which applies DNP rows, alternate fitted rows, parameter
+overrides, and annotation designator mappings to BOM, PnP, component, and net
+views without mutating the source parser models. `ProjectNetlistExporter` emits
+deterministic wirelist and JSON netlist contracts from the normalized bundle or
+effective variant view. The wirelist remains a compact line-oriented
+`component.pin` view. The JSON netlist also carries aliases, auto-named flags,
+schematic source sheets, graphical source elements, terminal endpoints,
+hierarchy paths, and PCB net-table provenance when the bundle includes those
+details.
+
+## SVG And 3D Contracts
+
+`PcbSvgRenderer.renderLayerSvgs(documentModel)` returns one layer descriptor and
+SVG string per recovered display layer. Layer SVGs use the same PCB semantic
+metadata sidecar as the composite SVG, with `view.kind` set to `layer`, a
+single included layer id, and `layerSet.layerView` describing the exported
+layer.
+
+External model placements in the 3D scene description include a `projection`
+diagnostic object. The `source` explains whether bounds came from an authored
+projection override, resolved model bounds, nearby pad-span fallback,
+procedural component fallback, or model-anchor fallback. The diagnostic does
+not alter placement coordinates.
+
+## Integrated Library Fields
+
+Integrated libraries include recovered `integratedLibrary` data from `.IntLib`
+compound documents. The parser preserves `Version.Txt`, cross-reference rows
+from `LibCrossRef.Txt`, parameter records from `Parameters   .bin`, and bundled
+source entries from schematic-symbol, PCB-footprint, and PCB-3D library
+folders. Source entries expose their stream path, file name, file type, library
+kind, compression wrapper, byte count, base64 payload, and printable payload
+text when the recovered bytes are text-like. Child source payloads are
+read-only; callers can parse extracted `.SchLib`, `.PcbLib`, or 3D library
+payloads with separate workflows where applicable.
+`integratedLibrary.indexes` adds source lookups by file name and source kind,
+plus cross-reference indexes that group schematic symbol and PCB footprint
+models by component.
 
 ## Compatibility Rule
 
 Consumers should treat unknown fields as additive within the same schema id.
 Parser fixes may add detail, but existing field names and shapes should stay
 compatible unless a new schema id explicitly documents a model migration.
+Focused machine-readable schemas are available under
+`docs/schemas/altium_toolkit/` for the normalized root, project bundle, netlist
+JSON, schematic SVG semantic metadata, and PCB SVG semantic metadata contracts.

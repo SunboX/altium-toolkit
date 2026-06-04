@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { AsciiRecordParser } from './AsciiRecordParser.mjs'
+import { EmbeddedFileInventoryBuilder } from './EmbeddedFileInventoryBuilder.mjs'
 import { OleCompoundDocument } from '../ole/OleCompoundDocument.mjs'
 import { OleConstants } from '../ole/OleConstants.mjs'
 
@@ -75,7 +76,15 @@ export class SchematicStreamExtractor {
 
         return {
             records,
-            streamNames: compoundDocument.listStreams()
+            streamNames: compoundDocument.listStreams(),
+            embeddedFiles: EmbeddedFileInventoryBuilder.buildFromStreams(
+                new Map(
+                    compoundDocument
+                        .listStreams()
+                        .map((name) => [name, compoundDocument.getStream(name)])
+                ),
+                { skipStreamNames: ['FileHeader'] }
+            )
         }
     }
 

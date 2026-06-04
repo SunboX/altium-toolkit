@@ -241,3 +241,140 @@ test('parseAltiumArrayBuffer warns when an embedded schematic image payload is m
         /embedded schematic image payload/i
     )
 })
+
+/**
+ * Verifies wrapped schematic image streams prefer the native payload over the
+ * BMP preview when a native image class is present.
+ */
+test('parseAltiumArrayBuffer prefers native schematic image payloads over previews', () => {
+    const pngBytes = Uint8Array.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01
+    ])
+    const wrapperBytes = createWrappedNativeImageBytes('TdxPNGImage', pngBytes)
+    const fileHeaderText =
+        '|HEADER=Schematic Document' +
+        '|RECORD=31|CustomX=160|CustomY=120|VisibleGridSize=10|SnapGridSize=5' +
+        '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+        '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+        '|RECORD=30|IndexInSheet=2|Location.X=20|Location.Y=30|Corner.X=80|Corner.Y=70' +
+        '|EmbedImage=T|KeepAspect=T|FileName=wrapped.bmp'
+    const arrayBuffer = SchematicImageOleFactory.createDocumentBuffer({
+        fileHeaderText,
+        imageFileName: 'wrapped.bmp',
+        imageBytes: wrapperBytes
+    })
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'wrapped-image.SchDoc',
+        arrayBuffer
+    )
+
+    assert.equal(documentModel.schematic.images[0].mimeType, 'image/png')
+    assert.equal(documentModel.schematic.images[0].sourceMimeType, 'image/bmp')
+    assert.equal(documentModel.schematic.images[0].nativeClass, 'TdxPNGImage')
+    assert.equal(
+        documentModel.schematic.images[0].dataBase64,
+        Buffer.from(pngBytes).toString('base64')
+    )
+})
+
+/**
+ * Verifies 32-bit BMP streams with alpha are converted to browser-friendly PNG
+ * payloads rather than being exposed as opaque BMP previews.
+ */
+test('parseAltiumArrayBuffer converts alpha BMP schematic images to PNG', () => {
+    const fileHeaderText =
+        '|HEADER=Schematic Document' +
+        '|RECORD=31|CustomX=160|CustomY=120|VisibleGridSize=10|SnapGridSize=5' +
+        '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+        '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+        '|RECORD=30|IndexInSheet=2|Location.X=20|Location.Y=30|Corner.X=80|Corner.Y=70' +
+        '|EmbedImage=T|KeepAspect=T|FileName=alpha.bmp'
+    const arrayBuffer = SchematicImageOleFactory.createDocumentBuffer({
+        fileHeaderText,
+        imageFileName: 'alpha.bmp',
+        imageBytes: createAlphaBmpBytes()
+    })
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'alpha-image.SchDoc',
+        arrayBuffer
+    )
+
+    assert.equal(documentModel.schematic.images[0].mimeType, 'image/png')
+    assert.equal(documentModel.schematic.images[0].sourceMimeType, 'image/bmp')
+    assert.equal(documentModel.schematic.images[0].hasAlpha, true)
+    assert.match(documentModel.schematic.images[0].dataBase64, /^iVBORw0KGgo/u)
+})
+
+/**
+ * Builds a native-image wrapper with a valid BMP preview.
+ * @param {string} nativeClass
+ * @param {Uint8Array} nativeBytes
+ * @returns {Uint8Array}
+ */
+function createWrappedNativeImageBytes(nativeClass, nativeBytes) {
+    const previewBytes = createOpaqueBmpBytes()
+    const classBytes = new TextEncoder().encode(nativeClass)
+    const bytes = new Uint8Array(
+        previewBytes.byteLength +
+            1 +
+            classBytes.byteLength +
+            nativeBytes.byteLength
+    )
+    bytes.set(previewBytes, 0)
+    bytes[previewBytes.byteLength] = classBytes.byteLength
+    bytes.set(classBytes, previewBytes.byteLength + 1)
+    bytes.set(nativeBytes, previewBytes.byteLength + 1 + classBytes.byteLength)
+    return bytes
+}
+
+/**
+ * Builds a minimal opaque 24-bit BMP preview.
+ * @returns {Uint8Array}
+ */
+function createOpaqueBmpBytes() {
+    return createBmpBytes({
+        bitsPerPixel: 24,
+        pixels: [0xff, 0xff, 0xff]
+    })
+}
+
+/**
+ * Builds a minimal 32-bit BMP with one transparent and one opaque pixel.
+ * @returns {Uint8Array}
+ */
+function createAlphaBmpBytes() {
+    return createBmpBytes({
+        bitsPerPixel: 32,
+        width: 2,
+        pixels: [0x00, 0x00, 0xff, 0x00, 0xff, 0x00, 0x00, 0xff]
+    })
+}
+
+/**
+ * Builds a tiny uncompressed BMP payload.
+ * @param {{ bitsPerPixel: 24 | 32, width?: number, pixels: number[] }} options
+ * @returns {Uint8Array}
+ */
+function createBmpBytes(options) {
+    const width = options.width || 1
+    const height = 1
+    const bytesPerPixel = options.bitsPerPixel / 8
+    const rowStride = Math.ceil((width * bytesPerPixel) / 4) * 4
+    const pixelOffset = 54
+    const fileSize = pixelOffset + rowStride * height
+    const bytes = new Uint8Array(fileSize)
+    const view = new DataView(bytes.buffer)
+    bytes[0] = 0x42
+    bytes[1] = 0x4d
+    view.setUint32(2, fileSize, true)
+    view.setUint32(10, pixelOffset, true)
+    view.setUint32(14, 40, true)
+    view.setInt32(18, width, true)
+    view.setInt32(22, height, true)
+    view.setUint16(26, 1, true)
+    view.setUint16(28, options.bitsPerPixel, true)
+    view.setUint32(34, rowStride * height, true)
+    bytes.set(options.pixels, pixelOffset)
+    return bytes
+}

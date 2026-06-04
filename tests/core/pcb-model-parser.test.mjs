@@ -411,6 +411,33 @@ test('PcbModelParser exposes component primitive groups from native indexes', ()
         netIndex: 8,
         polygonIndex: 9
     })
+    assert.equal(
+        documentModel.pcb.ownership.schema,
+        'altium-toolkit.pcb.ownership.a1'
+    )
+    assert.deepEqual(
+        documentModel.pcb.ownership.componentsByIndex['1'].primitiveKeys,
+        ['fill-0', 'pad-0', 'region-0', 'text-0']
+    )
+    assert.deepEqual(documentModel.pcb.ownership.netsByIndex['8'], {
+        netIndex: 8,
+        name: '',
+        primitiveKeys: ['via-0']
+    })
+    assert.deepEqual(
+        documentModel.pcb.ownership.primitiveOwners.find(
+            (entry) => entry.primitiveKey === 'track-0'
+        ),
+        {
+            primitiveKey: 'track-0',
+            primitiveKind: 'track',
+            componentIndex: 0,
+            component: 'R1',
+            netIndex: 6,
+            net: '',
+            polygonIndex: 7
+        }
+    )
     assert.equal(documentModel.summary.rawRecordCount, 1)
     assert.equal(
         documentModel.pcb.rawRecords[0].registryId,
@@ -751,6 +778,80 @@ test('PcbModelParser exposes primitive layer names for decoded binary layers', (
 })
 
 /**
+ * Verifies mechanical-layer pair relationships are exposed for footprint-side
+ * flipping and user-facing layer identity.
+ */
+test('PcbModelParser exposes mechanical layer pairs and flip metadata', () => {
+    const documentModel = PcbModelParser.parse('demo.PcbDoc', [
+        {
+            sourceStream: 'Board6/Data',
+            fields: {
+                KIND0: '0',
+                VX0: '0mil',
+                VY0: '0mil',
+                CX0: '0mil',
+                CY0: '0mil',
+                SA0: '0',
+                EA0: '0',
+                R0: '0mil',
+                KIND1: '0',
+                VX1: '100mil',
+                VY1: '0mil',
+                CX1: '0mil',
+                CY1: '0mil',
+                SA1: '0',
+                EA1: '0',
+                R1: '0mil',
+                KIND2: '0',
+                VX2: '100mil',
+                VY2: '80mil',
+                CX2: '0mil',
+                CY2: '0mil',
+                SA2: '0',
+                EA2: '0',
+                R2: '0mil',
+                KIND3: '0',
+                VX3: '0mil',
+                VY3: '80mil',
+                CX3: '0mil',
+                CY3: '0mil',
+                SA3: '0',
+                EA3: '0',
+                R3: '0mil',
+                LAYER57NAME: 'Mech A',
+                LAYER58NAME: 'Mech B',
+                V9_STACK_LAYER1_NAME: 'Mech A',
+                V9_STACK_LAYER1_LAYERID: '57',
+                V9_STACK_LAYER2_NAME: 'Mech B',
+                V9_STACK_LAYER2_LAYERID: '58',
+                MECHANICAL_LAYER_PAIR_COUNT: '1',
+                MECHANICAL_LAYER_PAIR1_LAYER1: '57',
+                MECHANICAL_LAYER_PAIR1_LAYER2: '58',
+                MECHANICAL_LAYER_PAIR1_LAYER1V7: '16908289',
+                MECHANICAL_LAYER_PAIR1_LAYER2V7: '16908290'
+            }
+        }
+    ])
+
+    assert.deepEqual(documentModel.pcb.mechanicalLayerPairs, [
+        {
+            index: 1,
+            layer1Id: 57,
+            layer2Id: 58,
+            layer1Name: 'Mech A',
+            layer2Name: 'Mech B',
+            layer1V7SaveId: 0x01020001,
+            layer2V7SaveId: 0x01020002
+        }
+    ])
+    assert.deepEqual(documentModel.pcb.layerFlipMetadata.mechanicalFlipMap, {
+        57: 58,
+        58: 57
+    })
+    assert.equal(documentModel.summary.mechanicalLayerPairCount, 1)
+})
+
+/**
  * Verifies normalized PCB models preserve embedded 3D model payloads and flip
  * component-body placements into viewer coordinates.
  */
@@ -912,4 +1013,378 @@ test('PcbModelParser preserves embedded model payloads and normalizes body place
                 diagnostic.message === 'Recovered 1 embedded 3D model payloads.'
         )
     )
+})
+
+/**
+ * Verifies compiled PCB component provenance is exposed without requiring the
+ * project compiler to run.
+ */
+test('PcbModelParser exposes component source provenance fields', () => {
+    const documentModel = PcbModelParser.parse('provenance.PcbDoc', [
+        createBoardRecord(),
+        {
+            sourceStream: 'Components6/Data',
+            fields: {
+                LAYER: 'TOP',
+                X: '100mil',
+                Y: '120mil',
+                PATTERN: 'QFN-FAKE',
+                ROTATION: '0',
+                HEIGHT: '20mil',
+                SOURCEDESIGNATOR: 'U1',
+                SOURCEUNIQUEID: 'TOP\\CH_A\\COMP_1',
+                SOURCEHIERARCHICALPATH: 'Root\\RepeatedA',
+                SOURCEFOOTPRINTLIBRARY: 'Libraries\\PackageVault.PcbLib',
+                SOURCELIBREFERENCE: 'SYM/FAKE/QFN',
+                SOURCECOMPONENTLIBRARY: 'Libraries\\LogicVault.SchLib',
+                SOURCECOMPLIBIDENTIFIERKIND: '2',
+                SOURCECOMPLIBRARYIDENTIFIER: 'FAKE-COMPONENT-ID',
+                FOOTPRINTDESCRIPTION: 'Synthetic package',
+                CHANNELOFFSET: '8',
+                NAMEAUTOPOSITION: '3',
+                COMMENTAUTOPOSITION: '7',
+                LOCKSTRINGS: 'TRUE',
+                ENABLEPINSWAPPING: 'FALSE',
+                ENABLEPARTSWAPPING: 'TRUE'
+            }
+        }
+    ])
+
+    assert.deepEqual(documentModel.pcb.components[0].provenance, {
+        channelOffset: 8,
+        sourceDesignator: 'U1',
+        sourceUniqueId: 'TOP\\CH_A\\COMP_1',
+        sourceUniqueIdSegments: ['TOP', 'CH_A', 'COMP_1'],
+        sourceHierarchicalPath: 'Root\\RepeatedA',
+        sourceHierarchySegments: ['Root', 'RepeatedA'],
+        sourceFootprintLibrary: 'Libraries\\PackageVault.PcbLib',
+        sourceFootprintLibraryName: 'PackageVault.PcbLib',
+        sourceLibReference: 'SYM/FAKE/QFN',
+        sourceComponentLibrary: 'Libraries\\LogicVault.SchLib',
+        sourceComponentLibraryIdentifierKind: 2,
+        sourceComponentLibraryIdentifier: 'FAKE-COMPONENT-ID',
+        footprintDescription: 'Synthetic package',
+        nameAutoPosition: 3,
+        commentAutoPosition: 7,
+        lockStrings: true,
+        enablePinSwapping: false,
+        enablePartSwapping: true
+    })
+})
+
+/**
+ * Verifies class records and differential-pair records are joined into a
+ * consumer-facing lookup surface.
+ */
+test('PcbModelParser joins differential-pair classes to pair records', () => {
+    const documentModel = PcbModelParser.parse('diff-pair.PcbDoc', [
+        createBoardRecord(),
+        {
+            sourceStream: 'Classes6/Data',
+            fields: {
+                NAME: 'Matched Pairs',
+                KIND: '6',
+                MEMBERCOUNT: '2',
+                M0: 'CLK_A',
+                M1: 'DATA_A',
+                ENABLED: 'TRUE',
+                UNIQUEID: 'CLASS-1'
+            }
+        },
+        {
+            sourceStream: 'DifferentialPairs6/Data',
+            fields: {
+                NAME: 'CLK_A',
+                POSITIVENETNAME: 'CLK_A_P',
+                NEGATIVENETNAME: 'CLK_A_N',
+                GATHERCONTROL: 'TRUE',
+                UNIQUEID: 'PAIR-1'
+            }
+        }
+    ])
+
+    assert.deepEqual(documentModel.pcb.differentialPairs, [
+        {
+            pairIndex: 0,
+            name: 'CLK_A',
+            positiveNetName: 'CLK_A_P',
+            negativeNetName: 'CLK_A_N',
+            netNames: ['CLK_A_P', 'CLK_A_N'],
+            gatherControl: true,
+            uniqueId: 'PAIR-1',
+            classNames: ['Matched Pairs']
+        }
+    ])
+    assert.deepEqual(documentModel.pcb.differentialPairClasses, [
+        {
+            classIndex: 0,
+            name: 'Matched Pairs',
+            members: ['CLK_A', 'DATA_A'],
+            pairNames: ['CLK_A'],
+            unresolvedMembers: ['DATA_A']
+        }
+    ])
+})
+
+/**
+ * Verifies PnP entries distinguish Altium-style pad-anchor centers from
+ * component-origin coordinates.
+ */
+test('PcbModelParser emits pick-place entries with explicit coordinate modes', () => {
+    const documentModel = PcbModelParser.parse(
+        'pick-place.PcbDoc',
+        [
+            createBoardRecord(),
+            {
+                sourceStream: 'Components6/Data',
+                fields: {
+                    LAYER: 'TOP',
+                    X: '100mil',
+                    Y: '120mil',
+                    PATTERN: 'QFN-FAKE',
+                    ROTATION: '90',
+                    HEIGHT: '20mil',
+                    SOURCEDESIGNATOR: 'U1'
+                }
+            }
+        ],
+        {
+            streamNames: ['Board6/Data', 'Pads6/Data'],
+            binaryPrimitives: {
+                pads: [
+                    {
+                        x: 70,
+                        y: 110,
+                        sizeTopX: 20,
+                        sizeTopY: 20,
+                        componentIndex: 0
+                    },
+                    {
+                        x: 170,
+                        y: 130,
+                        sizeTopX: 20,
+                        sizeTopY: 20,
+                        componentIndex: 0
+                    }
+                ]
+            },
+            diagnostics: {
+                printableRecordCount: 2,
+                printableStreamCount: 2,
+                binaryPrimitiveCount: 2
+            }
+        }
+    )
+
+    assert.equal(documentModel.pnp.positionMode, 'altium-pick-place')
+    assert.deepEqual(documentModel.pnp.entries, [
+        {
+            designator: 'U1',
+            pattern: 'QFN-FAKE',
+            layer: 'TOP',
+            rotation: 90,
+            x: 120,
+            y: 380,
+            componentOriginX: 100,
+            componentOriginY: 380,
+            padAnchorCount: 2,
+            positionSource: 'pad-anchor-bounds'
+        }
+    ])
+    assert.deepEqual(documentModel.pnp.modes.componentOrigin.entries, [
+        {
+            designator: 'U1',
+            pattern: 'QFN-FAKE',
+            layer: 'TOP',
+            rotation: 90,
+            x: 100,
+            y: 380,
+            componentOriginX: 100,
+            componentOriginY: 380,
+            padAnchorCount: 2,
+            positionSource: 'component-origin'
+        }
+    ])
+})
+
+/**
+ * Verifies PCB parsing exposes deterministic QA statistics for board review
+ * and regression diffing.
+ */
+test('PcbModelParser emits deterministic PCB statistics summary', () => {
+    const documentModel = PcbModelParser.parse(
+        'stats.PcbDoc',
+        [createBoardRecord()],
+        {
+            streamNames: ['Board6/Data', 'Tracks6/Data', 'Pads6/Data'],
+            binaryPrimitives: {
+                tracks: [
+                    {
+                        layerId: 1,
+                        width: 8,
+                        x1: 0,
+                        y1: 0,
+                        x2: 100,
+                        y2: 0
+                    }
+                ],
+                arcs: [{ layerId: 1, width: 6 }],
+                vias: [
+                    {
+                        layerId: 1,
+                        diameter: 24,
+                        holeDiameter: 12,
+                        isPlated: true
+                    }
+                ],
+                pads: [
+                    {
+                        layerId: 1,
+                        sizeTopX: 50,
+                        sizeTopY: 70,
+                        holeDiameter: 20,
+                        holeShape: 2,
+                        holeSlotLength: 60,
+                        isPlated: false
+                    }
+                ],
+                fills: [],
+                texts: [],
+                regions: [],
+                shapeBasedRegions: []
+            },
+            diagnostics: {
+                printableRecordCount: 1,
+                printableStreamCount: 1,
+                binaryPrimitiveCount: 4
+            }
+        }
+    )
+
+    assert.deepEqual(documentModel.pcb.statistics.board, {
+        widthMil: 1000,
+        heightMil: 500,
+        centroidMil: { x: 500, y: 250 },
+        outlineSegmentCount: 4,
+        cutoutCount: 0
+    })
+    assert.deepEqual(documentModel.pcb.statistics.drills, {
+        totalHoleCount: 2,
+        padHoleCount: 1,
+        viaHoleCount: 1,
+        platedHoleCount: 1,
+        nonPlatedHoleCount: 1,
+        slotCount: 1,
+        holeDiameterMil: { 12: 1, 20: 1 },
+        slotLengthMil: { 60: 1 }
+    })
+    assert.deepEqual(documentModel.pcb.statistics.primitiveWidths, {
+        tracksMil: { 8: 1 },
+        arcsMil: { 6: 1 },
+        viasMil: { 24: 1 },
+        padsTopXMil: { 50: 1 }
+    })
+    assert.deepEqual(documentModel.pcb.statistics.layers.entries, [
+        {
+            layerId: 1,
+            name: 'Top Layer',
+            role: 'signal',
+            primitiveCounts: {
+                tracks: 1,
+                arcs: 1,
+                vias: 1,
+                pads: 1,
+                fills: 0,
+                texts: 0,
+                regions: 0,
+                shapeBasedRegions: 0
+            }
+        }
+    ])
+})
+
+/**
+ * Verifies layer stack material and electrical fields are included in the
+ * deterministic statistics contract when they are present in board metadata.
+ */
+test('PcbModelParser emits layer-stack material statistics', () => {
+    const boardRecord = createBoardRecord()
+    Object.assign(boardRecord.fields, {
+        V9_STACK_LAYER1_KIND: 'signal',
+        V9_STACK_LAYER1_MATERIAL: 'Copper',
+        V9_STACK_LAYER1_COPPERTHICKNESS: '1.4mil',
+        V9_STACK_LAYER1_COPPERWEIGHT: '1oz',
+        V9_STACK_LAYER2_NAME: 'Core',
+        V9_STACK_LAYER2_LAYERID: '2',
+        V9_STACK_LAYER2_KIND: 'dielectric',
+        V9_STACK_LAYER2_MATERIAL: 'FR-4',
+        V9_STACK_LAYER2_THICKNESS: '58mil',
+        V9_STACK_LAYER2_DK: '4.2',
+        V9_STACK_LAYER2_DF: '0.018'
+    })
+
+    const documentModel = PcbModelParser.parse(
+        'stack-stats.PcbDoc',
+        [boardRecord],
+        {
+            streamNames: ['Board6/Data'],
+            binaryPrimitives: {},
+            diagnostics: {
+                printableRecordCount: 1,
+                printableStreamCount: 1,
+                binaryPrimitiveCount: 0
+            }
+        }
+    )
+
+    assert.deepEqual(documentModel.pcb.layers, [
+        {
+            index: 1,
+            name: 'Top Layer',
+            layerId: 1,
+            kind: 'signal',
+            material: 'Copper',
+            copperThicknessMil: 1.4,
+            copperWeight: '1oz'
+        },
+        {
+            index: 2,
+            name: 'Core',
+            layerId: 2,
+            kind: 'dielectric',
+            material: 'FR-4',
+            thicknessMil: 58,
+            dielectricConstant: 4.2,
+            dissipationFactor: 0.018
+        }
+    ])
+    assert.deepEqual(documentModel.pcb.statistics.layers.summary, {
+        signalLayerCount: 1,
+        dielectricLayerCount: 1,
+        copperLayerCount: 1,
+        dielectricThicknessMil: 58,
+        materials: {
+            Copper: 1,
+            'FR-4': 1
+        }
+    })
+    assert.deepEqual(documentModel.pcb.statistics.layers.entries[1], {
+        layerId: 2,
+        name: 'Core',
+        role: 'dielectric',
+        material: 'FR-4',
+        thicknessMil: 58,
+        dielectricConstant: 4.2,
+        dissipationFactor: 0.018,
+        primitiveCounts: {
+            tracks: 0,
+            arcs: 0,
+            vias: 0,
+            pads: 0,
+            fills: 0,
+            texts: 0,
+            regions: 0,
+            shapeBasedRegions: 0
+        }
+    })
 })

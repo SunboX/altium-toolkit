@@ -111,6 +111,62 @@ test('PcbScene3dBuilder builds board and procedural package scene data', () => {
 })
 
 /**
+ * Verifies project-level board assembly models pass through to host runtimes
+ * separately from per-component external model placements.
+ */
+test('PcbScene3dBuilder exposes a resolved board assembly model', () => {
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'PCB/FixtureBoard.PcbDoc',
+            pcb: {
+                boardOutline: {
+                    minX: 0,
+                    minY: 0,
+                    widthMil: 1000,
+                    heightMil: 500,
+                    segments: []
+                },
+                pads: [],
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: [],
+                components: []
+            }
+        },
+        {
+            modelRegistry: {
+                resolveComponentModel() {
+                    return null
+                },
+                resolveComponentBodyModel() {
+                    return null
+                },
+                resolveBoardAssemblyModel(documentModel) {
+                    return documentModel.fileName === 'PCB/FixtureBoard.PcbDoc'
+                        ? {
+                              origin: 'board-assembly',
+                              name: 'FixtureBoard.step',
+                              relativePath: '3D Bodies/FixtureBoard.step',
+                              format: 'step'
+                          }
+                        : null
+                }
+            }
+        }
+    )
+
+    assert.deepEqual(scene.boardAssemblyModel, {
+        origin: 'board-assembly',
+        name: 'FixtureBoard.step',
+        relativePath: '3D Bodies/FixtureBoard.step',
+        format: 'step'
+    })
+})
+
+/**
  * Verifies embedded component-body placements become explicit external-model
  * scene entries with board-centered coordinates and authored transforms.
  */
@@ -234,6 +290,15 @@ test('PcbScene3dBuilder emits embedded external placements from normalized body 
         modelTransform: {
             rotationDeg: { x: -0, y: -0, z: 0 },
             dzMil: 11.811
+        },
+        projection: {
+            source: 'pad-fallback',
+            reason: 'Projection fell back to nearby component pad span.',
+            boundsMil: {
+                width: 110,
+                depth: 70,
+                height: 40
+            }
         },
         externalModel: {
             origin: 'embedded',
@@ -404,6 +469,164 @@ test('PcbScene3dBuilder keeps the native body position for explicit placements',
         y: -10,
         z: 31.5
     })
+})
+
+/**
+ * Verifies external model placements explain which projection source was used
+ * without changing the resolved scene coordinates.
+ */
+test('PcbScene3dBuilder exposes external model projection diagnostics', () => {
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'demo.PcbDoc',
+            pcb: {
+                boardOutline: {
+                    minX: 0,
+                    minY: 0,
+                    widthMil: 1000,
+                    heightMil: 500,
+                    segments: [
+                        { type: 'line', x1: 0, y1: 0, x2: 1000, y2: 0 },
+                        { type: 'line', x1: 1000, y1: 0, x2: 1000, y2: 500 },
+                        { type: 'line', x1: 1000, y1: 500, x2: 0, y2: 500 },
+                        { type: 'line', x1: 0, y1: 500, x2: 0, y2: 0 }
+                    ]
+                },
+                pads: [
+                    {
+                        x: 250,
+                        y: 200,
+                        sizeTopX: 80,
+                        sizeTopY: 40,
+                        holeDiameter: 0
+                    },
+                    {
+                        x: 450,
+                        y: 200,
+                        sizeTopX: 70,
+                        sizeTopY: 50,
+                        holeDiameter: 0
+                    }
+                ],
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: [
+                    {
+                        identifier: 'BODY_A',
+                        name: 'body-a.step',
+                        positionMil: { x: 250, y: 200 },
+                        projectionOverrideMil: {
+                            width: 140,
+                            depth: 90,
+                            height: 55
+                        }
+                    },
+                    {
+                        identifier: 'BODY_B',
+                        name: 'body-b.step',
+                        positionMil: { x: 350, y: 200 },
+                        modelBoundsMil: {
+                            width: 120,
+                            depth: 80,
+                            height: 45
+                        }
+                    },
+                    {
+                        identifier: 'BODY_C',
+                        name: 'body-c.step',
+                        positionMil: { x: 450, y: 200 }
+                    }
+                ],
+                components: [
+                    {
+                        designator: 'U1',
+                        x: 250,
+                        y: 200,
+                        rotation: 0,
+                        layer: 'TOP',
+                        pattern: 'QFN_FAKE',
+                        height: 50
+                    },
+                    {
+                        designator: 'U2',
+                        x: 350,
+                        y: 200,
+                        rotation: 0,
+                        layer: 'TOP',
+                        pattern: 'QFN_FAKE',
+                        height: 50
+                    },
+                    {
+                        designator: 'U3',
+                        x: 450,
+                        y: 200,
+                        rotation: 0,
+                        layer: 'TOP',
+                        pattern: 'QFN_FAKE',
+                        height: 50
+                    }
+                ]
+            }
+        },
+        {
+            modelRegistry: {
+                resolveComponentModel() {
+                    return null
+                },
+                resolveComponentBodyModel(componentBody) {
+                    return {
+                        origin: 'embedded',
+                        name: componentBody.name,
+                        format: 'step',
+                        boundsMil:
+                            componentBody.identifier === 'BODY_B'
+                                ? {
+                                      width: 110,
+                                      depth: 70,
+                                      height: 40
+                                  }
+                                : undefined
+                    }
+                }
+            }
+        }
+    )
+
+    assert.deepEqual(
+        scene.externalPlacements.map((placement) => placement.projection),
+        [
+            {
+                source: 'authored-override',
+                reason: 'Component body carried an explicit projection override.',
+                boundsMil: {
+                    width: 140,
+                    depth: 90,
+                    height: 55
+                }
+            },
+            {
+                source: 'model-bounds',
+                reason: 'Resolved 3D model bounds were available.',
+                boundsMil: {
+                    width: 120,
+                    depth: 80,
+                    height: 45
+                }
+            },
+            {
+                source: 'pad-fallback',
+                reason: 'Projection fell back to nearby component pad span.',
+                boundsMil: {
+                    width: 70,
+                    depth: 50,
+                    height: 50
+                }
+            }
+        ]
+    )
 })
 
 /**

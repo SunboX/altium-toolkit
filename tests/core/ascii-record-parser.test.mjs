@@ -24,3 +24,20 @@ test('AsciiRecordParser decodes GBK-encoded printable PCB field values', () => {
     assert.equal(records.length, 1)
     assert.equal(records[0].fields.SOURCEDESCRIPTION, '贴片电容22P(ROHS)')
 })
+
+test('AsciiRecordParser decodes Windows-1252 printable PCB field values', () => {
+    const payload = Buffer.concat([
+        Buffer.from('|RECORD=1|NAME=MARKING|VALUE=ESD', 'latin1'),
+        Buffer.from([0x96]),
+        Buffer.from('TVS|', 'latin1')
+    ])
+    const arrayBuffer = payload.buffer.slice(
+        payload.byteOffset,
+        payload.byteOffset + payload.byteLength
+    )
+
+    const records = AsciiRecordParser.parse(arrayBuffer)
+
+    assert.equal(records.length, 1)
+    assert.equal(records[0].fields.VALUE, 'ESD–TVS')
+})

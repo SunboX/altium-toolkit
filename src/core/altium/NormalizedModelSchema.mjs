@@ -22,7 +22,43 @@ export class NormalizedModelSchema {
             ...model
         }
         normalizedModel.schema = NormalizedModelSchema.CURRENT_SCHEMA_ID
+        if (Array.isArray(normalizedModel.diagnostics)) {
+            normalizedModel.diagnostics =
+                NormalizedModelSchema.#normalizeDiagnostics(
+                    normalizedModel.diagnostics
+                )
+        }
 
         return normalizedModel
+    }
+
+    /**
+     * Adds machine-readable codes to parser diagnostics.
+     * @param {object[]} diagnostics Parser diagnostics.
+     * @returns {object[]}
+     */
+    static #normalizeDiagnostics(diagnostics) {
+        return diagnostics.map((diagnostic) => ({
+            code:
+                typeof diagnostic?.code === 'string' && diagnostic.code
+                    ? diagnostic.code
+                    : NormalizedModelSchema.#deriveDiagnosticCode(diagnostic),
+            ...diagnostic
+        }))
+    }
+
+    /**
+     * Derives a stable fallback code from one diagnostic message.
+     * @param {object} diagnostic Parser diagnostic.
+     * @returns {string}
+     */
+    static #deriveDiagnosticCode(diagnostic) {
+        const slug = String(diagnostic?.message || 'diagnostic')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/gu, '.')
+            .replace(/^\.+|\.+$/gu, '')
+            .slice(0, 80)
+
+        return 'parser.' + (slug || 'diagnostic')
     }
 }

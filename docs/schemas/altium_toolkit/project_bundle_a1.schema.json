@@ -1,0 +1,57 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "urn:altium-toolkit:project-bundle:a1",
+    "title": "Altium Toolkit Project Bundle A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "kind",
+        "project",
+        "sheets",
+        "components",
+        "nets",
+        "indexes"
+    ],
+    "properties": {
+        "schema": {
+            "const": "urn:altium-toolkit:normalized-model:a1"
+        },
+        "kind": {
+            "const": "design-bundle"
+        },
+        "project": {
+            "type": "object"
+        },
+        "variants": {
+            "type": "array"
+        },
+        "sheets": {
+            "type": "array"
+        },
+        "components": {
+            "type": "array"
+        },
+        "schematic_hierarchy": {
+            "type": "object"
+        },
+        "pnp": {
+            "type": "object"
+        },
+        "nets": {
+            "type": "array"
+        },
+        "annotations": {
+            "type": "object"
+        },
+        "indexes": {
+            "type": "object"
+        },
+        "bom": {
+            "type": "array"
+        },
+        "effectiveVariant": {
+            "type": "object"
+        }
+    }
+}

@@ -409,6 +409,14 @@ export class SchematicPinParser {
 
         const segments = []
         const lineStyle = SchematicPinParser.#resolveSchematicLineStyle(fields)
+        const startMarker = SchematicPinParser.#resolvePolylineMarker(
+            fields,
+            'Start'
+        )
+        const endMarker = SchematicPinParser.#resolvePolylineMarker(
+            fields,
+            'End'
+        )
 
         for (let index = 1; index < points.length; index += 1) {
             const previous = points[index - 1]
@@ -433,7 +441,11 @@ export class SchematicPinParser {
                 isBus: options.isBus === true ? true : undefined,
                 recordType: options.recordType || undefined,
                 omittedEndpointAxis: omittedEndpointAxis || undefined,
-                sourceLocationCount: points.length
+                sourceLocationCount: points.length,
+                ...(index === 1 && startMarker ? { startMarker } : {}),
+                ...(index === points.length - 1 && endMarker
+                    ? { endMarker }
+                    : {})
             })
         }
 
@@ -523,6 +535,77 @@ export class SchematicPinParser {
         return resolvedRecordType === '6' || resolvedRecordType === '7'
             ? '#000000'
             : '#a44a1b'
+    }
+
+    /**
+     * Resolves one authored polyline endpoint marker.
+     * @param {Record<string, string | string[]>} fields Source record fields.
+     * @param {'Start' | 'End'} edge Endpoint prefix.
+     * @returns {{ shape: number, shapeName: string, size: number } | null}
+     */
+    static #resolvePolylineMarker(fields, edge) {
+        const shape = SchematicPinParser.#parseFirstNumericField(fields, [
+            edge + 'LineShape',
+            edge + 'LineMarker',
+            edge + 'MarkerShape',
+            edge + 'ArrowKind'
+        ])
+
+        if (shape === null || shape <= 0) {
+            return null
+        }
+
+        const size =
+            SchematicPinParser.#parseFirstNumericField(fields, [
+                edge + 'LineShapeSize',
+                edge + 'LineMarkerSize',
+                edge + 'MarkerSize',
+                edge + 'ArrowSize'
+            ]) || 6
+
+        return {
+            shape,
+            shapeName:
+                SchematicPinParser.#resolvePolylineMarkerShapeName(shape),
+            size
+        }
+    }
+
+    /**
+     * Parses the first present numeric field from a candidate list.
+     * @param {Record<string, string | string[]>} fields Source record fields.
+     * @param {string[]} names Candidate field names.
+     * @returns {number | null}
+     */
+    static #parseFirstNumericField(fields, names) {
+        for (const name of names) {
+            const value = ParserUtils.parseNumericField(fields, name)
+            if (value !== null) {
+                return value
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Maps native polyline marker codes onto stable renderer labels.
+     * @param {number} shape Numeric marker code.
+     * @returns {string}
+     */
+    static #resolvePolylineMarkerShapeName(shape) {
+        switch (shape) {
+            case 1:
+                return 'arrow'
+            case 2:
+                return 'filled-arrow'
+            case 3:
+                return 'circle'
+            case 4:
+                return 'square'
+            default:
+                return 'marker-' + shape
+        }
     }
 
     /**

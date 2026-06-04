@@ -72,6 +72,272 @@ test('parseAltiumArrayBuffer accepts uppercase schematic field keys', () => {
 })
 
 /**
+ * Verifies schematic parsing exposes parent/child ownership without requiring
+ * consumers to interpret raw owner-index conventions.
+ */
+test('parseAltiumArrayBuffer exposes schematic ownership graph sidecar', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CustomX=300|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|RECORD=1|IndexInSheet=20|Location.X=80|Location.Y=90|LibReference=BOX_A|UniqueID=CMP-A' +
+            '|RECORD=2|OwnerIndex=20|OwnerPartID=1|PinConglomerate=58|PinLength=20' +
+            '|Location.X=100|Location.Y=90|Name=SIG_A|Designator=1|Color=255' +
+            '|RECORD=41|OwnerIndex=20|Location.X=70|Location.Y=105|Color=8388608|FontID=1' +
+            '|Text=U1|Name=Designator|IsHidden=F' +
+            '|RECORD=15|IndexInSheet=40|Location.X=160|Location.Y=130|XSize=80|YSize=50|UniqueId=SHEET-A' +
+            '|RECORD=16|OwnerIndex=40|Name=CHILD_A|Side=0|DistanceFromTop=2|IOType=2|Style=0'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'ownership-sidecar.SchDoc',
+        arrayBuffer
+    )
+    const ownership = documentModel.schematic.ownership
+
+    assert.equal(ownership.schema, 'altium-toolkit.schematic.ownership.a1')
+    assert.deepEqual(
+        ownership.childrenByParentKey['schematic-record-1'].map(
+            (child) => child.recordType
+        ),
+        ['2', '41']
+    )
+    assert.deepEqual(
+        ownership.childrenByParentKey['schematic-record-4'].map(
+            (child) => child.recordType
+        ),
+        ['16']
+    )
+    assert.deepEqual(ownership.parentsByChildKey['schematic-record-2'], {
+        parentKey: 'schematic-record-1',
+        ownerIndex: '20'
+    })
+    assert.equal(ownership.recordsByIndexInSheet['20'].recordType, '1')
+})
+
+/**
+ * Verifies component labels resolve from the native owner display group instead
+ * of nearby unrelated symbol text when owner ids do not match IndexInSheet.
+ */
+test('parseAltiumArrayBuffer resolves schematic component text from following owner group', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CustomX=300|CustomY=220|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|RECORD=1|IndexInSheet=20|Location.X=100|Location.Y=100|LibReference=IC/FAKE/CONTROL-HUB|UniqueID=CMP-A' +
+            '|RECORD=14|OwnerIndex=300|OwnerPartID=1|Location.X=20|Location.Y=100|Corner.X=80|Corner.Y=190' +
+            '|RECORD=2|OwnerIndex=300|OwnerPartID=1|Location.X=80|Location.Y=120|Name=SIG_A|Designator=1' +
+            '|RECORD=34|OwnerIndex=300|OwnerPartID=-1|Location.X=20|Location.Y=200|Color=8388608|FontID=1|Text=U7|Name=Designator' +
+            '|RECORD=41|OwnerIndex=300|OwnerPartID=-1|Location.X=20|Location.Y=90|Color=8388608|FontID=1|Text=CONTROL-HUB|Name=Comment' +
+            '|RECORD=34|OwnerIndex=500|OwnerPartID=-1|Location.X=105|Location.Y=105|Color=8388608|FontID=1|Text=R4|Name=Designator' +
+            '|RECORD=41|OwnerIndex=500|OwnerPartID=-1|Location.X=105|Location.Y=115|Color=8388608|FontID=1|Text=4K7|Name=Comment'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'owner-text-group.SchDoc',
+        arrayBuffer
+    )
+
+    assert.deepEqual(documentModel.schematic.components, [
+        {
+            x: 100,
+            y: 100,
+            libReference: 'IC/FAKE/CONTROL-HUB',
+            designator: 'U7',
+            value: 'CONTROL-HUB',
+            uniqueId: 'CMP-A'
+        }
+    ])
+})
+
+/**
+ * Verifies explicitly empty library designator/comment owner text remains empty
+ * instead of being replaced by a fallback placeholder.
+ */
+test('parseAltiumArrayBuffer preserves explicitly empty component owner text', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CustomX=300|CustomY=220|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|RECORD=1|IndexInSheet=20|Location.X=100|Location.Y=100|LibReference=IC/FAKE/EMPTY-TEXT|UniqueID=CMP-EMPTY' +
+            '|RECORD=14|OwnerIndex=300|OwnerPartID=1|Location.X=20|Location.Y=100|Corner.X=80|Corner.Y=190' +
+            '|RECORD=2|OwnerIndex=300|OwnerPartID=1|Location.X=80|Location.Y=120|Name=SIG_A|Designator=1' +
+            '|RECORD=34|OwnerIndex=300|OwnerPartID=-1|Location.X=20|Location.Y=200|Color=8388608|FontID=1|Text=|Name=Designator' +
+            '|RECORD=41|OwnerIndex=300|OwnerPartID=-1|Location.X=20|Location.Y=90|Color=8388608|FontID=1|Text=|Name=Comment'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'empty-owner-text.SchDoc',
+        arrayBuffer
+    )
+
+    assert.deepEqual(documentModel.schematic.components, [
+        {
+            x: 100,
+            y: 100,
+            libReference: 'IC/FAKE/EMPTY-TEXT',
+            designator: '',
+            value: '',
+            uniqueId: 'CMP-EMPTY'
+        }
+    ])
+})
+
+/**
+ * Verifies schematic template metadata and template-owned drawing records are
+ * exposed as a read-only sidecar for title-block and SVG consumers.
+ */
+test('parseAltiumArrayBuffer exposes schematic template read model', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CustomX=300|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=T|TitleBlockOn=T|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|ShowTemplateGraphics=T|TemplateFileName=base-title.SchDot' +
+            '|TemplateVaultGUID=VAULT-GUID|TemplateItemGUID=ITEM-GUID|TemplateRevisionGUID=REV-GUID' +
+            '|TemplateVaultHRID=Vault A|TemplateRevisionHRID=Revision A' +
+            '|RECORD=41|Name=Title|Text=Visible Title|IsHidden=T' +
+            '|RECORD=39|IndexInSheet=90|Name=Base Title|UniqueID=TPL-1' +
+            '|RECORD=6|OwnerIndex=90|LocationCount=2|X1=20|Y1=150|X2=280|Y2=150|Color=128|LineWidth=1' +
+            '|RECORD=4|OwnerIndex=90|Location.X=40|Location.Y=140|Color=8388608|FontID=1|Text==DocCode'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'template-read-model.SchDoc',
+        arrayBuffer
+    )
+
+    assert.deepEqual(documentModel.schematic.template, {
+        schema: 'altium-toolkit.schematic.template.a1',
+        identity: {
+            showGraphics: true,
+            fileName: 'base-title.SchDot',
+            vaultGuid: 'VAULT-GUID',
+            itemGuid: 'ITEM-GUID',
+            revisionGuid: 'REV-GUID',
+            vaultHrid: 'Vault A',
+            revisionHrid: 'Revision A',
+            recordId: 'record-90',
+            name: 'Base Title',
+            uniqueId: 'TPL-1'
+        },
+        ownedRecordKeys: ['schematic-record-3', 'schematic-record-4'],
+        ownedGraphics: {
+            lines: ['schematic-record-3'],
+            polygons: [],
+            rectangles: [],
+            ellipses: [],
+            arcs: [],
+            texts: ['schematic-record-4'],
+            images: []
+        },
+        fonts: {
+            1: {
+                size: 10,
+                family: 'Times New Roman',
+                bold: false,
+                italic: false,
+                rotation: 0
+            }
+        },
+        missingParameters: ['DocCode'],
+        titleBlock: {
+            title: 'Visible Title',
+            revision: '',
+            documentNumber: '',
+            sheetNumber: '',
+            sheetTotal: '',
+            date: '',
+            drawnBy: '',
+            footerHints: {}
+        }
+    })
+})
+
+/**
+ * Verifies harness connector records are normalized as first-class schematic
+ * read-model rows with owned entries, type labels, and bundle geometry.
+ */
+test('parseAltiumArrayBuffer exposes harness connector model', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CustomX=300|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|RECORD=215|IndexInSheet=120|Location.X=40|Location.Y=120|XSize=70|YSize=40' +
+            '|Side=1|PrimaryConnectionPosition=20|LineWidth=1|Color=128|AreaColor=16777215' +
+            '|RECORD=216|OwnerIndex=120|Name=CTRL_A|Side=0|DistanceFromTop=1|DistanceFromTop_Frac1=500000' +
+            '|HarnessType=CTRL_GROUP|TextStyle=Short|TextColor=255' +
+            '|RECORD=217|OwnerIndex=120|Location.X=40|Location.Y=130|Text=CTRL_GROUP|Color=8388608' +
+            '|RECORD=218|LocationCount=2|X1=110|Y1=100|X2=180|Y2=100|Color=15254943|LineWidth=2'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'harness-read-model.SchDoc',
+        arrayBuffer
+    )
+
+    assert.deepEqual(documentModel.schematic.harnesses, {
+        schema: 'altium-toolkit.schematic.harness.a1',
+        connectors: [
+            {
+                key: 'harness-connector-120',
+                recordKey: 'schematic-record-1',
+                recordId: 'record-120',
+                x: 40,
+                y: 120,
+                width: 70,
+                height: 40,
+                side: 'right',
+                primaryConnectionPosition: 20,
+                lineWidth: 1,
+                color: '#800000',
+                fill: '#ffffff',
+                entries: [
+                    {
+                        key: 'harness-entry-2',
+                        recordKey: 'schematic-record-2',
+                        name: 'CTRL_A',
+                        side: 'left',
+                        distanceFromTop: 150,
+                        harnessType: 'CTRL_GROUP',
+                        textStyle: 'short',
+                        textColor: '#ff0000'
+                    }
+                ],
+                typeLabel: {
+                    key: 'harness-type-3',
+                    recordKey: 'schematic-record-3',
+                    text: 'CTRL_GROUP',
+                    x: 40,
+                    y: 130,
+                    color: '#000080'
+                }
+            }
+        ],
+        signalHarnesses: [
+            {
+                key: 'signal-harness-4',
+                recordKey: 'schematic-record-4',
+                points: [
+                    { x: 110, y: 100 },
+                    { x: 180, y: 100 }
+                ],
+                color: '#9fc5e8',
+                lineWidth: 2
+            }
+        ],
+        bundleLinks: [
+            {
+                key: 'harness-bundle-0',
+                connectorKey: 'harness-connector-120',
+                harnessType: 'CTRL_GROUP',
+                entries: ['CTRL_A'],
+                signalHarnessKeys: ['signal-harness-4']
+            }
+        ]
+    })
+})
+
+/**
  * Verifies fields recovered before the marker key remain attached to their
  * owning record instead of becoming orphan printable fragments.
  */

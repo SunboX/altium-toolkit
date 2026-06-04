@@ -15,19 +15,30 @@ export class SchematicComponentTextResolver {
      * @param {{ fields: Record<string, string | string[]> }[]} ownerTexts
      * @param {{ x: number, y: number, text: string, name: string }[]} texts
      * @param {{ x: number, y: number, libReference: string }} component
-     * @returns {string}
+     * @returns {string | null}
      */
     static resolveDesignator(ownerTexts, texts, component) {
-        const ownerDesignator = SchematicComponentTextResolver.#findRelatedText(
-            ownerTexts,
-            'Designator'
-        )
+        const ownerDesignator =
+            SchematicComponentTextResolver.#findRelatedTextRecord(
+                ownerTexts,
+                'Designator'
+            )
         if (
+            ownerDesignator.found &&
             SchematicComponentTextResolver.#isResolvedComponentText(
-                ownerDesignator
+                ownerDesignator.text
             )
         ) {
-            return ownerDesignator
+            return ownerDesignator.text
+        }
+
+        if (
+            ownerDesignator.found &&
+            SchematicComponentTextResolver.#isExplicitEmptyText(
+                ownerDesignator.text
+            )
+        ) {
+            return ''
         }
 
         return SchematicComponentTextResolver.#findNearbyComponentDesignator(
@@ -45,15 +56,24 @@ export class SchematicComponentTextResolver {
      */
     static resolveValue(ownerTexts, texts, component) {
         const ownerValue =
-            SchematicComponentTextResolver.#findRelatedText(
+            SchematicComponentTextResolver.#findFirstRelatedTextRecord(
                 ownerTexts,
-                'Comment'
-            ) ||
-            SchematicComponentTextResolver.#findRelatedText(ownerTexts, 'VALUE')
+                ['Comment', 'VALUE']
+            )
         if (
-            SchematicComponentTextResolver.#isResolvedComponentText(ownerValue)
+            ownerValue.found &&
+            SchematicComponentTextResolver.#isResolvedComponentText(
+                ownerValue.text
+            )
         ) {
-            return ownerValue
+            return ownerValue.text
+        }
+
+        if (
+            ownerValue.found &&
+            SchematicComponentTextResolver.#isExplicitEmptyText(ownerValue.text)
+        ) {
+            return ''
         }
 
         return (
@@ -65,7 +85,9 @@ export class SchematicComponentTextResolver {
                 SchematicComponentTextResolver.#inferComponentValueHint(
                     component.libReference
                 )
-            ) || ownerValue
+            ) ||
+            ownerValue.text ||
+            ''
         )
     }
 
@@ -73,22 +95,44 @@ export class SchematicComponentTextResolver {
      * Finds a related text value by name.
      * @param {{ fields: Record<string, string | string[]> }[]} records
      * @param {string} logicalName
-     * @returns {string}
+     * @returns {{ found: boolean, text: string }}
      */
-    static #findRelatedText(records, logicalName) {
+    static #findRelatedTextRecord(records, logicalName) {
         const match = records.find(
             (record) =>
                 getField(record.fields, 'Name').toLowerCase() ===
                 logicalName.toLowerCase()
         )
-        return match ? getDisplayText(match.fields) : ''
+        return match
+            ? { found: true, text: getDisplayText(match.fields) }
+            : { found: false, text: '' }
+    }
+
+    /**
+     * Finds the first related text value by logical name.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @param {string[]} logicalNames Logical text names.
+     * @returns {{ found: boolean, text: string }}
+     */
+    static #findFirstRelatedTextRecord(records, logicalNames) {
+        for (const logicalName of logicalNames) {
+            const match = SchematicComponentTextResolver.#findRelatedTextRecord(
+                records,
+                logicalName
+            )
+            if (match.found) {
+                return match
+            }
+        }
+
+        return { found: false, text: '' }
     }
 
     /**
      * Finds the closest nearby designator text for one component.
      * @param {{ x: number, y: number, text: string, name: string }[]} texts
      * @param {{ x: number, y: number, libReference: string }} component
-     * @returns {string}
+     * @returns {string | null}
      */
     static #findNearbyComponentDesignator(texts, component) {
         const expectedPrefix =
@@ -128,7 +172,7 @@ export class SchematicComponentTextResolver {
             }))
             .sort((left, right) => left.score - right.score)
 
-        return rankedCandidates[0]?.text || ''
+        return rankedCandidates[0]?.text || null
     }
 
     /**
@@ -266,6 +310,15 @@ export class SchematicComponentTextResolver {
         return Boolean(
             normalized && normalized !== '*' && !normalized.startsWith('=')
         )
+    }
+
+    /**
+     * Returns true when owner-linked text intentionally contains no value.
+     * @param {string} value Text value.
+     * @returns {boolean}
+     */
+    static #isExplicitEmptyText(value) {
+        return String(value ?? '') === ''
     }
 
     /**

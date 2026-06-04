@@ -1,0 +1,47 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.netlist.a1",
+    "title": "Altium Toolkit Netlist A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "project", "nets"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.netlist.a1"
+        },
+        "project": {
+            "type": "string"
+        },
+        "nets": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["name", "pins"],
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "aliases": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "autoNamed": {
+                        "type": "boolean"
+                    },
+                    "pins": {
+                        "type": "array"
+                    },
+                    "sources": {
+                        "type": "array"
+                    },
+                    "pcb": {
+                        "type": "array"
+                    }
+                }
+            }
+        }
+    }
+}

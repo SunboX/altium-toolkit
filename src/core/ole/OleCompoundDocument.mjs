@@ -30,6 +30,7 @@ export class OleCompoundDocument {
     constructor(arrayBuffer) {
         this.#reader = new BinaryReader(arrayBuffer)
         this.#header = this.#parseHeader()
+        this.#assertSectorAlignedFile()
         this.#fatEntries = this.#parseFatEntries()
         this.#directoryEntries = this.#parseDirectoryEntries()
         this.#miniFatEntries = this.#parseMiniFatEntries()
@@ -134,6 +135,25 @@ export class OleCompoundDocument {
             firstDifatSector: this.#reader.readInt32(68),
             numberOfDifatSectors: this.#reader.readUint32(72),
             difatEntries
+        }
+    }
+
+    /**
+     * Ensures the byte stream still matches the OLE sector grid.
+     */
+    #assertSectorAlignedFile() {
+        const payloadByteLength =
+            this.#reader.byteLength - OleConstants.HEADER_BYTE_LENGTH
+
+        if (
+            payloadByteLength < 0 ||
+            payloadByteLength % this.#header.sectorByteLength !== 0
+        ) {
+            throw new Error(
+                'OLE compound document byte length is not sector-aligned. ' +
+                    'The file may be truncated or line-ending normalized; ' +
+                    'keep Altium binary files committed and served as binary.'
+            )
         }
     }
 

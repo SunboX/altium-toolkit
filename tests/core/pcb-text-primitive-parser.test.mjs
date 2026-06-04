@@ -84,6 +84,43 @@ class PcbTextPrimitiveTestFactory {
     }
 
     /**
+     * Creates one barcode text stream with extended barcode metadata fields.
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static createBarcodeTextStream() {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+        const dataBytes = PcbTextPrimitiveTestFactory.#createTextRecord({
+            payloadLength: 157,
+            text: 'BATCH42',
+            layerId: 33,
+            ownerIndex: -1,
+            x: 125,
+            y: 225,
+            height: 18,
+            kind: 2,
+            visibilityFlags: 0,
+            rotation: 0,
+            fontType: 2,
+            fontName: 'Barcode',
+            strokeWidth: 2,
+            barcodeKind: 1,
+            barcodeRenderMode: 2,
+            barcodeFullWidth: 120,
+            barcodeFullHeight: 40,
+            barcodeMarginX: 6,
+            barcodeMarginY: 4,
+            barcodeMinWidth: 2,
+            barcodeShowText: true,
+            barcodeInverted: true
+        })
+
+        headerView.setUint32(0, 1, true)
+
+        return { headerBytes, dataBytes }
+    }
+
+    /**
      * Creates one Texts6 designator record whose text content is stored in the
      * WideStrings6 table.
      * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
@@ -171,7 +208,7 @@ class PcbTextPrimitiveTestFactory {
     /**
      * Creates one object-id/payload-length text record with a variable text
      * tail.
-     * @param {{ payloadLength: number, text: string, layerId: number, ownerIndex: number, x: number, y: number, height: number, kind: number, visibilityFlags: number, rotation?: number, fontType?: number, isBold?: boolean, isItalic?: boolean, fontName?: string, strokeWidth?: number, wideStringIndex?: number, designatorFlag?: boolean }} options
+     * @param {{ payloadLength: number, text: string, layerId: number, ownerIndex: number, x: number, y: number, height: number, kind: number, visibilityFlags: number, rotation?: number, fontType?: number, isBold?: boolean, isItalic?: boolean, fontName?: string, strokeWidth?: number, wideStringIndex?: number, designatorFlag?: boolean, barcodeKind?: number, barcodeRenderMode?: number, barcodeFullWidth?: number, barcodeFullHeight?: number, barcodeMarginX?: number, barcodeMarginY?: number, barcodeMinWidth?: number, barcodeShowText?: boolean, barcodeInverted?: boolean }} options
      * @returns {Uint8Array}
      */
     static #createTextRecord(options) {
@@ -240,6 +277,53 @@ class PcbTextPrimitiveTestFactory {
                 options.wideStringIndex,
                 true
             )
+        }
+        if (Number.isFinite(options.barcodeKind)) {
+            dataView.setUint8(payloadOffset + 133, options.barcodeKind)
+        }
+        if (Number.isFinite(options.barcodeRenderMode)) {
+            dataView.setUint8(payloadOffset + 134, options.barcodeRenderMode)
+        }
+        if (Number.isFinite(options.barcodeFullWidth)) {
+            PcbTextPrimitiveTestFactory.#writeMil(
+                dataView,
+                payloadOffset + 135,
+                options.barcodeFullWidth
+            )
+        }
+        if (Number.isFinite(options.barcodeFullHeight)) {
+            PcbTextPrimitiveTestFactory.#writeMil(
+                dataView,
+                payloadOffset + 139,
+                options.barcodeFullHeight
+            )
+        }
+        if (Number.isFinite(options.barcodeMarginX)) {
+            PcbTextPrimitiveTestFactory.#writeMil(
+                dataView,
+                payloadOffset + 143,
+                options.barcodeMarginX
+            )
+        }
+        if (Number.isFinite(options.barcodeMarginY)) {
+            PcbTextPrimitiveTestFactory.#writeMil(
+                dataView,
+                payloadOffset + 147,
+                options.barcodeMarginY
+            )
+        }
+        if (Number.isFinite(options.barcodeMinWidth)) {
+            PcbTextPrimitiveTestFactory.#writeMil(
+                dataView,
+                payloadOffset + 151,
+                options.barcodeMinWidth
+            )
+        }
+        if (options.barcodeShowText) {
+            dataView.setUint8(payloadOffset + 155, 1)
+        }
+        if (options.barcodeInverted) {
+            dataView.setUint8(payloadOffset + 156, 1)
         }
         dataBytes.set(textBytes, payloadOffset + options.payloadLength)
 
@@ -337,6 +421,62 @@ test('PcbBinaryPrimitiveParser extracts TrueType text font metadata', () => {
                 role: 'comment',
                 isComment: true,
                 componentIndex: 2
+            }
+        ]
+    )
+})
+
+/**
+ * Verifies BarCode text records preserve barcode-specific render metadata.
+ */
+test('PcbBinaryPrimitiveParser extracts barcode text metadata', () => {
+    const { headerBytes, dataBytes } =
+        PcbTextPrimitiveTestFactory.createBarcodeTextStream()
+
+    assert.deepEqual(
+        PcbBinaryPrimitiveParser.parseTextStream(headerBytes, dataBytes),
+        [
+            {
+                text: 'BATCH42',
+                layerId: 33,
+                ownerIndex: null,
+                x: 125,
+                y: 225,
+                height: 18,
+                kind: 2,
+                visibilityFlags: 0,
+                rotation: 0,
+                mirrored: false,
+                strokeFontType: 2,
+                strokeWidth: 2,
+                fontType: 2,
+                fontTypeName: 'BarCode',
+                fontName: 'Barcode',
+                fontFamily: 'Barcode',
+                isBold: false,
+                isItalic: false,
+                fontWeight: 400,
+                fontStyle: 'normal',
+                isInverted: false,
+                marginBorderWidth: 0,
+                wideStringIndex: 0,
+                useInvertedRectangle: false,
+                textboxRectWidth: 0,
+                textboxRectHeight: 0,
+                textboxRectJustification: 0,
+                barcode: {
+                    kind: 1,
+                    kindName: 'code128',
+                    renderMode: 2,
+                    renderModeName: 'full-size',
+                    fullWidth: 120,
+                    fullHeight: 40,
+                    marginX: 6,
+                    marginY: 4,
+                    minBarWidth: 2,
+                    showText: true,
+                    inverted: true
+                }
             }
         ]
     )

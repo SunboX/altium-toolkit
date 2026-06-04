@@ -114,17 +114,113 @@ export class AltiumLayoutParser {
             if (!match) continue
 
             const index = Number.parseInt(match[1], 10)
-            layers.push({
-                index,
-                name: getField(fields, key),
-                layerId: parseNumericField(
-                    fields,
-                    'V9_STACK_LAYER' + index + '_LAYERID'
-                )
-            })
+            layers.push(
+                AltiumLayoutParser.#stripUndefined({
+                    index,
+                    name: getField(fields, key),
+                    layerId: parseNumericField(
+                        fields,
+                        'V9_STACK_LAYER' + index + '_LAYERID'
+                    ),
+                    kind: AltiumLayoutParser.#firstLayerStackTextField(
+                        fields,
+                        index,
+                        ['KIND', 'TYPE', 'ROLE']
+                    ),
+                    material: AltiumLayoutParser.#firstLayerStackTextField(
+                        fields,
+                        index,
+                        ['MATERIAL', 'MATERIALNAME']
+                    ),
+                    thicknessMil:
+                        AltiumLayoutParser.#firstLayerStackNumericField(
+                            fields,
+                            index,
+                            ['THICKNESS', 'DIELECTRICTHICKNESS']
+                        ),
+                    copperThicknessMil:
+                        AltiumLayoutParser.#firstLayerStackNumericField(
+                            fields,
+                            index,
+                            ['COPPERTHICKNESS', 'COPPER_THICKNESS']
+                        ),
+                    copperWeight: AltiumLayoutParser.#firstLayerStackTextField(
+                        fields,
+                        index,
+                        ['COPPERWEIGHT', 'COPPER_WEIGHT']
+                    ),
+                    dielectricConstant:
+                        AltiumLayoutParser.#firstLayerStackNumericField(
+                            fields,
+                            index,
+                            ['DK', 'DIELECTRICCONSTANT', 'DIELECTRIC_CONSTANT']
+                        ),
+                    dissipationFactor:
+                        AltiumLayoutParser.#firstLayerStackNumericField(
+                            fields,
+                            index,
+                            ['DF', 'DISSIPATIONFACTOR', 'DISSIPATION_FACTOR']
+                        )
+                })
+            )
         }
 
         return layers.sort((left, right) => left.index - right.index)
+    }
+
+    /**
+     * Reads the first non-empty text field from a layer-stack entry.
+     * @param {Record<string, string | string[]>} fields Source fields.
+     * @param {number} index Layer-stack index.
+     * @param {string[]} suffixes Candidate suffixes.
+     * @returns {string | undefined}
+     */
+    static #firstLayerStackTextField(fields, index, suffixes) {
+        for (const suffix of suffixes) {
+            const value = getField(
+                fields,
+                'V9_STACK_LAYER' + index + '_' + suffix
+            )
+            if (value) {
+                return value
+            }
+        }
+
+        return undefined
+    }
+
+    /**
+     * Reads the first finite numeric field from a layer-stack entry.
+     * @param {Record<string, string | string[]>} fields Source fields.
+     * @param {number} index Layer-stack index.
+     * @param {string[]} suffixes Candidate suffixes.
+     * @returns {number | undefined}
+     */
+    static #firstLayerStackNumericField(fields, index, suffixes) {
+        for (const suffix of suffixes) {
+            const value = parseNumericField(
+                fields,
+                'V9_STACK_LAYER' + index + '_' + suffix
+            )
+            if (value !== null) {
+                return value
+            }
+        }
+
+        return undefined
+    }
+
+    /**
+     * Removes undefined object values for stable parser output.
+     * @param {object} value Source object.
+     * @returns {object}
+     */
+    static #stripUndefined(value) {
+        return Object.fromEntries(
+            Object.entries(value).filter(
+                ([, entryValue]) => entryValue !== undefined
+            )
+        )
     }
 
     /**

@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { PcbStreamExtractor } from '../../src/core/altium/PcbStreamExtractor.mjs'
+import { PcbSidecarTestFactory } from './PcbSidecarTestFactory.mjs'
 
 /**
  * Builds synthetic PCB stream payloads for stream-scoped extraction tests.
@@ -31,6 +32,21 @@ class PcbStreamTestFactory {
     static createComponentStream() {
         return new TextEncoder().encode(
             '|LAYER=TOP|X=250mil|Y=300mil|PATTERN=0603|ROTATION=0|HEIGHT=12mil|SOURCEDESIGNATOR=R1|SOURCELIBREFERENCE=RES/FAKE/10K|SOURCEDESCRIPTION=Drift resistor'
+        )
+    }
+
+    /**
+     * Creates one printable stream with many small records.
+     * @param {number} recordCount Number of records to write.
+     * @returns {Uint8Array}
+     */
+    static createLargePrintableStream(recordCount) {
+        return new TextEncoder().encode(
+            Array.from(
+                { length: recordCount },
+                (_value, index) =>
+                    '|RECORD=Track|X=' + index + 'mil|Y=0mil|LAYER=TOP'
+            ).join('')
         )
     }
 
@@ -78,6 +94,29 @@ class PcbStreamTestFactory {
         streams.set('Pads6/Data', padStream.dataBytes)
         streams.set('Regions6/Header', regionStream.headerBytes)
         streams.set('Regions6/Data', regionStream.dataBytes)
+
+        return streams
+    }
+
+    /**
+     * Creates a stream map with one via linked to one via-protection sidecar.
+     * @returns {Map<string, Uint8Array>}
+     */
+    static createStreamMapWithViaStructure() {
+        const streams = PcbStreamTestFactory.createStreamMap()
+
+        streams.set(
+            'ViaStructures/Data',
+            PcbStreamTestFactory.#createLengthPrefixedParameterRecords([
+                '|VIASTRUCTUREINDEX=0|STRUCTURETYPE=4|FEATURETYPE0=plugged|FEATURESIDE0=top|FEATUREMATERIAL0=nonconductive epoxy|FEATURETYPE1=capped|FEATURESIDE1=bottom|FEATUREMATERIAL1=copper'
+            ])
+        )
+        streams.set(
+            'ViaStructureManager/Data',
+            PcbStreamTestFactory.#createLengthPrefixedParameterRecords([
+                '|PRIMITIVEINDEX=0|VIASTRUCTUREINDEX=0'
+            ])
+        )
 
         return streams
     }
@@ -556,7 +595,12 @@ test('PcbStreamExtractor extracts printable and binary PCB streams', () => {
     ])
     assert.deepEqual(extracted.embeddedModels, {
         models: [],
-        componentBodies: []
+        componentBodies: [],
+        integrity: {
+            schema: 'altium-toolkit.pcb.embedded-model-integrity.a1',
+            issues: []
+        },
+        diagnostics: []
     })
 })
 
@@ -596,4 +640,190 @@ test('PcbStreamExtractor extracts primitive parameters and WideStrings6 text', (
     assert.equal(extracted.binaryPrimitives.texts[0].role, 'designator')
     assert.equal(extracted.diagnostics.primitiveParameterGroupCount, 1)
     assert.equal(extracted.diagnostics.wideStringCount, 1)
+})
+
+/**
+ * Verifies via-protection sidecar records are parsed and attached to the
+ * corresponding via primitive.
+ */
+test('PcbStreamExtractor extracts via structure sidecars', () => {
+    const extracted = PcbStreamExtractor.extractFromStreams(
+        PcbStreamTestFactory.createStreamMapWithViaStructure()
+    )
+
+    assert.equal(extracted.viaStructures.structures.length, 1)
+    assert.deepEqual(extracted.viaStructures.structures[0], {
+        index: 0,
+        ipc4761Type: 4,
+        structureType: 4,
+        sourceStream: 'ViaStructures/Data',
+        features: [
+            {
+                index: 0,
+                type: 'plugged',
+                side: 'top',
+                material: 'nonconductive epoxy'
+            },
+            {
+                index: 1,
+                type: 'capped',
+                side: 'bottom',
+                material: 'copper'
+            }
+        ]
+    })
+    assert.deepEqual(extracted.viaStructures.links, [
+        {
+            primitiveIndex: 0,
+            viaStructureIndex: 0,
+            sourceStream: 'ViaStructureManager/Data'
+        }
+    ])
+    assert.equal(extracted.binaryPrimitives.vias[0].viaStructureIndex, 0)
+    assert.equal(extracted.binaryPrimitives.vias[0].ipc4761Type, 4)
+    assert.deepEqual(extracted.binaryPrimitives.vias[0].viaProtection, {
+        ipc4761Type: 4,
+        structureType: 4,
+        features: extracted.viaStructures.structures[0].features
+    })
+    assert.equal(extracted.diagnostics.viaStructureCount, 1)
+})
+
+/**
+ * Verifies PCB sidecar streams are decoded explicitly and linked to decoded
+ * primitive records when they carry primitive indexes.
+ */
+test('PcbStreamExtractor extracts extended primitive, custom shape, and union sidecars', () => {
+    const streams = PcbStreamTestFactory.createStreamMap()
+
+    streams.set(
+        'ExtendedPrimitiveInformation/Data',
+        PcbSidecarTestFactory.createLengthPrefixedRecords([
+            '|PRIMITIVEINDEX=0|PRIMITIVEOBJECTID=2|TYPE=Pad|PASTEMASKEXPANSIONMODE=2|PASTEMASKEXPANSION_MANUAL=-2mil|SOLDERMASKEXPANSIONMODE=1|SOLDERMASKEXPANSION_MANUAL=4mil'
+        ])
+    )
+    streams.set(
+        'CustomShapes/Data',
+        PcbSidecarTestFactory.createLengthPrefixedRecords([
+            '|PRIMITIVEINDEX=0|LAYER=Top Layer|LAYERID=1|REGIONINDEX=0'
+        ])
+    )
+    streams.set(
+        'UnionNames/Data',
+        PcbSidecarTestFactory.createLengthPrefixedRecords([
+            '|UNIONINDEX=1|NAME=Grouped'
+        ])
+    )
+    streams.set(
+        'SmartUnions/Data',
+        PcbSidecarTestFactory.createLengthPrefixedRecords([
+            '|UNIONINDEX=2|NAME=Stitch|UNIONTYPE=2|PRIMITIVEOBJECTID0=3|PRIMITIVEINDEX0=0'
+        ])
+    )
+
+    const extracted = PcbStreamExtractor.extractFromStreams(streams)
+
+    assert.equal(extracted.extendedPrimitiveInformation.entries.length, 1)
+    assert.equal(extracted.customPadShapes.entries.length, 1)
+    assert.equal(extracted.unions.userUnions.length, 1)
+    assert.equal(extracted.unions.smartUnions.length, 1)
+    assert.equal(
+        extracted.binaryPrimitives.pads[0].extendedPrimitiveInformation
+            .maskExpansion.paste.manualExpansion,
+        -2
+    )
+    assert.deepEqual(extracted.binaryPrimitives.vias[0].unionMemberships, [
+        {
+            index: 2,
+            name: 'Stitch',
+            type: 2,
+            typeName: 'via-stitching',
+            sourceStream: 'SmartUnions/Data'
+        }
+    ])
+    assert.equal(extracted.diagnostics.extendedPrimitiveInformationCount, 1)
+    assert.equal(extracted.diagnostics.customPadShapeCount, 1)
+    assert.equal(extracted.diagnostics.userUnionCount, 1)
+    assert.equal(extracted.diagnostics.smartUnionCount, 1)
+})
+
+/**
+ * Verifies non-primitive embedded payloads are exposed through a generic
+ * inventory with stable byte metadata and diagnostics.
+ */
+test('PcbStreamExtractor exposes generic embedded file inventory', () => {
+    const streams = new Map()
+
+    streams.set('Board6/Data', PcbStreamTestFactory.createBoardStream())
+    streams.set(
+        'EmbeddedFiles/readme.txt',
+        new TextEncoder().encode('assembly note')
+    )
+    streams.set(
+        'EmbeddedFiles/icon.png',
+        new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])
+    )
+    streams.set('EmbeddedFiles/empty.bin', new Uint8Array())
+
+    const extracted = PcbStreamExtractor.extractFromStreams(streams)
+
+    assert.equal(
+        extracted.embeddedFiles.schema,
+        'altium-toolkit.embedded-files.a1'
+    )
+    assert.deepEqual(
+        extracted.embeddedFiles.files.map((file) => ({
+            sourceStream: file.sourceStream,
+            name: file.name,
+            format: file.format,
+            byteLength: file.byteLength,
+            checksumAlgorithm: file.checksum.algorithm
+        })),
+        [
+            {
+                sourceStream: 'EmbeddedFiles/icon.png',
+                name: 'icon.png',
+                format: 'png',
+                byteLength: 6,
+                checksumAlgorithm: 'fnv1a32'
+            },
+            {
+                sourceStream: 'EmbeddedFiles/readme.txt',
+                name: 'readme.txt',
+                format: 'text',
+                byteLength: 13,
+                checksumAlgorithm: 'fnv1a32'
+            }
+        ]
+    )
+    assert.deepEqual(extracted.embeddedFiles.diagnostics, [
+        {
+            code: 'embedded-file.empty',
+            severity: 'warning',
+            sourceStream: 'EmbeddedFiles/empty.bin',
+            message: 'Embedded payload stream was empty.'
+        }
+    ])
+    assert.equal(extracted.diagnostics.embeddedFileCount, 2)
+    assert.equal(extracted.diagnostics.embeddedFileIssueCount, 1)
+})
+
+/**
+ * Verifies large printable PCB streams append records without exceeding
+ * JavaScript engine argument limits.
+ */
+test('PcbStreamExtractor appends large printable record streams iteratively', () => {
+    const recordCount = 140000
+    const extracted = PcbStreamExtractor.extractFromStreams(
+        new Map([
+            [
+                'Tracks6/Data',
+                PcbStreamTestFactory.createLargePrintableStream(recordCount)
+            ]
+        ])
+    )
+
+    assert.equal(extracted.records.length, recordCount)
+    assert.equal(extracted.records.at(0)?.sourceStream, 'Tracks6/Data')
+    assert.equal(extracted.records.at(-1)?.fields.X, '139999mil')
 })

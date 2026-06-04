@@ -6,6 +6,12 @@
  * Extracts long printable runs from binary Altium documents.
  */
 export class PrintableTextDecoder {
+    static #WINDOWS_1252_PRINTABLE_CONTROL_BYTES = new Set([
+        0x80, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c,
+        0x8e, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b,
+        0x9c, 0x9e, 0x9f
+    ])
+
     /**
      * Returns printable ASCII-like runs from a binary buffer.
      * @param {ArrayBuffer} arrayBuffer
@@ -67,8 +73,8 @@ export class PrintableTextDecoder {
     }
 
     /**
-     * Decodes one byte slice using UTF-8 first, then GB18030 for non-UTF-8
-     * payloads such as legacy PCB library text.
+     * Decodes one byte slice using UTF-8 first, then Windows-1252 or GB18030
+     * for non-UTF-8 payloads such as legacy PCB library text.
      * @param {Uint8Array} bytes
      * @param {{ encoding?: string }} [options]
      * @returns {string}
@@ -82,10 +88,34 @@ export class PrintableTextDecoder {
                 new TextDecoder('utf-8').decode(bytes)
             )
         }
+        if (
+            preferredEncoding === 'windows-1252' ||
+            preferredEncoding === 'cp1252'
+        ) {
+            return (
+                PrintableTextDecoder.#tryDecode(bytes, 'windows-1252') ||
+                new TextDecoder('utf-8').decode(bytes)
+            )
+        }
+
+        const utf8 = PrintableTextDecoder.#tryDecode(bytes, 'utf-8')
+        if (utf8 !== null) {
+            return utf8
+        }
+
+        if (PrintableTextDecoder.#hasWindows1252PreferredBytes(bytes)) {
+            const windows1252 = PrintableTextDecoder.#tryDecode(
+                bytes,
+                'windows-1252'
+            )
+            if (windows1252 !== null) {
+                return windows1252
+            }
+        }
 
         return (
-            PrintableTextDecoder.#tryDecode(bytes, 'utf-8') ||
             PrintableTextDecoder.#tryDecode(bytes, 'gb18030') ||
+            PrintableTextDecoder.#tryDecode(bytes, 'windows-1252') ||
             new TextDecoder('utf-8').decode(bytes)
         )
     }
@@ -138,6 +168,26 @@ export class PrintableTextDecoder {
             .replace(/\r/g, '\n')
             .replace(/\n{2,}/g, '\n')
             .trim()
+    }
+
+    /**
+     * Returns true when bytes contain printable Windows-1252 control-range
+     * punctuation that can otherwise be misread as GB18030 pairs.
+     * @param {Uint8Array} bytes
+     * @returns {boolean}
+     */
+    static #hasWindows1252PreferredBytes(bytes) {
+        for (const byte of bytes) {
+            if (
+                PrintableTextDecoder.#WINDOWS_1252_PRINTABLE_CONTROL_BYTES.has(
+                    byte
+                )
+            ) {
+                return true
+            }
+        }
+
+        return false
     }
 
     /**

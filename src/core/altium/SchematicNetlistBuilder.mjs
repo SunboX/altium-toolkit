@@ -9,8 +9,8 @@
 export class SchematicNetlistBuilder {
     /**
      * Builds normalized nets and connectivity diagnostics.
-     * @param {{ lines: { x1: number, y1: number, x2: number, y2: number, ownerIndex?: string, isBus?: boolean }[], texts: { x: number, y: number, text: string, recordType?: string }[], pins?: { x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', name: string, designator: string }[], ports?: { x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down', name: string }[], junctions?: { x: number, y: number, color: string }[], busEntries?: { x1: number, y1: number, x2: number, y2: number }[], sheetEntries?: { x: number, y: number, name: string }[] }} schematic
-     * @returns {{ nets: { name: string, segments: { x1: number, y1: number, x2: number, y2: number, ownerIndex?: string, isBus?: boolean }[], labels: { x: number, y: number, text: string, recordType?: string }[], powerPorts: { x: number, y: number, text: string, recordType?: string }[], pins: { x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', name: string, designator: string }[], ports: { x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down', name: string }[], junctions: { x: number, y: number, color: string }[], busEntries: { x1: number, y1: number, x2: number, y2: number }[], sheetEntries: { x: number, y: number, name: string }[] }[], diagnostics: { severity: 'warning', message: string }[] }}
+     * @param {{ lines: { x1: number, y1: number, x2: number, y2: number, ownerIndex?: string, isBus?: boolean }[], texts: { x: number, y: number, text: string, recordType?: string }[], pins?: { x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', name: string, designator: string }[], ports?: { x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down', name: string }[], crossSheetConnectors?: { key: string, x: number, y: number, name: string, style?: string }[], junctions?: { x: number, y: number, color: string }[], busEntries?: { x1: number, y1: number, x2: number, y2: number }[], sheetEntries?: { x: number, y: number, name: string }[] }} schematic
+     * @returns {{ nets: { name: string, segments: { x1: number, y1: number, x2: number, y2: number, ownerIndex?: string, isBus?: boolean }[], labels: { x: number, y: number, text: string, recordType?: string }[], powerPorts: { x: number, y: number, text: string, recordType?: string }[], crossSheetConnectors: { key: string, name: string, x: number, y: number, style?: string }[], pins: { x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', name: string, designator: string }[], ports: { x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down', name: string }[], junctions: { x: number, y: number, color: string }[], busEntries: { x1: number, y1: number, x2: number, y2: number }[], sheetEntries: { x: number, y: number, name: string }[] }[], diagnostics: { severity: 'warning', message: string }[] }}
      */
     static build(schematic) {
         const diagnostics = []
@@ -37,6 +37,11 @@ export class SchematicNetlistBuilder {
                 (text) =>
                     text.recordType === '17' &&
                     SchematicNetlistBuilder.#groupContainsPoint(group, text)
+            )
+            const crossSheetConnectors = (
+                schematic.crossSheetConnectors || []
+            ).filter((connector) =>
+                SchematicNetlistBuilder.#groupContainsPoint(group, connector)
             )
             const pins = (schematic.pins || []).filter((pin) =>
                 SchematicNetlistBuilder.#groupContainsPoint(
@@ -77,6 +82,7 @@ export class SchematicNetlistBuilder {
                 ...new Set(
                     [
                         ...powerPorts.map((item) => item.text),
+                        ...crossSheetConnectors.map((item) => item.name),
                         ...labels.map((item) => item.text)
                     ].filter(Boolean)
                 )
@@ -99,6 +105,13 @@ export class SchematicNetlistBuilder {
                 segments: group,
                 labels,
                 powerPorts,
+                crossSheetConnectors: crossSheetConnectors.map((connector) => ({
+                    key: connector.key,
+                    name: connector.name,
+                    x: connector.x,
+                    y: connector.y,
+                    style: connector.style
+                })),
                 pins,
                 ports,
                 junctions,

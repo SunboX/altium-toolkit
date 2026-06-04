@@ -288,6 +288,73 @@ test('PcbScene3dBuilder keeps repeated sub-body anchors with exact matches', () 
 })
 
 /**
+ * Verifies near body anchors remain authoritative when a generic package body
+ * name also loosely matches a farther footprint.
+ */
+test('PcbScene3dBuilder prefers nearby body anchors over generic package affinity', () => {
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'demo.PcbDoc',
+            pcb: {
+                boardOutline: buildBoardOutline(),
+                pads: [],
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: [
+                    {
+                        sourceStream: 'ComponentBodies6/Data',
+                        layer: 'MECHANICAL13',
+                        identifier: 'nova_dfn_8_2_body',
+                        modelId: '{MODEL-GENERIC}',
+                        checksum: 789,
+                        embedded: true,
+                        name: 'nova_dfn_8_2_body.step',
+                        positionMil: { x: 260, y: 200 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: 0, y: 0, z: 90 },
+                        dzMil: 0
+                    }
+                ],
+                components: [
+                    {
+                        designator: 'U1',
+                        x: 272,
+                        y: 200,
+                        rotation: 0,
+                        layer: 'TOP',
+                        pattern: 'CORE_MEMORY',
+                        source: 'IC/CORE_MEMORY',
+                        height: 40
+                    },
+                    {
+                        designator: 'E1',
+                        x: 720,
+                        y: 200,
+                        rotation: 0,
+                        layer: 'TOP',
+                        pattern: 'NOVA_DFN_8_2',
+                        source: 'FILTER/NOVA_DFN_8_2',
+                        height: 40
+                    }
+                ]
+            }
+        },
+        { modelRegistry: buildModelRegistry() }
+    )
+
+    assert.equal(scene.externalPlacements.length, 1)
+    assert.equal(scene.externalPlacements[0].designator, 'U1')
+    assert.deepEqual(scene.externalPlacements[0].positionMil, {
+        x: -240,
+        y: -50,
+        z: 31.5
+    })
+})
+
+/**
  * Verifies 3D silkscreen detail includes overlay-region fills alongside line
  * and arc primitives so filled documentation artwork can render on the board.
  */

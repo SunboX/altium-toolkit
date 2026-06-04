@@ -94,3 +94,33 @@ test('PcbScene3dModelRegistry resolves embedded body references before session b
     assert.equal(sessionMatch?.origin, 'session')
     assert.equal(sessionMatch?.relativePath, 'Models/QFN32.wrl')
 })
+
+/**
+ * Verifies exact project-level board assembly models can be distinguished from
+ * ordinary component model assets.
+ */
+test('PcbScene3dModelRegistry resolves exact board assembly model matches', () => {
+    const registry = PcbScene3dModelRegistry.create([
+        {
+            name: 'FixtureBoard.step',
+            relativePath: '3D Bodies/FixtureBoard.step'
+        },
+        {
+            name: 'UnrelatedBoard.step',
+            relativePath: '3D Bodies/UnrelatedBoard.step'
+        }
+    ])
+
+    const assemblyMatch = registry.resolveBoardAssemblyModel({
+        fileName: 'PCB/FixtureBoard.PcbDoc'
+    })
+    const missingMatch = registry.resolveBoardAssemblyModel({
+        fileName: 'PCB/OtherBoard.PcbDoc'
+    })
+
+    assert.equal(assemblyMatch?.origin, 'board-assembly')
+    assert.equal(assemblyMatch?.name, 'FixtureBoard.step')
+    assert.equal(assemblyMatch?.relativePath, '3D Bodies/FixtureBoard.step')
+    assert.equal(assemblyMatch?.format, 'step')
+    assert.equal(missingMatch, null)
+})

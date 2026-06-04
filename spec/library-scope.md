@@ -11,7 +11,8 @@ rendering primitives.
 
 ## In Scope
 
-- `.SchDoc`, `.PcbDoc`, `.PcbLib`, and `.PrjPcb` parsing from `ArrayBuffer`
+- `.SchDoc`, `.PcbDoc`, `.PcbLib`, `.PrjPcb`, and `.IntLib` parsing from
+  `ArrayBuffer`
 - OLE and binary stream helpers needed by parser recovery
 - Schematic SVG rendering
 - PCB SVG rendering
@@ -22,6 +23,9 @@ rendering primitives.
   SVG rendering
 - Read-only PCB primitive record registry metadata and base64 raw-record
   preservation for unsupported or partially decoded PcbDoc/PcbLib streams
+- Read-only PCB pad/via detail recovery, including hole tolerances,
+  mask/paste semantics, stack metadata, via-protection sidecars, custom pad
+  shape links, and PCB union metadata
 - Static 3D summary HTML
 - Parser worker entrypoint for host applications
 - Optional renderer CSS
@@ -37,3 +41,5 @@ rendering primitives.
 - STEP mesh loading and browser script injection
 - Model ZIP export UI and download orchestration
 - Server, deployment, and app metadata endpoints
+- Native document authoring, round-trip writing, GUI automation, and compiled
+  multi-sheet project netlist generation

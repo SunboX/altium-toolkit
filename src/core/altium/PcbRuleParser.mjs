@@ -54,6 +54,46 @@ const RULE_TYPES = new Map([
         }
     ],
     [
+        'ROUTINGTOPOLOGY',
+        {
+            kind: 'routing-topology',
+            category: 'routing',
+            displayName: 'Routing Topology'
+        }
+    ],
+    [
+        'ROUTINGCORNERS',
+        {
+            kind: 'routing-corners',
+            category: 'routing',
+            displayName: 'Routing Corners'
+        }
+    ],
+    [
+        'ROUTINGCORNERSTYLE',
+        {
+            kind: 'routing-corners',
+            category: 'routing',
+            displayName: 'Routing Corners'
+        }
+    ],
+    [
+        'ROUTINGPRIORITY',
+        {
+            kind: 'routing-priority',
+            category: 'routing',
+            displayName: 'Routing Priority'
+        }
+    ],
+    [
+        'FANOUTCONTROL',
+        {
+            kind: 'fanout-control',
+            category: 'routing',
+            displayName: 'Fanout Control'
+        }
+    ],
+    [
         'DIFFERENTIALPAIRROUTING',
         {
             kind: 'differential-pair-routing',
@@ -83,6 +123,315 @@ const RULE_TYPES = new Map([
             kind: 'silkscreen-over-component-pads',
             category: 'manufacturing',
             displayName: 'Silkscreen Over Component Pads'
+        }
+    ],
+    [
+        'MINIMUMSOLDERMASKSLIVER',
+        {
+            kind: 'minimum-soldermask-sliver',
+            category: 'manufacturing',
+            displayName: 'Minimum Solder Mask Sliver'
+        }
+    ],
+    [
+        'SILKTOSILKCLEARANCE',
+        {
+            kind: 'silk-to-silk-clearance',
+            category: 'manufacturing',
+            displayName: 'Silkscreen To Silkscreen Clearance'
+        }
+    ],
+    [
+        'SILKTOSOLDERMASKCLEARANCE',
+        {
+            kind: 'silk-to-soldermask-clearance',
+            category: 'manufacturing',
+            displayName: 'Silkscreen To Solder Mask Clearance'
+        }
+    ],
+    [
+        'COMPONENTCLEARANCE',
+        {
+            kind: 'component-clearance',
+            category: 'placement',
+            displayName: 'Component Clearance'
+        }
+    ],
+    ['LENGTH', { kind: 'length', category: 'routing', displayName: 'Length' }],
+    [
+        'MAXMINLENGTH',
+        { kind: 'length', category: 'routing', displayName: 'Length' }
+    ],
+    [
+        'MATCHEDLENGTHS',
+        {
+            kind: 'matched-lengths',
+            category: 'routing',
+            displayName: 'Matched Lengths'
+        }
+    ],
+    [
+        'MATCHEDNLENGTH',
+        {
+            kind: 'matched-lengths',
+            category: 'routing',
+            displayName: 'Matched Lengths'
+        }
+    ],
+    [
+        'MINIMUMANNULARRING',
+        {
+            kind: 'minimum-annular-ring',
+            category: 'manufacturing',
+            displayName: 'Minimum Annular Ring'
+        }
+    ],
+    [
+        'VIASUNDERSMD',
+        {
+            kind: 'vias-under-smd',
+            category: 'manufacturing',
+            displayName: 'Vias Under SMD'
+        }
+    ],
+    [
+        'ASSEMBLYTESTPOINT',
+        {
+            kind: 'assembly-testpoint',
+            category: 'testpoint',
+            displayName: 'Assembly Testpoint'
+        }
+    ],
+    [
+        'ASSYTESTPOINTSTYLE',
+        {
+            kind: 'assembly-testpoint',
+            category: 'testpoint',
+            displayName: 'Assembly Testpoint'
+        }
+    ],
+    [
+        'FABRICATIONTESTPOINT',
+        {
+            kind: 'fabrication-testpoint',
+            category: 'testpoint',
+            displayName: 'Fabrication Testpoint'
+        }
+    ],
+    [
+        'TESTPOINTSTYLE',
+        {
+            kind: 'fabrication-testpoint',
+            category: 'testpoint',
+            displayName: 'Fabrication Testpoint'
+        }
+    ],
+    [
+        'TESTPOINT',
+        {
+            kind: 'testpoint',
+            category: 'testpoint',
+            displayName: 'Testpoint'
+        }
+    ],
+    [
+        'TESTPOINTUSAGE',
+        {
+            kind: 'testpoint-usage',
+            category: 'testpoint',
+            displayName: 'Testpoint Usage'
+        }
+    ],
+    [
+        'FABRICATIONTESTPOINTUSAGE',
+        {
+            kind: 'testpoint-usage',
+            category: 'testpoint',
+            displayName: 'Testpoint Usage'
+        }
+    ],
+    [
+        'ASSYTESTPOINTUSAGE',
+        {
+            kind: 'assembly-testpoint-usage',
+            category: 'testpoint',
+            displayName: 'Assembly Testpoint Usage'
+        }
+    ]
+])
+
+const TYPED_CONSTRAINT_ALIASES = new Map([
+    [
+        'width',
+        {
+            minWidth: ['MINLIMIT', 'MINWIDTH'],
+            preferredWidth: ['PREFEREDWIDTH', 'PREFERREDWIDTH'],
+            maxWidth: ['MAXLIMIT', 'MAXWIDTH']
+        }
+    ],
+    [
+        'clearance',
+        {
+            minClearance: ['GAP', 'MINDISTANCE', 'CLEARANCE'],
+            genericClearance: ['GENERICCLEARANCE']
+        }
+    ],
+    [
+        'fanout-control',
+        {
+            fanoutStyle: ['FANOUTSTYLE'],
+            fanoutDirection: ['FANOUTDIRECTION'],
+            bgaDirection: ['BGADIR'],
+            bgaViaMode: ['BGAVIAMODE'],
+            viaGrid: ['VIAGRID']
+        }
+    ],
+    [
+        'routing-topology',
+        {
+            topology: ['TOPOLOGY']
+        }
+    ],
+    [
+        'routing-corners',
+        {
+            cornerStyle: ['CORNERSTYLE'],
+            minimumSetback: ['MINSETBACK'],
+            maximumSetback: ['MAXSETBACK']
+        }
+    ],
+    [
+        'routing-priority',
+        {
+            routingPriority: ['ROUTINGPRIORITY']
+        }
+    ],
+    [
+        'length',
+        {
+            minimumLength: ['MINLIMIT'],
+            maximumLength: ['MAXLIMIT'],
+            minimumDelay: ['MINDELAY'],
+            maximumDelay: ['MAXDELAY'],
+            useDelayUnits: ['USEDELAYUNITS']
+        }
+    ],
+    [
+        'matched-lengths',
+        {
+            tolerance: ['TOLERANCE'],
+            delayTolerance: ['DELAYTOLERANCE'],
+            targetSourceName: ['TARGETSOURCENAME'],
+            useDelayUnits: ['USEDELAYUNITS'],
+            checkNetsInDiffPair: ['CHECKNETSINDIFFPAIR'],
+            checkDiffPairVsDiffPair: ['CHECKDIFFPAIRVSDIFFPAIR'],
+            checkOthers: ['CHECKOTHERS'],
+            checkXSignals: ['CHECKXSIGNALS']
+        }
+    ],
+    [
+        'minimum-soldermask-sliver',
+        {
+            minimumSolderMaskWidth: ['MINSOLDERMASKWIDTH']
+        }
+    ],
+    [
+        'silk-to-silk-clearance',
+        {
+            silkToSilkClearance: ['SILKTOSILKCLEARANCE']
+        }
+    ],
+    [
+        'silk-to-soldermask-clearance',
+        {
+            minimumSilkscreenToMaskGap: ['MINSILKSCREENTOMASKGAP'],
+            clearanceToExposedCopper: ['CLEARANCETOEXPOSEDCOPPER']
+        }
+    ],
+    [
+        'silkscreen-over-component-pads',
+        {
+            minimumSilkscreenToMaskGap: ['MINSILKSCREENTOMASKGAP']
+        }
+    ],
+    [
+        'component-clearance',
+        {
+            gap: ['GAP'],
+            verticalGap: ['VERTICALGAP'],
+            collisionCheckMode: ['COLLISIONCHECKMODE'],
+            showDistances: ['SHOWDISTANCES'],
+            doNotCheckWithout3dBody: ['DONOTCHECKWITHOUT3DBODY']
+        }
+    ],
+    [
+        'minimum-annular-ring',
+        {
+            minimumRing: ['MINIMUMRING']
+        }
+    ],
+    [
+        'vias-under-smd',
+        {
+            allowed: ['ALLOWED']
+        }
+    ],
+    [
+        'assembly-testpoint',
+        {
+            minimumSize: ['MINSIZE'],
+            preferredSize: ['PREFEREDSIZE', 'PREFERREDSIZE'],
+            maximumSize: ['MAXSIZE'],
+            minimumHoleSize: ['MINHOLESIZE'],
+            preferredHoleSize: ['PREFEREDHOLESIZE', 'PREFERREDHOLESIZE'],
+            maximumHoleSize: ['MAXHOLESIZE'],
+            testpointGrid: ['TESTPOINTGRID'],
+            gridTolerance: ['GRIDTOLERANCE'],
+            useGrid: ['USEGRID'],
+            testpointUnderComponent: ['TESTPOINTUNDERCOMPONENT'],
+            allowSideTop: ['ALLOWSIDETOP'],
+            allowSideBottom: ['ALLOWSIDEBOTTOM']
+        }
+    ],
+    [
+        'fabrication-testpoint',
+        {
+            minimumSize: ['MINSIZE'],
+            preferredSize: ['PREFEREDSIZE', 'PREFERREDSIZE'],
+            maximumSize: ['MAXSIZE'],
+            minimumHoleSize: ['MINHOLESIZE'],
+            preferredHoleSize: ['PREFEREDHOLESIZE', 'PREFERREDHOLESIZE'],
+            maximumHoleSize: ['MAXHOLESIZE'],
+            side: ['SIDE'],
+            testpointGrid: ['TESTPOINTGRID'],
+            gridTolerance: ['GRIDTOLERANCE'],
+            useGrid: ['USEGRID'],
+            testpointUnderComponent: ['TESTPOINTUNDERCOMPONENT'],
+            allowSideTop: ['ALLOWSIDETOP'],
+            allowSideBottom: ['ALLOWSIDEBOTTOM']
+        }
+    ],
+    [
+        'testpoint',
+        {
+            minimumSize: ['MINSIZE'],
+            preferredSize: ['PREFEREDSIZE', 'PREFERREDSIZE'],
+            maximumSize: ['MAXSIZE'],
+            minimumHoleSize: ['MINHOLESIZE'],
+            preferredHoleSize: ['PREFEREDHOLESIZE', 'PREFERREDHOLESIZE'],
+            maximumHoleSize: ['MAXHOLESIZE'],
+            side: ['SIDE'],
+            style: ['STYLE'],
+            order: ['ORDER'],
+            testpointGrid: ['TESTPOINTGRID'],
+            testpointUnderComponent: ['TESTPOINTUNDERCOMPONENT']
+        }
+    ],
+    [
+        'testpoint-usage',
+        {
+            allowMultiple: ['ALLOWMULTIPLE'],
+            valid: ['VALID']
         }
     ]
 ])
@@ -296,7 +645,7 @@ export class PcbRuleParser {
         if (numeric) {
             return numeric
         }
-        if (/^(TRUE|FALSE|T|F)$/iu.test(text)) {
+        if (/^(TRUE|FALSE|T|F|YES|NO|ON|OFF)$/iu.test(text)) {
             return {
                 raw: text,
                 type: 'boolean',
@@ -488,39 +837,11 @@ export class PcbRuleParser {
      * @returns {Record<string, Record<string, unknown>>}
      */
     static #parseTypedConstraints(ruleType, constraintValues) {
-        if (ruleType.kind === 'width') {
-            return PcbRuleParser.#parseWidthConstraints(constraintValues)
-        }
-        if (ruleType.kind === 'clearance') {
-            return PcbRuleParser.#parseClearanceConstraints(constraintValues)
-        }
+        const aliases = TYPED_CONSTRAINT_ALIASES.get(ruleType.kind)
 
-        return {}
-    }
-
-    /**
-     * Builds semantic aliases for width-rule constraints.
-     * @param {Record<string, Record<string, unknown>>} constraintValues
-     * @returns {Record<string, Record<string, unknown>>}
-     */
-    static #parseWidthConstraints(constraintValues) {
-        return PcbRuleParser.#pickTypedConstraints(constraintValues, {
-            minWidth: ['MINLIMIT', 'MINWIDTH'],
-            preferredWidth: ['PREFEREDWIDTH', 'PREFERREDWIDTH'],
-            maxWidth: ['MAXLIMIT', 'MAXWIDTH']
-        })
-    }
-
-    /**
-     * Builds semantic aliases for clearance-rule constraints.
-     * @param {Record<string, Record<string, unknown>>} constraintValues
-     * @returns {Record<string, Record<string, unknown>>}
-     */
-    static #parseClearanceConstraints(constraintValues) {
-        return PcbRuleParser.#pickTypedConstraints(constraintValues, {
-            minClearance: ['GAP', 'MINDISTANCE', 'CLEARANCE'],
-            genericClearance: ['GENERICCLEARANCE']
-        })
+        return aliases
+            ? PcbRuleParser.#pickTypedConstraints(constraintValues, aliases)
+            : {}
     }
 
     /**

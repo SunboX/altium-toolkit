@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbPrimitiveOwnershipIndexParser } from './PcbPrimitiveOwnershipIndexParser.mjs'
+import { PrintableTextDecoder } from './PrintableTextDecoder.mjs'
 
 /**
  * Decodes Altium PCB region primitive streams.
@@ -254,7 +255,10 @@ export class PcbRegionPrimitiveParser {
      * @returns {Record<string, string>}
      */
     static #parsePropertyBytes(bytes) {
-        const text = new TextDecoder().decode(bytes).replace(/\u0000+$/u, '')
+        const text = PrintableTextDecoder.decodeBytes(bytes).replace(
+            /\u0000+$/u,
+            ''
+        )
         const properties = {}
 
         for (const part of text.split('|')) {

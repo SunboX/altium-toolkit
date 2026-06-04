@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { NormalizedModelSchema } from './NormalizedModelSchema.mjs'
+import { ProjectOutJobDigestBuilder } from './ProjectOutJobDigestBuilder.mjs'
 
 /**
  * Parses Altium PrjPcb INI-style project files into a normalized project
@@ -35,7 +36,15 @@ export class PrjPcbModelParser {
         )
         const currentVariant =
             PrjPcbModelParser.#stringField(design, 'CurrentVariant') || ''
-        const documents = PrjPcbModelParser.#extractDocuments(sections)
+        let documents = PrjPcbModelParser.#extractDocuments(sections)
+        const classGeneration = PrjPcbModelParser.#extractClassGeneration(
+            sections,
+            documents
+        )
+        documents = PrjPcbModelParser.#attachDocumentClassGeneration(
+            documents,
+            classGeneration
+        )
         const documentGroups = PrjPcbModelParser.#buildDocumentGroups(documents)
         const parameters = PrjPcbModelParser.#extractParameters(sections)
         const variants = PrjPcbModelParser.#extractVariants(
@@ -45,6 +54,10 @@ export class PrjPcbModelParser {
         const configurations =
             PrjPcbModelParser.#extractConfigurations(sections)
         const outputGroups = PrjPcbModelParser.#extractOutputGroups(sections)
+        const outJobDigest = ProjectOutJobDigestBuilder.build({
+            documents,
+            outputGroups
+        })
         const summary = PrjPcbModelParser.#buildSummary(
             fileName,
             documents,
@@ -73,6 +86,8 @@ export class PrjPcbModelParser {
                 variants,
                 configurations,
                 outputGroups,
+                outJobDigest,
+                classGeneration,
                 sections: PrjPcbModelParser.#serializeSections(sections)
             },
             bom: []
@@ -252,6 +267,188 @@ export class PrjPcbModelParser {
     }
 
     /**
+     * Extracts project and per-document class-generation policy sections.
+     * @param {{ name: string, entries: { key: string, value: string }[] }[]} sections
+     * @param {object[]} documents
+     * @returns {{ section: string, policies: object, options: Record<string, string | string[]>, documents: object[], byDocumentPath: Record<string, object>, byDocumentIndex: Record<string, object> }}
+     */
+    static #extractClassGeneration(sections, documents) {
+        const projectSection =
+            PrjPcbModelParser.#findSection(sections, 'PrjClassGen') || null
+        const projectFields = PrjPcbModelParser.#sectionFields(projectSection)
+        const documentPolicies = PrjPcbModelParser.#numberedSections(
+            sections,
+            'DocumentClassGen'
+        ).map(({ section, number }) => {
+            const fields = PrjPcbModelParser.#sectionFields(section)
+            const documentPath =
+                PrjPcbModelParser.#stringField(fields, 'DocumentPath') || ''
+            const normalizedPath =
+                PrjPcbModelParser.#normalizeDocumentPath(documentPath)
+            const documentIndex =
+                PrjPcbModelParser.#integerField(fields, 'DocumentIndex') ||
+                PrjPcbModelParser.#documentIndexForPath(
+                    documents,
+                    normalizedPath
+                ) ||
+                number
+
+            return {
+                index: number,
+                section: section.name,
+                documentIndex,
+                documentPath,
+                normalizedPath,
+                policies: PrjPcbModelParser.#classGenerationPolicies(fields),
+                options: fields
+            }
+        })
+        const byDocumentPath = {}
+        const byDocumentIndex = {}
+
+        for (const policy of documentPolicies) {
+            if (policy.normalizedPath) {
+                byDocumentPath[policy.normalizedPath] = policy
+            }
+            byDocumentIndex[String(policy.documentIndex)] = policy
+        }
+
+        return {
+            section: projectSection?.name || '',
+            policies: PrjPcbModelParser.#classGenerationPolicies(projectFields),
+            options: projectFields,
+            documents: documentPolicies,
+            byDocumentPath,
+            byDocumentIndex
+        }
+    }
+
+    /**
+     * Attaches per-document class-generation options to document rows.
+     * @param {object[]} documents Project documents.
+     * @param {object} classGeneration Class-generation model.
+     * @returns {object[]}
+     */
+    static #attachDocumentClassGeneration(documents, classGeneration) {
+        return (documents || []).map((document) => {
+            const inlinePolicies =
+                PrjPcbModelParser.#classGenerationPoliciesFromDocument(
+                    document.options || {}
+                )
+            const sectionPolicy =
+                classGeneration.byDocumentPath?.[document.normalizedPath] ||
+                classGeneration.byDocumentIndex?.[String(document.index)] ||
+                null
+            const policies = {
+                ...inlinePolicies,
+                ...(sectionPolicy?.policies || {})
+            }
+
+            return Object.keys(policies).length
+                ? {
+                      ...document,
+                      classGeneration: {
+                          documentIndex: document.index,
+                          policies,
+                          section: sectionPolicy?.section || '',
+                          options:
+                              sectionPolicy?.options ||
+                              PrjPcbModelParser.#classGenerationDocumentOptions(
+                                  document.options || {}
+                              )
+                      }
+                  }
+                : document
+        })
+    }
+
+    /**
+     * Extracts class-generation policies from inline document options.
+     * @param {Record<string, string | string[]>} fields Document option fields.
+     * @returns {Record<string, boolean>}
+     */
+    static #classGenerationPoliciesFromDocument(fields) {
+        const options =
+            PrjPcbModelParser.#classGenerationDocumentOptions(fields)
+        return PrjPcbModelParser.#classGenerationPolicies(options)
+    }
+
+    /**
+     * Selects only inline class-generation options from one document section.
+     * @param {Record<string, string | string[]>} fields Document option fields.
+     * @returns {Record<string, string | string[]>}
+     */
+    static #classGenerationDocumentOptions(fields) {
+        const options = {}
+        for (const [key, value] of Object.entries(fields || {})) {
+            if (/^ClassGen/i.test(key)) {
+                options[key] = value
+            }
+        }
+        return options
+    }
+
+    /**
+     * Converts class-generation option fields into stable camelCase policy
+     * names.
+     * @param {Record<string, string | string[]>} fields Class-generation fields.
+     * @returns {Record<string, boolean>}
+     */
+    static #classGenerationPolicies(fields) {
+        const policies = {}
+        for (const [key, value] of Object.entries(fields || {})) {
+            const policyName = PrjPcbModelParser.#classGenerationPolicyName(key)
+            if (!policyName) continue
+            policies[policyName] = PrjPcbModelParser.#booleanValue(value)
+        }
+        return policies
+    }
+
+    /**
+     * Resolves a public class-generation policy name.
+     * @param {string} key Raw option key.
+     * @returns {string}
+     */
+    static #classGenerationPolicyName(key) {
+        const normalized = String(key || '')
+            .replace(/^ClassGen/i, '')
+            .replace(/[^a-z0-9]/gi, '')
+            .toLowerCase()
+
+        return (
+            {
+                generateclasses: 'generateClasses',
+                generatenetclasses: 'generateNetClasses',
+                generatecomponentclasses: 'generateComponentClasses',
+                generatedifferentialpairclasses:
+                    'generateDifferentialPairClasses',
+                generaterooms: 'generateRooms',
+                generatesheetclasses: 'generateSheetClasses',
+                generatepolygonclasses: 'generatePolygonClasses',
+                transfernetclasses: 'transferNetClasses',
+                transfercomponentclasses: 'transferComponentClasses',
+                transferdifferentialpairclasses:
+                    'transferDifferentialPairClasses',
+                transferroomdirectives: 'transferRoomDirectives'
+            }[normalized] || ''
+        )
+    }
+
+    /**
+     * Finds a document index for a normalized path.
+     * @param {object[]} documents Project document rows.
+     * @param {string} normalizedPath Normalized document path.
+     * @returns {number}
+     */
+    static #documentIndexForPath(documents, normalizedPath) {
+        if (!normalizedPath) return 0
+        const match = (documents || []).find(
+            (document) => document.normalizedPath === normalizedPath
+        )
+        return Number(match?.index) || 0
+    }
+
+    /**
      * Extracts project variants and their variation rows.
      * @param {{ name: string, entries: { key: string, value: string }[] }[]} sections
      * @param {string} currentVariant
@@ -316,6 +513,8 @@ export class PrjPcbModelParser {
                     PrjPcbModelParser.#buildParameterOverrideMap(
                         paramVariations
                     ),
+                alternateFitted:
+                    PrjPcbModelParser.#buildAlternateFittedMap(variations),
                 dnp: variations
                     .filter((variation) => variation.Kind === '1')
                     .map((variation) => variation.Designator || '')
@@ -446,6 +645,41 @@ export class PrjPcbModelParser {
             )
         }
         return overrides
+    }
+
+    /**
+     * Groups alternate fitted component rows by designator.
+     * @param {Record<string, string>[]} rows Variant variation rows.
+     * @returns {Record<string, object>}
+     */
+    static #buildAlternateFittedMap(rows) {
+        const alternates = {}
+        for (const row of rows || []) {
+            const designator = String(row.Designator || '').trim()
+            if (!designator) continue
+            const alternatePart = String(row.AlternatePart || '').trim()
+            const isAlternate =
+                String(row.Kind || '').trim() === '2' || Boolean(alternatePart)
+            if (!isAlternate) continue
+
+            alternates[designator] = {
+                designator,
+                alternatePart,
+                libReference:
+                    row.AlternateLibReference ||
+                    row.AlternateLibraryRef ||
+                    row.LibraryRef ||
+                    '',
+                footprint:
+                    row.AlternateFootprint ||
+                    row.Footprint ||
+                    row.Pattern ||
+                    '',
+                comment: row.AlternateComment || row.Comment || '',
+                description: row.AlternateDescription || row.Description || ''
+            }
+        }
+        return alternates
     }
 
     /**
@@ -662,10 +896,28 @@ export class PrjPcbModelParser {
      * @returns {boolean}
      */
     static #booleanField(fields, key) {
-        const value = String(
-            PrjPcbModelParser.#stringField(fields, key) || ''
-        ).toLowerCase()
-        return value === '1' || value === 'true' || value === 'yes'
+        return PrjPcbModelParser.#booleanValue(
+            PrjPcbModelParser.#stringField(fields, key)
+        )
+    }
+
+    /**
+     * Parses one boolean-ish value.
+     * @param {unknown} value Raw field value.
+     * @returns {boolean}
+     */
+    static #booleanValue(value) {
+        const raw = Array.isArray(value)
+            ? String(value[0] || '')
+            : String(value || '')
+        const normalized = raw.toLowerCase()
+
+        return (
+            normalized === '1' ||
+            normalized === 't' ||
+            normalized === 'true' ||
+            normalized === 'yes'
+        )
     }
 
     /**

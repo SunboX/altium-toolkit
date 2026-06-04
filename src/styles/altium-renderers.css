@@ -295,6 +295,25 @@
     fill: #000;
 }
 
+.pcb-barcode__background,
+.pcb-barcode__bar {
+    fill: var(--pcb-footprint-track-color);
+}
+
+.pcb-text--barcode-inverted .pcb-barcode__background {
+    fill: var(--pcb-text-knockout-fill);
+}
+
+.pcb-text--barcode-inverted .pcb-barcode__bar {
+    fill: var(--pcb-footprint-track-color);
+}
+
+.pcb-barcode__caption {
+    fill: var(--pcb-footprint-track-color);
+    font-family: Arial, sans-serif;
+    font-weight: 700;
+}
+
 .bom-panel {
     display: grid;
     gap: 1rem;

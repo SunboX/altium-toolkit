@@ -196,6 +196,20 @@ test('OleCompoundDocument rejects an invalid header signature', () => {
 })
 
 /**
+ * Verifies line-ending-damaged OLE files fail with an actionable corruption
+ * message before sector-chain reads can surface large bogus offsets.
+ */
+test('OleCompoundDocument rejects sector-misaligned compound files', () => {
+    const source = new Uint8Array(OleTestDocumentFactory.createDocumentBuffer())
+    const damaged = source.slice(0, source.byteLength - 1)
+
+    assert.throws(
+        () => OleCompoundDocument.fromArrayBuffer(damaged.buffer),
+        /sector-aligned.*line-ending.*binary/i
+    )
+})
+
+/**
  * Verifies directory entry decoding keeps the typed metadata needed by the OLE
  * directory walker.
  */

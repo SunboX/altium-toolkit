@@ -18,7 +18,7 @@ export class PcbScene3dBuilder {
     static #DENSE_OVERLAY_MIN_REGION_AREA_RATIO = 0.2
     static #DENSE_OVERLAY_MIN_TRACK_COUNT = 250
     static #DENSE_OVERLAY_KNOCKOUT_COLOR = 0x2f6a2c
-    static #PRECISE_BODY_MATCH_TOLERANCE_MIL = 5
+    static #PRECISE_BODY_MATCH_TOLERANCE_MIL = 20
     static #UNMATCHED_BODY_OVERHANG_RATIO = 0.25
     static #UNMATCHED_BODY_MIN_OVERHANG_MIL = 150
     static #UNMATCHED_BODY_MAX_OVERHANG_MIL = 600
@@ -27,8 +27,8 @@ export class PcbScene3dBuilder {
     /**
      * Builds a scene description for host 3D renderers.
      * @param {{ pcb?: { boardOutline?: { widthMil?: number, heightMil?: number, minX?: number, minY?: number, segments?: Array<Record<string, number | string>> }, primitiveLayers?: { layerId: number, name: string }[], pads?: { x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[], tracks?: any[], arcs?: any[], fills?: any[], vias?: any[], polygons?: any[], embeddedModels?: any[], componentBodies?: { modelId?: string, checksum?: number | null, embedded?: boolean, name?: string, identifier?: string, positionMil?: { x?: number, y?: number }, rotationDeg?: number, modelRotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number }[], components?: { designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null, source?: string, modelPath?: string }[] } }} documentModel
-     * @param {{ modelRegistry?: { resolveComponentModel: (component: any) => { name: string, relativePath: string, format: string } | null, resolveComponentBodyModel?: (componentBody: any) => { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } | null } | null, boardThicknessMil?: number }} [options]
-     * @returns {{ board: { widthMil: number, heightMil: number, thicknessMil: number, minX: number, minY: number, centerX: number, centerY: number, segments: Array<Record<string, number | string>> }, components: { designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, boardPositionMil: { x: number, y: number, z: number }, pattern: string, source: string, body: { family: string, sizeMil: { width: number, depth: number, height: number } }, externalModel: { name: string, relativePath: string, format: string } | null }[], externalPlacements: { designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, bodyRotationDeg: number, modelTransform: { rotationDeg: { x: number, y: number, z: number }, dzMil: number }, externalModel: { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } }[], detail: { pads: any[], tracks: any[], arcs: any[], fills: any[], vias: any[], polygons: any[], silkscreen: { top: { fills: any[], tracks: any[], arcs: any[], texts: any[], fillColor?: number, strokeColor?: number }, bottom: { fills: any[], tracks: any[], arcs: any[], texts: any[], fillColor?: number, strokeColor?: number } } } }}
+     * @param {{ modelRegistry?: { resolveComponentModel: (component: any) => { name: string, relativePath: string, format: string } | null, resolveComponentBodyModel?: (componentBody: any) => { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } | null, resolveBoardAssemblyModel?: (documentModel: any) => { origin: string, name: string, format: string, file?: File | Blob | null, relativePath?: string } | null } | null, boardThicknessMil?: number }} [options]
+     * @returns {{ board: { widthMil: number, heightMil: number, thicknessMil: number, minX: number, minY: number, centerX: number, centerY: number, segments: Array<Record<string, number | string>> }, boardAssemblyModel: { origin: string, name: string, format: string, file?: File | Blob | null, relativePath?: string } | null, components: { designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, boardPositionMil: { x: number, y: number, z: number }, pattern: string, source: string, body: { family: string, sizeMil: { width: number, depth: number, height: number } }, externalModel: { name: string, relativePath: string, format: string } | null }[], externalPlacements: { designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, bodyRotationDeg: number, modelTransform: { rotationDeg: { x: number, y: number, z: number }, dzMil: number }, externalModel: { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } }[], detail: { pads: any[], tracks: any[], arcs: any[], fills: any[], vias: any[], polygons: any[], silkscreen: { top: { fills: any[], tracks: any[], arcs: any[], texts: any[], fillColor?: number, strokeColor?: number }, bottom: { fills: any[], tracks: any[], arcs: any[], texts: any[], fillColor?: number, strokeColor?: number } } } }}
      */
     static build(documentModel, options = {}) {
         const pcb = documentModel?.pcb || {}
@@ -63,6 +63,10 @@ export class PcbScene3dBuilder {
             centerY:
                 Number(boardOutline.minY || 0) +
                 Number(boardOutline.heightMil || 0) / 2,
+            surfaceColor: Number.isInteger(appearance3d.solderMaskTopColor)
+                ? appearance3d.solderMaskTopColor
+                : appearance3d.solderMaskBottomColor,
+            edgeColor: appearance3d.boardCoreColor,
             segments: Array.isArray(boardOutline.segments)
                 ? boardOutline.segments
                 : []
@@ -106,6 +110,9 @@ export class PcbScene3dBuilder {
         const sceneDescription = {
             sourceFormat: 'altium',
             board,
+            boardAssemblyModel:
+                modelRegistry?.resolveBoardAssemblyModel?.(documentModel) ||
+                null,
             components: components.map((component) =>
                 PcbScene3dBuilder.#buildComponent(
                     component,
@@ -121,6 +128,7 @@ export class PcbScene3dBuilder {
                         componentBody,
                         bodyMatches[index],
                         components,
+                        pads,
                         board,
                         thicknessMil,
                         modelRegistry
@@ -208,6 +216,7 @@ export class PcbScene3dBuilder {
      * @param {{ modelId?: string, checksum?: number | null, embedded?: boolean, name?: string, identifier?: string, layer?: string, positionMil?: { x?: number, y?: number }, rotationDeg?: number, modelRotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number }} componentBody
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null } | null} matchedComponent
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string }[]} components
+     * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[]} pads
      * @param {{ centerX: number, centerY: number }} board
      * @param {number} thicknessMil
      * @param {{ resolveComponentBodyModel?: (componentBody: any) => { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } | null } | null} modelRegistry
@@ -217,6 +226,7 @@ export class PcbScene3dBuilder {
         componentBody,
         matchedComponent,
         components,
+        pads,
         board,
         thicknessMil,
         modelRegistry
@@ -275,8 +285,132 @@ export class PcbScene3dBuilder {
                 rotationDeg: modelRotation,
                 dzMil: Number(componentBody.dzMil || 0)
             },
+            projection: PcbScene3dBuilder.#resolveProjectionDiagnostics(
+                componentBody,
+                matchedComponent,
+                pads,
+                resolvedModel
+            ),
             externalModel: resolvedModel
         }
+    }
+
+    /**
+     * Explains which footprint projection source informed one external model.
+     * @param {object} componentBody Normalized component body row.
+     * @param {{ x: number, y: number, height?: number | null } | null} matchedComponent Matched component.
+     * @param {object[]} pads Normalized pad rows.
+     * @param {object | null} resolvedModel Resolved model metadata.
+     * @returns {{ source: string, reason: string, boundsMil: { width: number, depth: number, height: number } }}
+     */
+    static #resolveProjectionDiagnostics(
+        componentBody,
+        matchedComponent,
+        pads,
+        resolvedModel
+    ) {
+        const authoredBounds = PcbScene3dBuilder.#firstBounds([
+            componentBody?.projectionOverrideMil,
+            componentBody?.projectionOverride?.boundsMil,
+            componentBody?.projectionBoundsMil
+        ])
+        if (authoredBounds) {
+            return {
+                source: 'authored-override',
+                reason: 'Component body carried an explicit projection override.',
+                boundsMil: authoredBounds
+            }
+        }
+
+        const modelBounds = PcbScene3dBuilder.#firstBounds([
+            componentBody?.modelBoundsMil,
+            resolvedModel?.boundsMil
+        ])
+        if (modelBounds) {
+            return {
+                source: 'model-bounds',
+                reason: 'Resolved 3D model bounds were available.',
+                boundsMil: modelBounds
+            }
+        }
+
+        if (matchedComponent) {
+            const padSpan = PcbScene3dBuilder.#resolvePadSpan(
+                matchedComponent,
+                pads
+            )
+            if (padSpan.width > 0 || padSpan.depth > 0) {
+                return {
+                    source: 'pad-fallback',
+                    reason: 'Projection fell back to nearby component pad span.',
+                    boundsMil: {
+                        width: padSpan.width,
+                        depth: padSpan.depth,
+                        height: Number(matchedComponent.height || 0)
+                    }
+                }
+            }
+
+            const body = PcbScene3dPackages.resolve(matchedComponent, padSpan)
+            return {
+                source: 'component-fallback',
+                reason: 'Projection fell back to the procedural component body.',
+                boundsMil: {
+                    width: body.sizeMil.width,
+                    depth: body.sizeMil.depth,
+                    height: body.sizeMil.height
+                }
+            }
+        }
+
+        return {
+            source: 'model-anchor-fallback',
+            reason: 'Projection used the model anchor because no owner geometry was available.',
+            boundsMil: { width: 0, depth: 0, height: 0 }
+        }
+    }
+
+    /**
+     * Returns the first complete bounds object from candidate metadata.
+     * @param {unknown[]} candidates Candidate bounds records.
+     * @returns {{ width: number, depth: number, height: number } | null}
+     */
+    static #firstBounds(candidates) {
+        for (const candidate of candidates || []) {
+            const bounds = PcbScene3dBuilder.#normalizeBounds(candidate)
+            if (bounds) {
+                return bounds
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Normalizes width/depth/height bounds metadata.
+     * @param {unknown} candidate Candidate bounds record.
+     * @returns {{ width: number, depth: number, height: number } | null}
+     */
+    static #normalizeBounds(candidate) {
+        if (!candidate || typeof candidate !== 'object') {
+            return null
+        }
+
+        const width = Number(candidate.width ?? candidate.x ?? candidate.sizeX)
+        const depth = Number(candidate.depth ?? candidate.y ?? candidate.sizeY)
+        const height = Number(
+            candidate.height ?? candidate.z ?? candidate.sizeZ
+        )
+
+        if (
+            !Number.isFinite(width) ||
+            !Number.isFinite(depth) ||
+            !Number.isFinite(height)
+        ) {
+            return null
+        }
+
+        return { width, depth, height }
     }
 
     /**

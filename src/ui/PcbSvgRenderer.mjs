@@ -12,6 +12,7 @@ import { PcbRegionPrimitiveRenderer } from './PcbRegionPrimitiveRenderer.mjs'
 import { PcbScene3dBoardOutlineRefiner } from './PcbScene3dBoardOutlineRefiner.mjs'
 import { PcbTextPrimitiveRenderer } from './PcbTextPrimitiveRenderer.mjs'
 import { SchematicSvgUtils } from './SchematicSvgUtils.mjs'
+import { TextGeometrySidecarBuilder } from './TextGeometrySidecarBuilder.mjs'
 /**
  * Renders normalized PCB models into HTML and SVG markup.
  */
@@ -19,16 +20,25 @@ export class PcbSvgRenderer {
     static #PAD_SHAPE_RECTANGULAR = 2
     static #PAD_HOLE_SHAPE_SLOT = 2
     static #GENERIC_DETAIL_SEARCH_HALF_EXTENT = 240
+    static #SEMANTIC_SCHEMA = 'altium-toolkit.pcb.svg.semantics.a1'
     /**
      * Renders a normalized PCB model into HTML and SVG markup.
      * @param {{ summary: { title?: string }, pcb?: { boardOutline: { segments: Array<Record<string, number | string>>, minX: number, minY: number, widthMil: number, heightMil: number }, layers: { name: string }[], primitiveLayers?: { layerId: number, name: string }[], polygons?: { layer?: string, segments: Array<Record<string, number | string>> }[], fills?: { x1: number, y1: number, x2: number, y2: number, layerCode?: number, layerId?: number }[], tracks?: { x1: number, y1: number, x2: number, y2: number, width: number, layerCode?: number, layerId?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, width: number, layerCode?: number, layerId?: number }[], vias?: { x: number, y: number, diameter: number, holeDiameter: number }[], pads?: { x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number, holeDiameter?: number, shapeTop?: number, shapeMid?: number, shapeBottom?: number, rotation?: number, isPlated?: boolean }[], texts?: { text: string, x: number, y: number, height?: number, rotation?: number, layerId?: number, visible?: boolean }[], components: { designator: string, x: number, y: number, rotation: number, layer: string, pattern: string }[] } }} documentModel
+     * @param {{ viewKind?: string, layerView?: object } | undefined} options Render options.
      * @returns {string}
      */
-    static render(documentModel) {
-        const pcb = documentModel?.pcb
-        if (!pcb) {
+    static render(documentModel, options = {}) {
+        const sourcePcb = documentModel?.pcb
+        if (!sourcePcb) {
             return '<section class="altium-renderer-empty">No PCB entities were recovered from this file.</section>'
         }
+        const viewOptions = PcbSvgRenderer.#normalizeViewOptions(options)
+        const pcb = viewOptions.layerView
+            ? PcbSvgRenderer.#filterPcbForLayer(
+                  sourcePcb,
+                  viewOptions.layerView
+              )
+            : sourcePcb
         const outline = PcbScene3dBoardOutlineRefiner.refine(
             { board: pcb.boardOutline },
             documentModel
@@ -47,7 +57,20 @@ export class PcbSvgRenderer {
         const components = pcb.components.slice(0, 260)
         const stackLayers = Array.isArray(pcb.layers) ? pcb.layers : []
         const primitiveLayers = pcb.primitiveLayers || []
-        const displayLayers = stackLayers.length ? stackLayers : primitiveLayers
+        const displayLayers = viewOptions.layerView
+            ? [viewOptions.layerView]
+            : stackLayers.length
+              ? stackLayers
+              : primitiveLayers
+        const semanticContext = PcbSvgRenderer.#buildSemanticContext(
+            pcb,
+            displayLayers,
+            viewOptions
+        )
+        const semanticMetadata = PcbSvgRenderer.#buildSemanticMetadata(
+            pcb,
+            semanticContext
+        )
         const copperGroups = PcbCopperPrimitiveSplitter.split(
             polygons,
             fills,
@@ -120,19 +143,31 @@ export class PcbSvgRenderer {
         const polygonMarkup = (polygonList, visibilityClass) =>
             polygonList
                 .map(
-                    (polygon) =>
+                    (polygon, index) =>
                         '<path class="pcb-polygon pcb-polygon--' +
                         visibilityClass +
                         '" d="' +
                         SchematicSvgUtils.escapeHtml(
                             PcbSvgRenderer.#buildBoardPath(polygon.segments)
                         ) +
-                        '" />'
+                        '"' +
+                        PcbSvgRenderer.#semanticAttributes(
+                            'polygon',
+                            polygon,
+                            PcbSvgRenderer.#primitiveIndex(
+                                semanticContext,
+                                'polygons',
+                                polygon,
+                                index
+                            ),
+                            semanticContext
+                        ) +
+                        ' />'
                 )
                 .join('')
         const fillMarkup = (fillList, visibilityClass) =>
             fillList
-                .map((fill) => {
+                .map((fill, index) => {
                     const x = Math.min(fill.x1, fill.x2)
                     const y = Math.min(fill.y1, fill.y2)
                     const width = Math.abs(fill.x2 - fill.x1)
@@ -153,14 +188,26 @@ export class PcbSvgRenderer {
                         SchematicSvgUtils.formatNumber(
                             Math.min(width, height) / 6
                         ) +
-                        '" />'
+                        '"' +
+                        PcbSvgRenderer.#semanticAttributes(
+                            'fill',
+                            fill,
+                            PcbSvgRenderer.#primitiveIndex(
+                                semanticContext,
+                                'fills',
+                                fill,
+                                index
+                            ),
+                            semanticContext
+                        ) +
+                        ' />'
                     )
                 })
                 .join('')
         const trackMarkup = (trackList, visibilityClass) =>
             trackList
                 .map(
-                    (track) =>
+                    (track, index) =>
                         '<line class="pcb-track pcb-track--' +
                         visibilityClass +
                         '" x1="' +
@@ -175,15 +222,40 @@ export class PcbSvgRenderer {
                         SchematicSvgUtils.formatNumber(
                             Math.max(track.width || 0, 1)
                         ) +
-                        '" />'
+                        '"' +
+                        PcbSvgRenderer.#semanticAttributes(
+                            'track',
+                            track,
+                            PcbSvgRenderer.#primitiveIndex(
+                                semanticContext,
+                                'tracks',
+                                track,
+                                index
+                            ),
+                            semanticContext
+                        ) +
+                        ' />'
                 )
                 .join('')
         const arcMarkup = (arcList, visibilityClass) =>
             arcList
-                .map((arc) =>
-                    PcbArcUtils.buildMarkup(
-                        arc,
-                        'pcb-arc pcb-arc--' + visibilityClass
+                .map((arc, index) =>
+                    PcbSvgRenderer.#appendSvgAttributes(
+                        PcbArcUtils.buildMarkup(
+                            arc,
+                            'pcb-arc pcb-arc--' + visibilityClass
+                        ),
+                        PcbSvgRenderer.#semanticAttributes(
+                            'arc',
+                            arc,
+                            PcbSvgRenderer.#primitiveIndex(
+                                semanticContext,
+                                'arcs',
+                                arc,
+                                index
+                            ),
+                            semanticContext
+                        )
                     )
                 )
                 .join('')
@@ -193,11 +265,24 @@ export class PcbSvgRenderer {
                 'pcb-region pcb-region--' + visibilityClass
             )
         const viaMarkup = vias
-            .map((via) => {
+            .map((via, index) => {
                 const ringRadius = Math.max((via.diameter || 0) / 2, 1)
                 const holeRadius = Math.max((via.holeDiameter || 0) / 2, 0.6)
+                const viaIndex = PcbSvgRenderer.#primitiveIndex(
+                    semanticContext,
+                    'vias',
+                    via,
+                    index
+                )
                 return (
-                    '<g class="pcb-via">' +
+                    '<g class="pcb-via"' +
+                    PcbSvgRenderer.#semanticAttributes(
+                        'via',
+                        via,
+                        viaIndex,
+                        semanticContext
+                    ) +
+                    '>' +
                     '<circle class="pcb-via__pad" cx="' +
                     SchematicSvgUtils.formatNumber(via.x) +
                     '" cy="' +
@@ -211,13 +296,34 @@ export class PcbSvgRenderer {
                     SchematicSvgUtils.formatNumber(via.y) +
                     '" r="' +
                     SchematicSvgUtils.formatNumber(holeRadius) +
-                    '" />' +
+                    '"' +
+                    PcbSvgRenderer.#renderDataAttributes({
+                        'data-primitive': 'via-hole',
+                        'data-element-key': 'pcb-via-hole-' + viaIndex,
+                        'data-hole-owner': 'via',
+                        'data-hole-kind': 'via',
+                        'data-plating': PcbSvgRenderer.#drillPlating(via),
+                        'data-drill-render-state':
+                            PcbSvgRenderer.#drillRenderState(via)
+                    }) +
+                    ' />' +
                     '</g>'
                 )
             })
             .join('')
         const padMarkup = pads
-            .map((pad) => PcbSvgRenderer.#renderPad(pad))
+            .map((pad, index) =>
+                PcbSvgRenderer.#renderPad(
+                    pad,
+                    PcbSvgRenderer.#primitiveIndex(
+                        semanticContext,
+                        'pads',
+                        pad,
+                        index
+                    ),
+                    semanticContext
+                )
+            )
             .join('')
         const footprintFillMarkup = footprintPrimitives.fills
             .map((fill) => {
@@ -267,7 +373,15 @@ export class PcbSvgRenderer {
             footprintPrimitives.regions,
             'pcb-footprint-region'
         )
-        const textMarkup = PcbTextPrimitiveRenderer.render(texts)
+        const textMarkup = PcbTextPrimitiveRenderer.render(texts, {
+            semanticContext
+        })
+        const textGeometryMarkup = viewOptions.includeTextGeometrySidecar
+            ? PcbSvgRenderer.#buildTextGeometryMetadataMarkup(
+                  texts,
+                  semanticContext
+              )
+            : ''
         const textGroupTransform = PcbSvgRenderer.#renderTextGroupTransform(
             pcb.textGroupTransform
         )
@@ -276,7 +390,7 @@ export class PcbSvgRenderer {
         )
 
         const componentMarkup = components
-            .map((component) => {
+            .map((component, index) => {
                 const bodyGeometry = PcbSvgRenderer.#footprintSize(
                     component.pattern
                 )
@@ -310,7 +424,19 @@ export class PcbSvgRenderer {
                     SchematicSvgUtils.formatNumber(component.y) +
                     ') rotate(' +
                     SchematicSvgUtils.formatNumber(component.rotation) +
-                    ')">' +
+                    ')"' +
+                    PcbSvgRenderer.#semanticAttributes(
+                        'component',
+                        component,
+                        PcbSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'components',
+                            component,
+                            index
+                        ),
+                        semanticContext
+                    ) +
+                    '>' +
                     bodyMarkup +
                     '</g>'
                 )
@@ -331,9 +457,24 @@ export class PcbSvgRenderer {
             '<aside class="pcb-legend"><h4>Board stack</h4><p>Top-facing composite view</p><ul>' +
             layerMarkup +
             '</ul></aside>' +
-            '<svg class="pcb-svg" viewBox="' +
-            SchematicSvgUtils.escapeHtml(viewBox) +
-            '" preserveAspectRatio="xMidYMid meet" aria-label="PCB view">' +
+            '<svg class="pcb-svg"' +
+            PcbSvgRenderer.#renderRootViewBoxAttributes(viewOptions, viewBox) +
+            ' preserveAspectRatio="xMidYMid meet" aria-label="PCB view" data-semantic-schema="' +
+            PcbSvgRenderer.#SEMANTIC_SCHEMA +
+            '"' +
+            PcbSvgRenderer.#renderDataAttributes({
+                'data-doc-id': viewOptions.documentId,
+                'data-doc-ver': viewOptions.documentVersion,
+                'data-view-kind': semanticContext.viewKind,
+                'data-layer-view-key': semanticContext.layerView?.layerKey,
+                'data-layer-view-display-name':
+                    semanticContext.layerView?.displayName,
+                'data-included-layer-ids':
+                    PcbSvgRenderer.#includedLayerIds(semanticContext),
+                'data-board-outline-only':
+                    PcbSvgRenderer.#isBoardOutlineOnly(pcb)
+            }) +
+            '">' +
             '<defs>' +
             fontFaceMarkup +
             '<clipPath id="' +
@@ -341,9 +482,24 @@ export class PcbSvgRenderer {
             '"><path d="' +
             SchematicSvgUtils.escapeHtml(path) +
             '" /></clipPath></defs>' +
-            '<path class="board-outline pcb-layer pcb-layer--edge-cuts" data-layer-name="Edge.Cuts" d="' +
+            '<metadata id="pcb-semantic-metadata" data-schema="' +
+            PcbSvgRenderer.#SEMANTIC_SCHEMA +
+            '">' +
+            SchematicSvgUtils.escapeHtml(JSON.stringify(semanticMetadata)) +
+            '</metadata>' +
+            textGeometryMarkup +
+            '<path class="board-outline pcb-layer pcb-layer--edge-cuts" data-layer-name="Edge.Cuts"' +
+            PcbSvgRenderer.#renderDataAttributes({
+                'data-primitive': 'board-outline',
+                'data-element-key': 'pcb-board-outline',
+                'data-feature': 'board-outline',
+                'data-layer-key': 'EDGE',
+                'data-layer-display-name': 'Edge.Cuts'
+            }) +
+            ' d="' +
             SchematicSvgUtils.escapeHtml(path) +
-            '" />' +
+            '"' +
+            ' />' +
             '<g class="pcb-copper-layers" clip-path="url(#' +
             clipPathId +
             ')">' +
@@ -380,10 +536,978 @@ export class PcbSvgRenderer {
             '>' +
             textMarkup +
             '</g>' +
-            '<path class="board-outline board-outline--stroke pcb-layer pcb-layer--edge-cuts" data-layer-name="Edge.Cuts" d="' +
+            '<path class="board-outline board-outline--stroke pcb-layer pcb-layer--edge-cuts" data-layer-name="Edge.Cuts"' +
+            PcbSvgRenderer.#renderDataAttributes({
+                'data-primitive': 'board-outline',
+                'data-element-key': 'pcb-board-outline-stroke',
+                'data-feature': 'board-outline',
+                'data-layer-key': 'EDGE',
+                'data-layer-display-name': 'Edge.Cuts'
+            }) +
+            ' d="' +
             SchematicSvgUtils.escapeHtml(path) +
-            '" />' +
+            '"' +
+            ' />' +
             '</svg></div></section>'
+        )
+    }
+
+    /**
+     * Renders one deterministic SVG entry per physical or primitive layer.
+     * @param {object} documentModel Normalized PCB document model.
+     * @returns {{ layerId?: number, layerKey: string, displayName: string, role: string, svg: string }[]}
+     */
+    static renderLayerSvgs(documentModel) {
+        const pcb = documentModel?.pcb
+        if (!pcb) {
+            return []
+        }
+
+        return PcbSvgRenderer.#displayLayerDescriptors(pcb).map(
+            (layerView) => ({
+                ...layerView,
+                svg: PcbSvgRenderer.render(documentModel, {
+                    viewKind: 'layer',
+                    layerView
+                })
+            })
+        )
+    }
+
+    /**
+     * Normalizes renderer view options.
+     * @param {{ viewKind?: string, layerView?: object } | undefined} options Render options.
+     * @returns {{ viewKind: string, layerView: object | null, includeViewBox: boolean, documentId: string, documentVersion: string, includeTextGeometrySidecar: boolean }}
+     */
+    static #normalizeViewOptions(options) {
+        const includeViewBox =
+            options?.includeViewBox ?? options?.include_view_box
+
+        return {
+            viewKind: String(options?.viewKind || 'top-composite'),
+            layerView: options?.layerView
+                ? PcbSvgRenderer.#layerDescriptor(options.layerView)
+                : null,
+            includeViewBox: includeViewBox === false ? false : true,
+            documentId: String(options?.documentId || options?.docId || ''),
+            documentVersion: String(
+                options?.documentVersion || options?.documentVer || ''
+            ),
+            includeTextGeometrySidecar:
+                options?.includeTextGeometrySidecar === true ||
+                options?.textGeometry === 'sidecar'
+        }
+    }
+
+    /**
+     * Renders root SVG viewBox attributes according to export options.
+     * @param {{ includeViewBox: boolean }} options Normalized options.
+     * @param {string} viewBox ViewBox value.
+     * @returns {string}
+     */
+    static #renderRootViewBoxAttributes(options, viewBox) {
+        return options.includeViewBox
+            ? ' viewBox="' + SchematicSvgUtils.escapeHtml(viewBox) + '"'
+            : ''
+    }
+
+    /**
+     * Builds optional PCB text geometry metadata markup.
+     * @param {object[]} texts Text rows.
+     * @param {object} semanticContext Semantic context.
+     * @returns {string}
+     */
+    static #buildTextGeometryMetadataMarkup(texts, semanticContext) {
+        const metadata = TextGeometrySidecarBuilder.buildPcb(
+            texts,
+            semanticContext.primitiveIndexes?.texts
+        )
+
+        return (
+            '<metadata id="pcb-text-geometry" data-schema="' +
+            TextGeometrySidecarBuilder.SCHEMA_ID +
+            '">' +
+            SchematicSvgUtils.escapeHtml(JSON.stringify(metadata)) +
+            '</metadata>'
+        )
+    }
+
+    /**
+     * Returns stable display layer descriptors for per-layer exports.
+     * @param {object} pcb Normalized PCB model.
+     * @returns {object[]}
+     */
+    static #displayLayerDescriptors(pcb) {
+        const layers = Array.isArray(pcb?.layers) ? pcb.layers : []
+        const primitiveLayers = Array.isArray(pcb?.primitiveLayers)
+            ? pcb.primitiveLayers
+            : []
+        const sourceLayers = layers.length ? layers : primitiveLayers
+        const byKey = new Map()
+
+        for (const layer of sourceLayers) {
+            const descriptor = PcbSvgRenderer.#layerDescriptor(layer)
+            if (descriptor && !byKey.has(descriptor.layerKey)) {
+                byKey.set(descriptor.layerKey, descriptor)
+            }
+        }
+
+        return [...byKey.values()].sort(
+            (left, right) =>
+                Number(left.layerId ?? Number.MAX_SAFE_INTEGER) -
+                    Number(right.layerId ?? Number.MAX_SAFE_INTEGER) ||
+                left.displayName.localeCompare(right.displayName, undefined, {
+                    numeric: true
+                })
+        )
+    }
+
+    /**
+     * Clones and filters the PCB model down to one layer view.
+     * @param {object} pcb Normalized PCB model.
+     * @param {object} layerView Layer descriptor.
+     * @returns {object}
+     */
+    static #filterPcbForLayer(pcb, layerView) {
+        const filter = (primitive) =>
+            PcbSvgRenderer.#primitiveBelongsToLayer(primitive, layerView)
+
+        return {
+            ...pcb,
+            layers: [layerView],
+            primitiveLayers: [layerView],
+            polygons: (pcb?.polygons || []).filter(filter),
+            fills: (pcb?.fills || []).filter(filter),
+            tracks: (pcb?.tracks || []).filter(filter),
+            arcs: (pcb?.arcs || []).filter(filter),
+            vias: (pcb?.vias || []).filter(filter),
+            pads: (pcb?.pads || []).filter(filter),
+            regions: (pcb?.regions || []).filter(filter),
+            shapeBasedRegions: (pcb?.shapeBasedRegions || []).filter(filter),
+            texts: (pcb?.texts || []).filter(filter),
+            components: (pcb?.components || []).filter(filter)
+        }
+    }
+
+    /**
+     * Returns true when one primitive belongs to the requested layer.
+     * @param {object} primitive Primitive row.
+     * @param {object} layerView Layer descriptor.
+     * @returns {boolean}
+     */
+    static #primitiveBelongsToLayer(primitive, layerView) {
+        const layerId = PcbSvgRenderer.#firstFiniteNumber([
+            primitive?.layerId,
+            primitive?.layerCode
+        ])
+        if (Number.isInteger(layerId) && Number.isInteger(layerView?.layerId)) {
+            return layerId === layerView.layerId
+        }
+
+        const primitiveName =
+            primitive?.layerName || primitive?.layer || primitive?.side || ''
+        if (primitiveName && layerView?.displayName) {
+            return (
+                PcbSvgRenderer.#normalizeSemanticLookup(primitiveName) ===
+                PcbSvgRenderer.#normalizeSemanticLookup(layerView.displayName)
+            )
+        }
+
+        return (
+            !Number.isInteger(layerId) &&
+            !primitiveName &&
+            ['pad', 'via', 'copper'].includes(layerView?.role)
+        )
+    }
+
+    /**
+     * Builds reusable semantic lookup data for one PCB render.
+     * @param {object} pcb Normalized PCB model.
+     * @param {{ layerId?: number, layerCode?: number, index?: number, name?: string, displayName?: string }[]} displayLayers Visible layer records.
+     * @param {{ viewKind?: string, layerView?: object }} viewOptions View options.
+     * @returns {{ viewKind: string, layerView?: object, layersById: Map<number, object>, layersByName: Map<string, object>, layerDescriptors: object[], netByIndex: Map<number, object>, netClassNamesByNetName: Map<string, string[]>, componentsByIndex: Map<number, object>, primitiveIndexes: Record<string, Map<object, number>> }}
+     */
+    static #buildSemanticContext(pcb, displayLayers, viewOptions = {}) {
+        const layerRecords = [
+            ...(displayLayers || []),
+            ...(pcb?.primitiveLayers || [])
+        ]
+        const layersById = new Map()
+        const layersByName = new Map()
+        const layerDescriptors = []
+
+        for (const layer of layerRecords) {
+            const descriptor = PcbSvgRenderer.#layerDescriptor(layer)
+            if (!descriptor) {
+                continue
+            }
+            if (
+                Number.isInteger(descriptor.layerId) &&
+                !layersById.has(descriptor.layerId)
+            ) {
+                layersById.set(descriptor.layerId, descriptor)
+            }
+            const normalizedName = PcbSvgRenderer.#normalizeSemanticLookup(
+                descriptor.displayName
+            )
+            if (normalizedName && !layersByName.has(normalizedName)) {
+                layersByName.set(normalizedName, descriptor)
+            }
+            if (
+                !layerDescriptors.some(
+                    (existing) => existing.layerKey === descriptor.layerKey
+                )
+            ) {
+                layerDescriptors.push(descriptor)
+            }
+        }
+
+        const netByIndex = new Map()
+        const netNameByLookup = new Map()
+        for (const net of pcb?.nets || []) {
+            const netIndex = Number(net?.netIndex)
+            if (Number.isInteger(netIndex)) {
+                netByIndex.set(netIndex, net)
+            }
+            if (net?.name) {
+                netNameByLookup.set(
+                    PcbSvgRenderer.#normalizeSemanticLookup(net.name),
+                    net.name
+                )
+            }
+        }
+
+        const netClassNamesByNetName = new Map()
+        for (const classRecord of pcb?.classes || []) {
+            if (!PcbSvgRenderer.#isNetClass(classRecord)) {
+                continue
+            }
+            for (const member of classRecord.members || []) {
+                const netName =
+                    netNameByLookup.get(
+                        PcbSvgRenderer.#normalizeSemanticLookup(member)
+                    ) || member
+                const classNames = netClassNamesByNetName.get(netName) || []
+                classNames.push(classRecord.name)
+                netClassNamesByNetName.set(netName, classNames)
+            }
+        }
+
+        return {
+            viewKind: viewOptions.viewKind || 'top-composite',
+            layerView: viewOptions.layerView || null,
+            layersById,
+            layersByName,
+            layerDescriptors,
+            netByIndex,
+            netClassNamesByNetName,
+            componentsByIndex: PcbSvgRenderer.#componentIndexMap(
+                pcb?.components || []
+            ),
+            primitiveIndexes: {
+                polygons: PcbSvgRenderer.#objectIndexMap(pcb?.polygons || []),
+                fills: PcbSvgRenderer.#objectIndexMap(pcb?.fills || []),
+                tracks: PcbSvgRenderer.#objectIndexMap(pcb?.tracks || []),
+                arcs: PcbSvgRenderer.#objectIndexMap(pcb?.arcs || []),
+                vias: PcbSvgRenderer.#objectIndexMap(pcb?.vias || []),
+                pads: PcbSvgRenderer.#objectIndexMap(pcb?.pads || []),
+                texts: PcbSvgRenderer.#objectIndexMap(pcb?.texts || []),
+                components: PcbSvgRenderer.#objectIndexMap(
+                    pcb?.components || []
+                )
+            }
+        }
+    }
+
+    /**
+     * Builds a compact JSON sidecar describing semantic SVG element keys.
+     * @param {object} pcb Normalized PCB model.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {{ schema: string, boardOutline: object, layers: object[], elements: object[] }}
+     */
+    static #buildSemanticMetadata(pcb, semanticContext) {
+        return {
+            schema: PcbSvgRenderer.#SEMANTIC_SCHEMA,
+            view: PcbSvgRenderer.#buildViewMetadata(pcb, semanticContext),
+            boardOutline: {
+                feature: 'board-outline',
+                elementKeys: ['pcb-board-outline', 'pcb-board-outline-stroke']
+            },
+            layers: semanticContext.layerDescriptors,
+            elements: [
+                ...PcbSvgRenderer.#semanticMetadataEntries(
+                    'polygon',
+                    'polygons',
+                    pcb?.polygons || [],
+                    semanticContext
+                ),
+                ...PcbSvgRenderer.#semanticMetadataEntries(
+                    'fill',
+                    'fills',
+                    pcb?.fills || [],
+                    semanticContext
+                ),
+                ...PcbSvgRenderer.#semanticMetadataEntries(
+                    'track',
+                    'tracks',
+                    pcb?.tracks || [],
+                    semanticContext
+                ),
+                ...PcbSvgRenderer.#semanticMetadataEntries(
+                    'arc',
+                    'arcs',
+                    pcb?.arcs || [],
+                    semanticContext
+                ),
+                ...PcbSvgRenderer.#semanticMetadataEntries(
+                    'via',
+                    'vias',
+                    pcb?.vias || [],
+                    semanticContext
+                ),
+                ...PcbSvgRenderer.#semanticMetadataEntries(
+                    'pad',
+                    'pads',
+                    pcb?.pads || [],
+                    semanticContext
+                ),
+                ...PcbSvgRenderer.#semanticMetadataEntries(
+                    'text',
+                    'texts',
+                    pcb?.texts || [],
+                    semanticContext
+                ),
+                ...PcbSvgRenderer.#semanticMetadataEntries(
+                    'component',
+                    'components',
+                    pcb?.components || [],
+                    semanticContext
+                )
+            ]
+        }
+    }
+
+    /**
+     * Builds metadata for the rendered PCB view.
+     * @param {object} pcb Normalized PCB model.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {object}
+     */
+    static #buildViewMetadata(pcb, semanticContext) {
+        return {
+            kind: semanticContext.viewKind || 'top-composite',
+            board: PcbSvgRenderer.#buildBoardViewMetadata(pcb),
+            layerSet: {
+                includedLayerIds:
+                    PcbSvgRenderer.#includedLayerIds(semanticContext),
+                layerView: semanticContext.layerView || undefined,
+                roles: semanticContext.layerDescriptors.map((layer) =>
+                    PcbSvgRenderer.#stripEmptySemanticObject({
+                        layerId: layer.layerId,
+                        layerKey: layer.layerKey,
+                        displayName: layer.displayName,
+                        role: layer.role
+                    })
+                )
+            },
+            cutouts: PcbSvgRenderer.#boardCutoutMetadata(pcb),
+            drills: [
+                ...(pcb?.vias || [])
+                    .filter((via) => Number(via?.holeDiameter || 0) > 0)
+                    .map((via, index) =>
+                        PcbSvgRenderer.#drillDescriptor(
+                            'via',
+                            via,
+                            'pcb-via-hole-' +
+                                PcbSvgRenderer.#primitiveIndex(
+                                    semanticContext,
+                                    'vias',
+                                    via,
+                                    index
+                                )
+                        )
+                    ),
+                ...(pcb?.pads || [])
+                    .filter((pad) => Number(pad?.holeDiameter || 0) > 0)
+                    .map((pad, index) =>
+                        PcbSvgRenderer.#drillDescriptor(
+                            'pad',
+                            pad,
+                            'pcb-pad-hole-' +
+                                PcbSvgRenderer.#primitiveIndex(
+                                    semanticContext,
+                                    'pads',
+                                    pad,
+                                    index
+                                )
+                        )
+                    )
+            ]
+        }
+    }
+
+    /**
+     * Builds board-level view metadata.
+     * @param {object} pcb Normalized PCB model.
+     * @returns {object}
+     */
+    static #buildBoardViewMetadata(pcb) {
+        const outline = pcb?.boardOutline || {}
+        const minX = Number(outline.minX || 0)
+        const minY = Number(outline.minY || 0)
+        const width = Number(outline.widthMil || 0)
+        const height = Number(outline.heightMil || 0)
+
+        return {
+            elementKey: 'pcb-board-outline',
+            outlineOnly: PcbSvgRenderer.#isBoardOutlineOnly(pcb),
+            centroid: {
+                x: minX + width / 2,
+                y: minY + height / 2
+            },
+            bounds: {
+                minX,
+                minY,
+                maxX: minX + width,
+                maxY: minY + height
+            }
+        }
+    }
+
+    /**
+     * Builds board cutout sidecar entries.
+     * @param {object} pcb Normalized PCB model.
+     * @returns {object[]}
+     */
+    static #boardCutoutMetadata(pcb) {
+        const outlineCutouts = Array.isArray(pcb?.boardOutline?.cutouts)
+            ? pcb.boardOutline.cutouts
+            : []
+        const regionCutouts = (pcb?.boardRegions || []).filter(
+            (region) => region?.isBoardCutout === true
+        )
+
+        return [...outlineCutouts, ...regionCutouts].map((cutout, index) =>
+            PcbSvgRenderer.#stripEmptySemanticObject({
+                id: cutout.id || cutout.uniqueId || 'cutout-' + index,
+                kind: cutout.kind || 'board-cutout',
+                elementKey: 'pcb-board-cutout-' + index
+            })
+        )
+    }
+
+    /**
+     * Builds one drill sidecar entry.
+     * @param {'pad' | 'via'} owner Drill owner kind.
+     * @param {object} primitive Drill owner primitive.
+     * @param {string} elementKey SVG element key.
+     * @returns {object}
+     */
+    static #drillDescriptor(owner, primitive, elementKey) {
+        return PcbSvgRenderer.#stripEmptySemanticObject({
+            elementKey,
+            owner,
+            holeKind: owner,
+            plating: PcbSvgRenderer.#drillPlating(primitive),
+            renderState: PcbSvgRenderer.#drillRenderState(primitive),
+            ipc4761Type:
+                primitive?.ipc4761Type ?? primitive?.viaProtection?.ipc4761Type
+        })
+    }
+
+    /**
+     * Builds sidecar entries for one primitive collection.
+     * @param {string} primitiveKind Public primitive kind.
+     * @param {string} collectionKey Primitive collection key.
+     * @param {object[]} primitives Primitive records.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {object[]}
+     */
+    static #semanticMetadataEntries(
+        primitiveKind,
+        collectionKey,
+        primitives,
+        semanticContext
+    ) {
+        return (primitives || []).map((primitive, fallbackIndex) => {
+            const index = PcbSvgRenderer.#primitiveIndex(
+                semanticContext,
+                collectionKey,
+                primitive,
+                fallbackIndex
+            )
+            const layer = PcbSvgRenderer.#layerForPrimitive(
+                primitive,
+                semanticContext
+            )
+            const netName = PcbSvgRenderer.#netNameForPrimitive(
+                primitive,
+                semanticContext
+            )
+            const component = PcbSvgRenderer.#componentForPrimitive(
+                primitive,
+                semanticContext
+            )
+
+            return PcbSvgRenderer.#stripEmptySemanticObject({
+                elementKey: 'pcb-' + primitiveKind + '-' + index,
+                primitive: primitiveKind,
+                layerKey: layer?.layerKey,
+                layerDisplayName: layer?.displayName,
+                net: netName,
+                netClasses: PcbSvgRenderer.#netClassNames(
+                    netName,
+                    semanticContext
+                ),
+                component: component?.designator,
+                componentIndex: Number.isInteger(
+                    Number(primitive?.componentIndex)
+                )
+                    ? Number(primitive.componentIndex)
+                    : undefined,
+                padNumber:
+                    primitiveKind === 'pad'
+                        ? PcbSvgRenderer.#padNumber(primitive)
+                        : undefined,
+                textRole:
+                    primitiveKind === 'text'
+                        ? primitive?.role || primitive?.textRole
+                        : undefined
+            })
+        })
+    }
+
+    /**
+     * Renders semantic data attributes for one SVG element.
+     * @param {string} primitiveKind Public primitive kind.
+     * @param {object} primitive Primitive record.
+     * @param {number} index Stable primitive index.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #semanticAttributes(
+        primitiveKind,
+        primitive,
+        index,
+        semanticContext
+    ) {
+        const layer = PcbSvgRenderer.#layerForPrimitive(
+            primitive,
+            semanticContext
+        )
+        const netName = PcbSvgRenderer.#netNameForPrimitive(
+            primitive,
+            semanticContext
+        )
+        const component = PcbSvgRenderer.#componentForPrimitive(
+            primitive,
+            semanticContext
+        )
+        const netClasses = PcbSvgRenderer.#netClassNames(
+            netName,
+            semanticContext
+        )
+
+        return PcbSvgRenderer.#renderDataAttributes({
+            'data-primitive': primitiveKind,
+            'data-element-key': 'pcb-' + primitiveKind + '-' + index,
+            'data-layer-key': layer?.layerKey,
+            'data-layer-display-name': layer?.displayName,
+            'data-layer-id': layer?.layerId,
+            'data-net': netName,
+            'data-net-index': primitive?.netIndex,
+            'data-net-class': netClasses[0],
+            'data-net-classes': netClasses.length > 1 ? netClasses : undefined,
+            'data-component': component?.designator,
+            'data-component-index': component?.componentIndex,
+            'data-component-unique-id': component?.uniqueId,
+            'data-pad-number':
+                primitiveKind === 'pad'
+                    ? PcbSvgRenderer.#padNumber(primitive)
+                    : undefined
+        })
+    }
+
+    /**
+     * Inserts generated attributes into a simple SVG element string.
+     * @param {string} markup SVG element markup.
+     * @param {string} attributes Rendered attributes.
+     * @returns {string}
+     */
+    static #appendSvgAttributes(markup, attributes) {
+        if (!attributes) {
+            return markup
+        }
+
+        return String(markup).replace(/(\s*\/?>)/u, attributes + '$1')
+    }
+
+    /**
+     * Returns a stable primitive index from the original source collection.
+     * @param {object} semanticContext Semantic lookup context.
+     * @param {string} collectionKey Primitive collection key.
+     * @param {object} primitive Primitive record.
+     * @param {number} fallbackIndex Index in the rendered collection.
+     * @returns {number}
+     */
+    static #primitiveIndex(
+        semanticContext,
+        collectionKey,
+        primitive,
+        fallbackIndex
+    ) {
+        const resolved =
+            semanticContext.primitiveIndexes?.[collectionKey]?.get(primitive)
+
+        return Number.isInteger(resolved) ? resolved : fallbackIndex
+    }
+
+    /**
+     * Renders a dictionary as SVG data attributes.
+     * @param {Record<string, unknown>} attributes Attribute dictionary.
+     * @returns {string}
+     */
+    static #renderDataAttributes(attributes) {
+        return Object.entries(attributes || {})
+            .filter(([, value]) => {
+                if (Array.isArray(value)) {
+                    return value.length > 0
+                }
+                return value !== null && value !== undefined && value !== ''
+            })
+            .map(([name, value]) => {
+                const renderedValue = Array.isArray(value)
+                    ? value.join(',')
+                    : String(value)
+                return (
+                    ' ' +
+                    name +
+                    '="' +
+                    SchematicSvgUtils.escapeHtml(renderedValue) +
+                    '"'
+                )
+            })
+            .join('')
+    }
+
+    /**
+     * Builds an object identity map for stable primitive indexes.
+     * @param {object[]} records Primitive records.
+     * @returns {Map<object, number>}
+     */
+    static #objectIndexMap(records) {
+        return new Map((records || []).map((record, index) => [record, index]))
+    }
+
+    /**
+     * Builds a component lookup keyed by native component index.
+     * @param {object[]} components Component records.
+     * @returns {Map<number, object>}
+     */
+    static #componentIndexMap(components) {
+        const componentsByIndex = new Map()
+
+        for (const component of components || []) {
+            const componentIndex = Number(component?.componentIndex)
+            if (Number.isInteger(componentIndex)) {
+                componentsByIndex.set(componentIndex, component)
+            }
+        }
+
+        return componentsByIndex
+    }
+
+    /**
+     * Resolves a normalized layer descriptor from a layer record.
+     * @param {object} layer Layer record.
+     * @returns {{ layerId?: number, layerKey: string, displayName: string } | null}
+     */
+    static #layerDescriptor(layer) {
+        if (!layer || typeof layer !== 'object') {
+            return null
+        }
+
+        const layerId = PcbSvgRenderer.#firstFiniteNumber([
+            layer.layerId,
+            layer.layerCode,
+            layer.id,
+            layer.index
+        ])
+        const displayName =
+            layer.displayName || layer.name || layer.layerName || ''
+        const layerKey = Number.isInteger(layerId)
+            ? 'L' + layerId
+            : PcbSvgRenderer.#normalizeSemanticLookup(displayName)
+
+        if (!layerKey && !displayName) {
+            return null
+        }
+
+        return PcbSvgRenderer.#stripEmptySemanticObject({
+            layerId,
+            layerKey,
+            displayName: displayName || layerKey,
+            role:
+                layer.role ||
+                layer.layerRole ||
+                PcbSvgRenderer.#inferLayerRole(displayName)
+        })
+    }
+
+    /**
+     * Returns included layer ids from semantic context.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {number[]}
+     */
+    static #includedLayerIds(semanticContext) {
+        return (semanticContext?.layerDescriptors || [])
+            .map((layer) => layer.layerId)
+            .filter((layerId) => Number.isInteger(layerId))
+    }
+
+    /**
+     * Returns true when a PCB view contains only board outline metadata.
+     * @param {object} pcb Normalized PCB model.
+     * @returns {boolean}
+     */
+    static #isBoardOutlineOnly(pcb) {
+        return [
+            'polygons',
+            'fills',
+            'tracks',
+            'arcs',
+            'vias',
+            'pads',
+            'texts',
+            'components',
+            'regions',
+            'shapeBasedRegions'
+        ].every((key) => !Array.isArray(pcb?.[key]) || pcb[key].length === 0)
+    }
+
+    /**
+     * Infers one broad rendering role from a layer name.
+     * @param {string} displayName Layer display name.
+     * @returns {string}
+     */
+    static #inferLayerRole(displayName) {
+        const normalized = String(displayName || '').toLowerCase()
+        if (/overlay|silk/u.test(normalized)) return 'overlay'
+        if (/paste/u.test(normalized)) return 'paste'
+        if (/mask/u.test(normalized)) return 'mask'
+        if (/mechanical|dimension|outline/u.test(normalized)) {
+            return 'mechanical'
+        }
+        if (/drill/u.test(normalized)) return 'drill'
+        if (/layer|copper|plane/u.test(normalized)) return 'copper'
+        return 'other'
+    }
+
+    /**
+     * Resolves drill plating metadata for SVG and sidecar output.
+     * @param {object} primitive Drill owner primitive.
+     * @returns {'plated' | 'non-plated'}
+     */
+    static #drillPlating(primitive) {
+        return primitive?.isPlated === false ? 'non-plated' : 'plated'
+    }
+
+    /**
+     * Resolves the visible drill state from explicit metadata and
+     * via-protection features.
+     * @param {object} primitive Drill owner primitive.
+     * @returns {'open' | 'covered' | 'filled' | 'capped'}
+     */
+    static #drillRenderState(primitive) {
+        const explicit =
+            primitive?.drillRenderState ||
+            primitive?.renderState ||
+            primitive?.drill?.renderState
+        if (explicit) {
+            return PcbSvgRenderer.#normalizeDrillRenderState(explicit)
+        }
+
+        const featureText = (primitive?.viaProtection?.features || [])
+            .flatMap((feature) => [feature.type, feature.material])
+            .join(' ')
+            .toLowerCase()
+
+        if (/cap/u.test(featureText)) return 'capped'
+        if (/fill|plug/u.test(featureText)) return 'filled'
+        if (/cover|tent|mask/u.test(featureText)) return 'covered'
+
+        const ipcType = Number(
+            primitive?.ipc4761Type ?? primitive?.viaProtection?.ipc4761Type
+        )
+        if (ipcType === 6 || ipcType === 7) return 'capped'
+        if (ipcType === 3 || ipcType === 4 || ipcType === 5) return 'filled'
+        if (ipcType === 1 || ipcType === 2) return 'covered'
+
+        return 'open'
+    }
+
+    /**
+     * Normalizes a drill render-state label.
+     * @param {unknown} value Raw state label.
+     * @returns {'open' | 'covered' | 'filled' | 'capped'}
+     */
+    static #normalizeDrillRenderState(value) {
+        const normalized = String(value || '').toLowerCase()
+        if (/cap/u.test(normalized)) return 'capped'
+        if (/fill|plug/u.test(normalized)) return 'filled'
+        if (/cover|tent|mask/u.test(normalized)) return 'covered'
+        return 'open'
+    }
+
+    /**
+     * Resolves a layer descriptor for one primitive.
+     * @param {object} primitive Primitive record.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {{ layerId?: number, layerKey: string, displayName: string } | null}
+     */
+    static #layerForPrimitive(primitive, semanticContext) {
+        const layerId = PcbSvgRenderer.#firstFiniteNumber([
+            primitive?.layerId,
+            primitive?.layerCode
+        ])
+        if (Number.isInteger(layerId)) {
+            return (
+                semanticContext.layersById.get(layerId) || {
+                    layerId,
+                    layerKey: 'L' + layerId,
+                    displayName:
+                        primitive?.layerName ||
+                        primitive?.layer ||
+                        'Layer ' + layerId
+                }
+            )
+        }
+
+        const layerName =
+            primitive?.layerName || primitive?.layer || primitive?.side || ''
+        const byName = semanticContext.layersByName.get(
+            PcbSvgRenderer.#normalizeSemanticLookup(layerName)
+        )
+
+        return byName || null
+    }
+
+    /**
+     * Resolves a net name for one primitive.
+     * @param {object} primitive Primitive record.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #netNameForPrimitive(primitive, semanticContext) {
+        if (primitive?.netName) {
+            return String(primitive.netName)
+        }
+
+        const netIndex = Number(primitive?.netIndex)
+        if (Number.isInteger(netIndex)) {
+            return semanticContext.netByIndex.get(netIndex)?.name || ''
+        }
+
+        return ''
+    }
+
+    /**
+     * Resolves a component owner for one primitive.
+     * @param {object} primitive Primitive record.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {object | null}
+     */
+    static #componentForPrimitive(primitive, semanticContext) {
+        if (primitive?.designator && primitive?.pattern) {
+            return primitive
+        }
+
+        const componentIndex = Number(primitive?.componentIndex)
+        if (Number.isInteger(componentIndex)) {
+            return semanticContext.componentsByIndex.get(componentIndex) || null
+        }
+
+        return null
+    }
+
+    /**
+     * Returns class names for one net name.
+     * @param {string} netName Net name.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string[]}
+     */
+    static #netClassNames(netName, semanticContext) {
+        return netName
+            ? semanticContext.netClassNamesByNetName.get(netName) || []
+            : []
+    }
+
+    /**
+     * Returns true when a class record describes nets.
+     * @param {object} classRecord Class record.
+     * @returns {boolean}
+     */
+    static #isNetClass(classRecord) {
+        return (
+            classRecord?.kindName === 'net' || Number(classRecord?.kind) === 0
+        )
+    }
+
+    /**
+     * Returns a pad number-like label from pad metadata.
+     * @param {object} pad Pad record.
+     * @returns {string}
+     */
+    static #padNumber(pad) {
+        return String(
+            pad?.padNumber || pad?.designator || pad?.number || pad?.name || ''
+        )
+    }
+
+    /**
+     * Returns the first finite numeric value from a list.
+     * @param {unknown[]} values Candidate values.
+     * @returns {number | undefined}
+     */
+    static #firstFiniteNumber(values) {
+        for (const value of values) {
+            const parsed = Number(value)
+            if (Number.isFinite(parsed)) {
+                return parsed
+            }
+        }
+
+        return undefined
+    }
+
+    /**
+     * Builds a case-insensitive lookup key for semantic names.
+     * @param {unknown} value Raw value.
+     * @returns {string}
+     */
+    static #normalizeSemanticLookup(value) {
+        return String(value || '')
+            .trim()
+            .toUpperCase()
+    }
+
+    /**
+     * Removes empty fields from a semantic metadata object.
+     * @param {Record<string, unknown>} value Metadata object.
+     * @returns {Record<string, unknown>}
+     */
+    static #stripEmptySemanticObject(value) {
+        return Object.fromEntries(
+            Object.entries(value || {}).filter(([, entryValue]) => {
+                if (Array.isArray(entryValue)) {
+                    return entryValue.length > 0
+                }
+                return (
+                    entryValue !== null &&
+                    entryValue !== undefined &&
+                    entryValue !== ''
+                )
+            })
         )
     }
 
@@ -672,9 +1796,11 @@ export class PcbSvgRenderer {
     /**
      * Renders one through-hole pad as SVG.
      * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number, holeDiameter?: number, shapeTop?: number, rotation?: number, holeShape?: number | null, holeSlotLength?: number | null, holeRotation?: number | null, offsetTopX?: number, offsetTopY?: number, hasRoundedRect?: boolean, roundedRectShapeTop?: number | null, cornerRadiusTop?: number | null }} pad
+     * @param {number} index Stable pad index.
+     * @param {object} semanticContext Semantic lookup context.
      * @returns {string}
      */
-    static #renderPad(pad) {
+    static #renderPad(pad, index, semanticContext) {
         const size = PcbSvgRenderer.#resolvePadSurfaceSize(pad)
         const padIsCircular = PcbSvgRenderer.#isCircularPad(pad, size)
         const ringRadius = Math.max(Math.max(size.width, size.height) / 2, 0.6)
@@ -702,7 +1828,7 @@ export class PcbSvgRenderer {
                   PcbSvgRenderer.#resolvePadCornerRadius(pad, size)
               ) +
               '" />'
-        const holeMarkup = PcbSvgRenderer.#renderPadHole(pad)
+        const holeMarkup = PcbSvgRenderer.#renderPadHole(pad, index)
 
         return (
             '<g class="pcb-pad pcb-pad--' +
@@ -715,7 +1841,14 @@ export class PcbSvgRenderer {
             SchematicSvgUtils.formatNumber(pad.y) +
             ') rotate(' +
             SchematicSvgUtils.formatNumber(Number(pad.rotation || 0)) +
-            ')">' +
+            ')"' +
+            PcbSvgRenderer.#semanticAttributes(
+                'pad',
+                pad,
+                index,
+                semanticContext
+            ) +
+            '>' +
             ringMarkup +
             holeMarkup +
             '</g>'
@@ -725,9 +1858,10 @@ export class PcbSvgRenderer {
     /**
      * Renders one pad drill hole as SVG.
      * @param {{ holeDiameter?: number, holeShape?: number | null, holeSlotLength?: number | null, holeRotation?: number | null }} pad
+     * @param {number} index Stable pad index.
      * @returns {string}
      */
-    static #renderPadHole(pad) {
+    static #renderPadHole(pad, index) {
         if (Number(pad.holeDiameter || 0) <= 0) {
             return ''
         }
@@ -755,7 +1889,17 @@ export class PcbSvgRenderer {
                 SchematicSvgUtils.formatNumber(holeDiameter) +
                 '" rx="' +
                 SchematicSvgUtils.formatNumber(holeRadius) +
-                '" />' +
+                '"' +
+                PcbSvgRenderer.#renderDataAttributes({
+                    'data-primitive': 'pad-hole',
+                    'data-element-key': 'pcb-pad-hole-' + index,
+                    'data-hole-owner': 'pad',
+                    'data-hole-kind': 'pad',
+                    'data-plating': PcbSvgRenderer.#drillPlating(pad),
+                    'data-drill-render-state':
+                        PcbSvgRenderer.#drillRenderState(pad)
+                }) +
+                ' />' +
                 '</g>'
             )
         }
@@ -763,7 +1907,16 @@ export class PcbSvgRenderer {
         return (
             '<circle class="pcb-pad__hole" cx="0" cy="0" r="' +
             SchematicSvgUtils.formatNumber(holeRadius) +
-            '" />'
+            '"' +
+            PcbSvgRenderer.#renderDataAttributes({
+                'data-primitive': 'pad-hole',
+                'data-element-key': 'pcb-pad-hole-' + index,
+                'data-hole-owner': 'pad',
+                'data-hole-kind': 'pad',
+                'data-plating': PcbSvgRenderer.#drillPlating(pad),
+                'data-drill-render-state': PcbSvgRenderer.#drillRenderState(pad)
+            }) +
+            ' />'
         )
     }
 

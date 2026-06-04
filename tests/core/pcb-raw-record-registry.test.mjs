@@ -227,6 +227,28 @@ test('PcbRawRecordRegistry collects large PcbDoc raw stream batches iteratively'
 })
 
 /**
+ * Verifies raw preservation for subrecord-list primitives does not recurse over
+ * every remaining record when it validates stream boundaries.
+ */
+test('PcbRawRecordRegistry collects large subrecord-list batches iteratively', () => {
+    const recordCount = 12_000
+    const padStream =
+        PcbBinaryPrimitiveTestFactory.createLargePadStream(recordCount)
+    const records = PcbRawRecordRegistry.collectPcbDocRecords(
+        createSinglePrimitiveStreamMap('Pads6', padStream),
+        { pads: [] }
+    )
+
+    assert.equal(records.length, recordCount)
+    assert.equal(records.at(0)?.registryId, 'pcbdoc:Pads6/Data:0')
+    assert.equal(
+        records.at(-1)?.registryId,
+        'pcbdoc:Pads6/Data:' + (recordCount - 1)
+    )
+    assert.equal(records.at(-1)?.encoding, 'subrecord-list')
+})
+
+/**
  * Verifies unsupported bytes in a registered stream are still represented as a
  * raw read-only record instead of disappearing from extraction output.
  */

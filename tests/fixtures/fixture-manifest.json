@@ -1,0 +1,98 @@
+{
+    "schema": "altium-toolkit.fixture-manifest.a1",
+    "assetPolicy": "repo-owned-synthetic-only",
+    "fixtures": [
+        {
+            "key": "sch-a1",
+            "kind": "schematic",
+            "assetPolicy": "repo-owned-synthetic-only",
+            "nativeAsset": false,
+            "source": "inline-synthetic-records",
+            "coverage": [
+                "schematic.curves",
+                "schematic.rounded-rectangles",
+                "schematic.ieee-symbols",
+                "schematic.polyline-markers",
+                "schematic.text-frames"
+            ],
+            "contracts": {
+                "parser": [
+                    "schematic.beziers",
+                    "schematic.pies",
+                    "schematic.rounded-rectangles",
+                    "schematic.ieee-symbols",
+                    "schematic.text-frames"
+                ],
+                "svg": [
+                    "schematic.svg.shapes",
+                    "schematic.svg.semantics",
+                    "schematic.svg.text-geometry"
+                ],
+                "schemas": [
+                    "altium-toolkit.normalized-model.a1",
+                    "altium-toolkit.schematic.svg.semantics.a1"
+                ],
+                "diagnostics": [
+                    "schematic.font.family-fallback",
+                    "schematic.text.unresolved-parameter"
+                ]
+            }
+        },
+        {
+            "key": "pcb-a1",
+            "kind": "pcb",
+            "assetPolicy": "repo-owned-synthetic-only",
+            "nativeAsset": false,
+            "source": "inline-synthetic-records",
+            "coverage": [
+                "pcb.layer-stack-statistics",
+                "pcb.drill-statistics",
+                "pcb.width-histograms",
+                "pcb.planning-statistics"
+            ],
+            "contracts": {
+                "parser": [
+                    "pcb.layer-stack",
+                    "pcb.drills",
+                    "pcb.board-regions"
+                ],
+                "svg": ["pcb.svg.semantics", "pcb.svg.layer-views"],
+                "schemas": [
+                    "altium-toolkit.normalized-model.a1",
+                    "altium-toolkit.pcb.svg.semantics.a1"
+                ],
+                "diagnostics": [
+                    "pcb.board-region.recovered",
+                    "pcb.embedded-file.unsupported-stream"
+                ]
+            }
+        },
+        {
+            "key": "lib-a1",
+            "kind": "library",
+            "assetPolicy": "repo-owned-synthetic-only",
+            "nativeAsset": false,
+            "source": "inline-synthetic-records",
+            "coverage": [
+                "library.asset-manifest",
+                "library.symbol-extraction",
+                "library.search-index"
+            ],
+            "contracts": {
+                "parser": ["library.render-manifest", "library.search-index"],
+                "svg": [
+                    "schematic-library.svg.symbols",
+                    "pcb-library.svg.footprints"
+                ],
+                "schemas": [
+                    "altium-toolkit.normalized-model.a1",
+                    "altium-toolkit.library.render-manifest.a1"
+                ],
+                "diagnostics": [
+                    "library.asset.fallback",
+                    "intlib.cross-reference.parse-error"
+                ]
+            }
+        }
+    ]
+}

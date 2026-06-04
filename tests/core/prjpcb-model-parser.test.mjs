@@ -35,6 +35,8 @@ DocumentPath=Main.SchDoc
 AnnotationEnabled=1
 AnnotateOrder=0
 DocumentUniqueId=SCHONE
+ClassGenGenerateNetClasses=0
+ClassGenGenerateRooms=1
 
 [Document2]
 DocumentPath=Boards\\MainBoard.PcbDoc
@@ -61,6 +63,19 @@ Value=Demo Project
 [Parameter2]
 Name=PCB_PART_NUMBER
 Value=PN-1000
+
+[PrjClassGen]
+GenerateNetClasses=1
+GenerateComponentClasses=T
+GenerateDifferentialPairClasses=True
+GenerateRooms=0
+ClassNamePrefix=SCH_
+
+[DocumentClassGen1]
+DocumentPath=Main.SchDoc
+GenerateNetClasses=0
+GenerateDifferentialPairClasses=1
+TransferRoomDirectives=F
 
 [ProjectVariant1]
 UniqueId=VAR-A
@@ -136,6 +151,38 @@ test('PrjPcbModelParser normalizes project documents, parameters, and variants',
     )
     assert.equal(model.project.documents[2].kind, 'pcb-library')
     assert.equal(model.project.documents[3].isStub, true)
+    assert.deepEqual(model.project.classGeneration.policies, {
+        generateNetClasses: true,
+        generateComponentClasses: true,
+        generateDifferentialPairClasses: true,
+        generateRooms: false
+    })
+    assert.deepEqual(model.project.classGeneration.documents, [
+        {
+            index: 1,
+            section: 'DocumentClassGen1',
+            documentIndex: 1,
+            documentPath: 'Main.SchDoc',
+            normalizedPath: 'Main.SchDoc',
+            policies: {
+                generateNetClasses: false,
+                generateDifferentialPairClasses: true,
+                transferRoomDirectives: false
+            },
+            options: {
+                DocumentPath: 'Main.SchDoc',
+                GenerateNetClasses: '0',
+                GenerateDifferentialPairClasses: '1',
+                TransferRoomDirectives: 'F'
+            }
+        }
+    ])
+    assert.deepEqual(model.project.documents[0].classGeneration.policies, {
+        generateNetClasses: false,
+        generateRooms: true,
+        generateDifferentialPairClasses: true,
+        transferRoomDirectives: false
+    })
 
     assert.equal(model.project.parameters.map.PROJECT_TITLE, 'Demo Project')
     assert.equal(model.project.parameters.map.PCB_PART_NUMBER, 'PN-1000')
@@ -169,6 +216,53 @@ test('PrjPcbModelParser normalizes project documents, parameters, and variants',
             isDefault: false
         }
     ])
+    assert.deepEqual(model.project.outJobDigest, {
+        schema: 'altium-toolkit.project.outjob-digest.a1',
+        summary: {
+            outJobDocumentCount: 1,
+            outputGroupCount: 1,
+            outputCount: 1
+        },
+        documents: [
+            {
+                documentIndex: 5,
+                path: 'Manufacturing.OutJob',
+                normalizedPath: 'Manufacturing.OutJob',
+                fileName: 'Manufacturing.OutJob'
+            }
+        ],
+        outputGroups: [
+            {
+                index: 1,
+                name: 'Fabrication',
+                outputCount: 1,
+                outputs: [
+                    {
+                        index: 1,
+                        type: 'Gerber',
+                        name: 'Gerber Files',
+                        documentPath: 'Boards\\MainBoard.PcbDoc',
+                        normalizedDocumentPath: 'Boards/MainBoard.PcbDoc',
+                        variantName: 'Assembly B',
+                        isDefault: false
+                    }
+                ]
+            }
+        ],
+        outputsByDocumentPath: {
+            'Boards/MainBoard.PcbDoc': [
+                {
+                    outputGroupName: 'Fabrication',
+                    outputGroupIndex: 1,
+                    outputIndex: 1,
+                    type: 'Gerber',
+                    name: 'Gerber Files',
+                    variantName: 'Assembly B',
+                    isDefault: false
+                }
+            ]
+        }
+    })
     assert.equal(model.bom.length, 0)
 })
 

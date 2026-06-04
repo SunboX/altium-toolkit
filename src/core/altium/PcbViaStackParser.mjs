@@ -56,6 +56,12 @@ export class PcbViaStackParser {
 
     static #DRILL_LAYER_PAIR_TYPE_OFFSET = 317
 
+    static #PROPAGATION_DELAY_OFFSET = 321
+
+    static #HOLE_TOLERANCE_UNSET = 0x7fffffff
+
+    static #PICOSECONDS_PER_SECOND = 1_000_000_000_000
+
     static #PHYSICAL_LAYER_COUNT = 32
 
     /**
@@ -417,14 +423,21 @@ export class PcbViaStackParser {
             PcbViaStackParser.#TAIL_SIGNATURE_OFFSET + offsetShift,
             16
         )
-        const positiveTolerance = PcbViaStackParser.#readMilIfAvailable(
-            view,
-            PcbViaStackParser.#POSITIVE_TOLERANCE_OFFSET + offsetShift
-        )
-        const negativeTolerance = PcbViaStackParser.#readMilIfAvailable(
-            view,
-            PcbViaStackParser.#NEGATIVE_TOLERANCE_OFFSET + offsetShift
-        )
+        const positiveTolerance =
+            PcbViaStackParser.#readHoleToleranceIfAvailable(
+                view,
+                PcbViaStackParser.#POSITIVE_TOLERANCE_OFFSET + offsetShift
+            )
+        const negativeTolerance =
+            PcbViaStackParser.#readHoleToleranceIfAvailable(
+                view,
+                PcbViaStackParser.#NEGATIVE_TOLERANCE_OFFSET + offsetShift
+            )
+        const propagationDelayPs =
+            PcbViaStackParser.#readPropagationDelayIfAvailable(
+                view,
+                PcbViaStackParser.#PROPAGATION_DELAY_OFFSET + offsetShift
+            )
         const drillLayerPairType = PcbViaStackParser.#readByteIfAvailable(
             view,
             PcbViaStackParser.#DRILL_LAYER_PAIR_TYPE_OFFSET + offsetShift
@@ -439,11 +452,19 @@ export class PcbViaStackParser {
         if (tailSignature) {
             result.tailSignature = tailSignature
         }
-        if (positiveTolerance) {
+        if (positiveTolerance !== null) {
             result.positiveTolerance = positiveTolerance
         }
-        if (negativeTolerance) {
+        if (negativeTolerance !== null) {
             result.negativeTolerance = negativeTolerance
+        }
+        PcbViaStackParser.#assignHoleTolerance(
+            result,
+            positiveTolerance,
+            negativeTolerance
+        )
+        if (propagationDelayPs !== null) {
+            result.propagationDelayPs = propagationDelayPs
         }
         if (drillLayerPairType) {
             result.drillLayerPairType = drillLayerPairType
@@ -492,6 +513,73 @@ export class PcbViaStackParser {
         }
 
         return view.getInt32(offset, true) / 10000
+    }
+
+    /**
+     * Reads one optional hole tolerance and suppresses unset sentinel values.
+     * @param {DataView} view
+     * @param {number} offset
+     * @returns {number | null}
+     */
+    static #readHoleToleranceIfAvailable(view, offset) {
+        if (!view || offset + 4 > view.byteLength) {
+            return null
+        }
+
+        const rawValue = view.getInt32(offset, true)
+        if (
+            rawValue === 0 ||
+            rawValue === PcbViaStackParser.#HOLE_TOLERANCE_UNSET
+        ) {
+            return null
+        }
+
+        return rawValue / 10000
+    }
+
+    /**
+     * Adds grouped semantic hole tolerance fields when tolerances are present.
+     * @param {Record<string, unknown>} result
+     * @param {number | null} positiveTolerance
+     * @param {number | null} negativeTolerance
+     */
+    static #assignHoleTolerance(result, positiveTolerance, negativeTolerance) {
+        const holeTolerance = {}
+
+        if (positiveTolerance !== null) {
+            holeTolerance.positive = positiveTolerance
+        }
+        if (negativeTolerance !== null) {
+            holeTolerance.negative = negativeTolerance
+        }
+        if (Object.keys(holeTolerance).length) {
+            result.holeTolerance = holeTolerance
+        }
+    }
+
+    /**
+     * Reads one optional via propagation delay stored as seconds.
+     * @param {DataView} view
+     * @param {number} offset
+     * @returns {number | null}
+     */
+    static #readPropagationDelayIfAvailable(view, offset) {
+        if (!view || offset + 4 > view.byteLength) {
+            return null
+        }
+
+        const seconds = view.getFloat32(offset, true)
+        const picoseconds = seconds * PcbViaStackParser.#PICOSECONDS_PER_SECOND
+
+        if (
+            !Number.isFinite(picoseconds) ||
+            Math.abs(picoseconds) < 0.001 ||
+            Math.abs(picoseconds) > 1_000_000
+        ) {
+            return null
+        }
+
+        return Number(picoseconds.toFixed(4))
     }
 
     /**

@@ -33,6 +33,24 @@ export class SchematicPrimitiveParser {
     }
 
     /**
+     * Returns true when one record belongs to the rounded-rectangle primitive.
+     * @param {Record<string, string | string[]>} fields
+     * @returns {boolean}
+     */
+    static isRoundedRectangleRecord(fields) {
+        return getField(fields, 'RECORD') === '10'
+    }
+
+    /**
+     * Returns true when one record belongs to the schematic IEEE-symbol family.
+     * @param {Record<string, string | string[]>} fields
+     * @returns {boolean}
+     */
+    static isIeeeSymbolRecord(fields) {
+        return getField(fields, 'RECORD') === '3'
+    }
+
+    /**
      * Returns true when one point-listed primitive describes an axis-aligned
      * rectangle instead of an arbitrary polyline.
      * @param {Record<string, string | string[]>} fields
@@ -113,6 +131,215 @@ export class SchematicPrimitiveParser {
                     ownerIndex:
                         getField(record.fields, 'OwnerIndex') || undefined
                 }
+            })
+            .filter(Boolean)
+    }
+
+    /**
+     * Normalizes record-5 cubic Bezier primitives.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @returns {{ points: { x: number, y: number }[], segments: { start: { x: number, y: number }, control1: { x: number, y: number }, control2: { x: number, y: number }, end: { x: number, y: number } }[], color: string, width: number, lineStyle: number, renderOrder: number, ownerIndex?: string }[]}
+     */
+    static parseSchematicBeziers(records) {
+        return records
+            .map((record, index) => {
+                const points = SchematicPrimitiveParser.#collectPolygonPoints(
+                    record.fields
+                )
+                const segments =
+                    SchematicPrimitiveParser.#buildBezierSegments(points)
+
+                if (!segments.length) {
+                    return null
+                }
+
+                return SchematicPrimitiveParser.#stripUndefined({
+                    points,
+                    segments,
+                    color: toColor(record.fields.Color, '#000000'),
+                    width: parseNumericField(record.fields, 'LineWidth') || 1,
+                    lineStyle:
+                        parseNumericField(record.fields, 'LineStyle') || 0,
+                    renderOrder: SchematicPrimitiveParser.#resolveRenderOrder(
+                        record.fields,
+                        index
+                    ),
+                    ownerIndex:
+                        getField(record.fields, 'OwnerIndex') || undefined
+                })
+            })
+            .filter(Boolean)
+    }
+
+    /**
+     * Normalizes record-9 pie/wedge primitives.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @returns {{ x: number, y: number, radius: number, radiusY: number, startAngle: number, endAngle: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, renderOrder: number, ownerIndex?: string }[]}
+     */
+    static parseSchematicPies(records) {
+        return records
+            .map((record, index) => {
+                const x = parseNumericFieldWithFraction(
+                    record.fields,
+                    'Location.X'
+                )
+                const y = parseNumericFieldWithFraction(
+                    record.fields,
+                    'Location.Y'
+                )
+                const radius = parseNumericFieldWithFraction(
+                    record.fields,
+                    'Radius'
+                )
+                const radiusY =
+                    parseNumericFieldWithFraction(
+                        record.fields,
+                        'SecondaryRadius'
+                    ) ?? radius
+
+                if (
+                    x === null ||
+                    y === null ||
+                    radius === null ||
+                    radius <= 0 ||
+                    radiusY === null ||
+                    radiusY <= 0
+                ) {
+                    return null
+                }
+
+                return SchematicPrimitiveParser.#stripUndefined({
+                    x,
+                    y,
+                    radius,
+                    radiusY,
+                    startAngle:
+                        parseNumericField(record.fields, 'StartAngle') ?? 0,
+                    endAngle:
+                        parseNumericField(record.fields, 'EndAngle') ?? 360,
+                    color: toColor(record.fields.Color, '#000000'),
+                    fill: toColor(record.fields.AreaColor, '#ffffff'),
+                    isSolid: parseBoolean(record.fields.IsSolid),
+                    transparent: parseBoolean(record.fields.Transparent),
+                    lineWidth:
+                        parseNumericField(record.fields, 'LineWidth') || 1,
+                    renderOrder: SchematicPrimitiveParser.#resolveRenderOrder(
+                        record.fields,
+                        index
+                    ),
+                    ownerIndex:
+                        getField(record.fields, 'OwnerIndex') || undefined
+                })
+            })
+            .filter(Boolean)
+    }
+
+    /**
+     * Normalizes record-10 rounded rectangle primitives.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @returns {{ x: number, y: number, width: number, height: number, radius: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, lineStyle: number, renderOrder: number, ownerIndex?: string, recordId?: string }[]}
+     */
+    static parseSchematicRoundedRectangles(records) {
+        return records
+            .map((record, index) => {
+                const x1 = parseNumericField(record.fields, 'Location.X')
+                const y1 = parseNumericField(record.fields, 'Location.Y')
+                const x2 = parseNumericField(record.fields, 'Corner.X')
+                const y2 = parseNumericField(record.fields, 'Corner.Y')
+
+                if (x1 === null || y1 === null || x2 === null || y2 === null) {
+                    return null
+                }
+
+                const width = Math.abs(x2 - x1)
+                const height = Math.abs(y2 - y1)
+
+                return SchematicPrimitiveParser.#stripUndefined({
+                    x: Math.min(x1, x2),
+                    y: Math.min(y1, y2),
+                    width,
+                    height,
+                    radius: SchematicPrimitiveParser.#resolveCornerRadius(
+                        record.fields,
+                        width,
+                        height
+                    ),
+                    color: toColor(record.fields.Color, '#a44a1b'),
+                    fill: toColor(record.fields.AreaColor, '#ffffff'),
+                    isSolid: parseBoolean(record.fields.IsSolid),
+                    transparent: parseBoolean(record.fields.Transparent),
+                    lineWidth:
+                        parseNumericField(record.fields, 'LineWidth') || 1,
+                    lineStyle:
+                        parseNumericField(record.fields, 'LineStyle') || 0,
+                    renderOrder: SchematicPrimitiveParser.#resolveRenderOrder(
+                        record.fields,
+                        index
+                    ),
+                    ownerIndex:
+                        getField(record.fields, 'OwnerIndex') || undefined,
+                    recordId:
+                        getField(record.fields, 'UniqueID') ||
+                        getField(record.fields, 'UniqueId') ||
+                        undefined
+                })
+            })
+            .filter(Boolean)
+    }
+
+    /**
+     * Normalizes record-3 IEEE-style schematic symbol primitives.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @returns {{ x: number, y: number, symbol: number, symbolName: string, size: number, color: string, lineWidth: number, renderOrder: number, ownerIndex?: string, recordId?: string }[]}
+     */
+    static parseSchematicIeeeSymbols(records) {
+        return records
+            .map((record, index) => {
+                const x = parseNumericFieldWithFraction(
+                    record.fields,
+                    'Location.X'
+                )
+                const y = parseNumericFieldWithFraction(
+                    record.fields,
+                    'Location.Y'
+                )
+
+                if (x === null || y === null) {
+                    return null
+                }
+
+                const symbol =
+                    parseNumericField(record.fields, 'Symbol') ??
+                    parseNumericField(record.fields, 'SymbolKind') ??
+                    parseNumericField(record.fields, 'IeeeSymbol') ??
+                    0
+
+                return SchematicPrimitiveParser.#stripUndefined({
+                    x,
+                    y,
+                    symbol,
+                    symbolName:
+                        SchematicPrimitiveParser.#ieeeSymbolName(symbol),
+                    size: Math.max(
+                        parseNumericField(record.fields, 'Size') ||
+                            parseNumericField(record.fields, 'Radius') ||
+                            12,
+                        1
+                    ),
+                    color: toColor(record.fields.Color, '#000000'),
+                    lineWidth:
+                        parseNumericField(record.fields, 'LineWidth') || 1,
+                    renderOrder: SchematicPrimitiveParser.#resolveRenderOrder(
+                        record.fields,
+                        index
+                    ),
+                    ownerIndex:
+                        getField(record.fields, 'OwnerIndex') || undefined,
+                    recordId:
+                        getField(record.fields, 'UniqueID') ||
+                        getField(record.fields, 'UniqueId') ||
+                        undefined
+                })
             })
             .filter(Boolean)
     }
@@ -427,6 +654,80 @@ export class SchematicPrimitiveParser {
         }
 
         return fallbackOrder
+    }
+
+    /**
+     * Builds cubic Bezier spans from Altium's `4 + 3n` point sequence.
+     * @param {{ x: number, y: number }[]} points Source control points.
+     * @returns {{ start: { x: number, y: number }, control1: { x: number, y: number }, control2: { x: number, y: number }, end: { x: number, y: number } }[]}
+     */
+    static #buildBezierSegments(points) {
+        if (!Array.isArray(points) || points.length < 4) {
+            return []
+        }
+
+        const segments = []
+        for (let index = 0; index + 3 < points.length; index += 3) {
+            segments.push({
+                start: points[index],
+                control1: points[index + 1],
+                control2: points[index + 2],
+                end: points[index + 3]
+            })
+        }
+
+        return segments
+    }
+
+    /**
+     * Removes undefined fields from a primitive object.
+     * @param {object} value Source object.
+     * @returns {object}
+     */
+    static #stripUndefined(value) {
+        return Object.fromEntries(
+            Object.entries(value || {}).filter(
+                ([, entryValue]) => entryValue !== undefined
+            )
+        )
+    }
+
+    /**
+     * Resolves a stable rounded-rectangle corner radius.
+     * @param {Record<string, string | string[]>} fields Source fields.
+     * @param {number} width Width in schematic units.
+     * @param {number} height Height in schematic units.
+     * @returns {number}
+     */
+    static #resolveCornerRadius(fields, width, height) {
+        const radius =
+            parseNumericField(fields, 'CornerRadius') ??
+            parseNumericField(fields, 'Radius') ??
+            parseNumericField(fields, 'CornerRadius.X') ??
+            Math.min(width, height) / 5
+
+        return Math.max(Math.min(radius, width / 2, height / 2), 0)
+    }
+
+    /**
+     * Maps native IEEE symbol codes to stable display names.
+     * @param {number} symbol Native symbol code.
+     * @returns {string}
+     */
+    static #ieeeSymbolName(symbol) {
+        return (
+            {
+                1: 'and',
+                2: 'or',
+                3: 'xor',
+                4: 'inverter',
+                5: 'buffer',
+                6: 'clock',
+                7: 'schmitt',
+                8: 'open-collector',
+                9: 'open-emitter'
+            }[Number(symbol)] || 'unknown'
+        )
     }
 
     /**

@@ -174,6 +174,29 @@ test('PcbModelParser resolves board-region substacks and bending lines', () => {
     assert.equal(documentModel.summary.boardRegionCount, 1)
     assert.equal(documentModel.summary.flexRegionCount, 1)
     assert.equal(documentModel.summary.bendingLineCount, 1)
+    assert.deepEqual(documentModel.pcb.statistics.planning, {
+        keepouts: {
+            totalCount: 1,
+            regionCount: 0,
+            shapeBasedRegionCount: 0,
+            boardRegionCount: 1
+        },
+        rooms: {
+            ruleCount: 0,
+            namedRoomCount: 0,
+            names: []
+        },
+        boardRegions: {
+            boardRegionCount: 1,
+            flexRegionCount: 1,
+            rigidRegionCount: 0,
+            locked3dCount: 1,
+            bendingLineCount: 1,
+            layerStacks: {
+                'Flex Tail': 1
+            }
+        }
+    })
     assert.ok(
         documentModel.diagnostics.some(
             (diagnostic) =>

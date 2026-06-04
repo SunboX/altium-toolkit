@@ -43,6 +43,18 @@ test('PcbInteractionIndex respects hidden object categories before choosing an A
     assert.equal(candidate?.componentKey, 'U1')
 })
 
+test('PcbInteractionIndex resolves explicit component ownership before row order', () => {
+    const documentModel = createExplicitComponentIndexDocument()
+    const candidate = PcbInteractionIndex.pick(
+        documentModel,
+        { x: 330, y: 200 },
+        { side: 'top' }
+    )
+
+    assert.equal(candidate?.type, 'pad')
+    assert.equal(candidate?.componentKey, 'U2')
+})
+
 test('PcbInteractionLayerModel separates physical Altium layers from virtual controls', () => {
     const model = PcbInteractionLayerModel.resolve(createDocument())
 
@@ -157,4 +169,48 @@ function createDocument() {
             ]
         }
     }
+}
+
+/**
+ * Builds a fake board where a component's explicit index collides with a
+ * different component's array position.
+ * @returns {object}
+ */
+function createExplicitComponentIndexDocument() {
+    const documentModel = createDocument()
+    documentModel.pcb.tracks = []
+    documentModel.pcb.vias = []
+    documentModel.pcb.regions = []
+    documentModel.pcb.pads = [
+        {
+            x: 330,
+            y: 200,
+            sizeTopX: 40,
+            sizeTopY: 80,
+            rotation: 0,
+            componentIndex: 13,
+            layerId: 1,
+            netName: 'BUS'
+        }
+    ]
+    documentModel.pcb.components = Array.from({ length: 15 }, (_, index) => ({
+        componentIndex: 100 + index,
+        designator: index === 13 ? 'LED1' : 'K' + index,
+        x: 20 + index * 10,
+        y: 20,
+        rotation: 0,
+        layer: 'TOP',
+        pattern: 'SMT_R_0402'
+    }))
+    documentModel.pcb.components.push({
+        componentIndex: 13,
+        designator: 'U2',
+        x: 330,
+        y: 200,
+        rotation: 0,
+        layer: 'TOP',
+        pattern: 'SOP-16'
+    })
+
+    return documentModel
 }

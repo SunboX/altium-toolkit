@@ -19,10 +19,26 @@
             "const": "urn:altium-toolkit:normalized-model:a1"
         },
         "kind": {
-            "enum": ["schematic", "pcb", "pcb-library", "project"]
+            "enum": [
+                "schematic",
+                "pcb",
+                "pcb-library",
+                "project",
+                "project-annotation",
+                "integrated-library",
+                "design-bundle"
+            ]
         },
         "fileType": {
-            "enum": ["SchDoc", "PcbDoc", "PcbLib", "PrjPcb"]
+            "enum": [
+                "SchDoc",
+                "PcbDoc",
+                "PcbLib",
+                "PrjPcb",
+                "Annotation",
+                "IntLib",
+                "ProjectDesignBundle"
+            ]
         },
         "fileName": {
             "type": "string"
@@ -39,6 +55,9 @@
                 "type": "object",
                 "required": ["severity", "message"],
                 "properties": {
+                    "code": {
+                        "type": "string"
+                    },
                     "severity": {
                         "enum": ["info", "warning"]
                     },
@@ -50,16 +69,123 @@
             }
         },
         "schematic": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "recordTypes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/schematicRecordType"
+                    }
+                },
+                "images": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/schematicImage"
+                    }
+                },
+                "roundedRectangles": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "ieeeSymbols": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "renderDiagnostics": {
+                    "$ref": "#/$defs/schematicRenderDiagnostics"
+                },
+                "directiveSemantics": {
+                    "type": "object",
+                    "properties": {
+                        "noErc": {
+                            "type": "array"
+                        },
+                        "parameterSets": {
+                            "type": "array"
+                        },
+                        "differentialPairs": {
+                            "type": "array"
+                        },
+                        "compileMasks": {
+                            "type": "array"
+                        },
+                        "blankets": {
+                            "type": "array"
+                        }
+                    },
+                    "additionalProperties": true
+                },
+                "ownership": {
+                    "$ref": "#/$defs/ownershipSidecar"
+                }
+            },
+            "additionalProperties": true
         },
         "pcb": {
             "type": "object",
             "properties": {
+                "vias": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbVia"
+                    }
+                },
+                "pads": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbPad"
+                    }
+                },
+                "viaStructures": {
+                    "$ref": "#/$defs/pcbViaStructures"
+                },
+                "extendedPrimitiveInformation": {
+                    "$ref": "#/$defs/pcbExtendedPrimitiveInformation"
+                },
+                "customPadShapes": {
+                    "$ref": "#/$defs/pcbCustomPadShapes"
+                },
+                "unions": {
+                    "$ref": "#/$defs/pcbUnions"
+                },
                 "components": {
                     "type": "array",
                     "items": {
                         "$ref": "#/$defs/pcbComponent"
                     }
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbRule"
+                    }
+                },
+                "dimensions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbDimension"
+                    }
+                },
+                "differentialPairs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbDifferentialPair"
+                    }
+                },
+                "differentialPairClasses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbDifferentialPairClass"
+                    }
+                },
+                "pickPlace": {
+                    "$ref": "#/$defs/pickPlaceModel"
                 },
                 "embeddedFonts": {
                     "$ref": "#/$defs/embeddedFonts"
@@ -72,6 +198,17 @@
                 },
                 "boardRegionContexts": {
                     "$ref": "#/$defs/boardRegionContexts"
+                },
+                "mechanicalLayerPairs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "layerFlipMetadata": {
+                    "type": "object",
+                    "additionalProperties": true
                 },
                 "componentPrimitives": {
                     "type": "array",
@@ -92,6 +229,12 @@
                         "$ref": "#/$defs/componentPrimitiveGroup"
                     }
                 },
+                "ownership": {
+                    "$ref": "#/$defs/ownershipSidecar"
+                },
+                "statistics": {
+                    "$ref": "#/$defs/pcbStatistics"
+                },
                 "texts": {
                     "type": "array",
                     "items": {
@@ -107,6 +250,20 @@
                 "embeddedFonts": {
                     "$ref": "#/$defs/embeddedFonts"
                 },
+                "embeddedModels": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "componentBodies": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
                 "footprints": {
                     "type": "array",
                     "items": {
@@ -118,6 +275,12 @@
                         },
                         "additionalProperties": true
                     }
+                },
+                "indexes": {
+                    "$ref": "#/$defs/libraryIndexes"
+                },
+                "renderManifest": {
+                    "$ref": "#/$defs/libraryRenderManifest"
                 }
             },
             "additionalProperties": true
@@ -125,11 +288,55 @@
         "project": {
             "type": "object"
         },
+        "variants": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "sheets": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/designBundleSheet"
+            }
+        },
+        "components": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/designBundleComponent"
+            }
+        },
+        "schematic_hierarchy": {
+            "$ref": "#/$defs/schematicHierarchy"
+        },
+        "nets": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/designBundleNet"
+            }
+        },
+        "indexes": {
+            "$ref": "#/$defs/designBundleIndexes"
+        },
+        "effectiveVariant": {
+            "$ref": "#/$defs/effectiveVariantView"
+        },
+        "annotations": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "integratedLibrary": {
+            "$ref": "#/$defs/integratedLibrary"
+        },
         "bom": {
             "type": "array",
             "items": {
                 "type": "object"
             }
+        },
+        "pnp": {
+            "$ref": "#/$defs/pickPlaceModel"
         }
     },
     "oneOf": [
@@ -176,9 +383,671 @@
                     "const": "PrjPcb"
                 }
             }
+        },
+        {
+            "required": ["annotations"],
+            "properties": {
+                "kind": {
+                    "const": "project-annotation"
+                },
+                "fileType": {
+                    "const": "Annotation"
+                }
+            }
+        },
+        {
+            "required": ["integratedLibrary"],
+            "properties": {
+                "kind": {
+                    "const": "integrated-library"
+                },
+                "fileType": {
+                    "const": "IntLib"
+                }
+            }
+        },
+        {
+            "required": ["project", "sheets", "schematic_hierarchy", "indexes"],
+            "properties": {
+                "kind": {
+                    "const": "design-bundle"
+                },
+                "fileType": {
+                    "const": "ProjectDesignBundle"
+                }
+            }
         }
     ],
     "$defs": {
+        "schematicRecordType": {
+            "type": "object",
+            "required": ["recordType", "name", "family", "supported", "count"],
+            "properties": {
+                "recordType": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "family": {
+                    "type": "string"
+                },
+                "supported": {
+                    "type": "boolean"
+                },
+                "count": {
+                    "type": "number"
+                }
+            },
+            "additionalProperties": true
+        },
+        "ownershipSidecar": {
+            "type": "object",
+            "required": ["schema"],
+            "properties": {
+                "schema": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true
+        },
+        "schematicRenderDiagnostics": {
+            "type": "object",
+            "required": ["schema", "fontFallbacks"],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.schematic.render-diagnostics.a1"
+                },
+                "fontFallbacks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "code",
+                            "severity",
+                            "fontId",
+                            "sourceFamily",
+                            "resolvedFamily",
+                            "message"
+                        ],
+                        "properties": {
+                            "code": {
+                                "const": "schematic.font.family-fallback"
+                            },
+                            "severity": {
+                                "enum": ["warning"]
+                            },
+                            "fontId": {
+                                "type": "string"
+                            },
+                            "sourceFamily": {
+                                "type": "string"
+                            },
+                            "resolvedFamily": {
+                                "type": "string"
+                            },
+                            "message": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "schematicImage": {
+            "type": "object",
+            "required": [
+                "x",
+                "y",
+                "cornerX",
+                "cornerY",
+                "fileName",
+                "embedded",
+                "keepAspect",
+                "mimeType",
+                "dataBase64",
+                "renderOrder",
+                "diagnosticState"
+            ],
+            "properties": {
+                "x": {
+                    "type": "number"
+                },
+                "y": {
+                    "type": "number"
+                },
+                "cornerX": {
+                    "type": "number"
+                },
+                "cornerY": {
+                    "type": "number"
+                },
+                "fileName": {
+                    "type": "string"
+                },
+                "embedded": {
+                    "type": "boolean"
+                },
+                "keepAspect": {
+                    "type": "boolean"
+                },
+                "mimeType": {
+                    "type": "string"
+                },
+                "sourceMimeType": {
+                    "type": "string"
+                },
+                "nativeClass": {
+                    "type": "string"
+                },
+                "hasAlpha": {
+                    "type": "boolean"
+                },
+                "dataBase64": {
+                    "type": "string"
+                },
+                "renderOrder": {
+                    "type": "number"
+                },
+                "diagnosticState": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true
+        },
+        "holeTolerance": {
+            "type": "object",
+            "properties": {
+                "positive": {
+                    "type": "number"
+                },
+                "negative": {
+                    "type": "number"
+                }
+            },
+            "additionalProperties": false
+        },
+        "pcbVia": {
+            "type": "object",
+            "properties": {
+                "positiveTolerance": {
+                    "type": "number"
+                },
+                "negativeTolerance": {
+                    "type": "number"
+                },
+                "holeTolerance": {
+                    "$ref": "#/$defs/holeTolerance"
+                },
+                "propagationDelayPs": {
+                    "type": "number"
+                },
+                "viaStructureIndex": {
+                    "type": "number"
+                },
+                "ipc4761Type": {
+                    "type": ["number", "string"]
+                },
+                "viaProtection": {
+                    "$ref": "#/$defs/pcbViaProtection"
+                },
+                "drill": {
+                    "$ref": "#/$defs/drillMetadata"
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbPad": {
+            "type": "object",
+            "properties": {
+                "positiveTolerance": {
+                    "type": "number"
+                },
+                "negativeTolerance": {
+                    "type": "number"
+                },
+                "holeTolerance": {
+                    "$ref": "#/$defs/holeTolerance"
+                },
+                "customShape": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "extendedPrimitiveInformation": {
+                    "$ref": "#/$defs/pcbExtendedPrimitiveInformationEntry"
+                }
+            },
+            "additionalProperties": true
+        },
+        "drillMetadata": {
+            "type": "object",
+            "properties": {
+                "holeKind": {
+                    "enum": ["pad", "via"]
+                },
+                "plating": {
+                    "enum": ["plated", "non-plated"]
+                },
+                "renderState": {
+                    "enum": ["open", "covered", "filled", "capped"]
+                },
+                "ipc4761Type": {
+                    "type": ["number", "string"]
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbDimension": {
+            "type": "object",
+            "required": [
+                "dimensionIndex",
+                "kind",
+                "kindCode",
+                "references",
+                "raw"
+            ],
+            "properties": {
+                "dimensionIndex": {
+                    "type": "number"
+                },
+                "kind": {
+                    "enum": [
+                        "linear",
+                        "angular",
+                        "radial",
+                        "datum",
+                        "baseline",
+                        "ordinate"
+                    ]
+                },
+                "kindCode": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "layer": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "prefix": {
+                    "type": "string"
+                },
+                "suffix": {
+                    "type": "string"
+                },
+                "precision": {
+                    "type": ["number", "null"]
+                },
+                "measuredValue": {
+                    "type": ["number", "null"]
+                },
+                "angleValue": {
+                    "type": ["number", "null"]
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "references": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/indexedPoint"
+                    }
+                },
+                "textLocation": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/point"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "raw": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true
+        },
+        "point": {
+            "type": "object",
+            "required": ["x", "y"],
+            "properties": {
+                "x": {
+                    "type": "number"
+                },
+                "y": {
+                    "type": "number"
+                }
+            },
+            "additionalProperties": true
+        },
+        "indexedPoint": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/point"
+                },
+                {
+                    "type": "object",
+                    "required": ["index"],
+                    "properties": {
+                        "index": {
+                            "type": "number"
+                        }
+                    },
+                    "additionalProperties": true
+                }
+            ]
+        },
+        "pcbExtendedPrimitiveInformation": {
+            "type": "object",
+            "required": ["entries", "byPrimitiveIndex", "byPrimitiveKey"],
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbExtendedPrimitiveInformationEntry"
+                    }
+                },
+                "byPrimitiveIndex": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/$defs/pcbExtendedPrimitiveInformationEntry"
+                    }
+                },
+                "byPrimitiveKey": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/$defs/pcbExtendedPrimitiveInformationEntry"
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbExtendedPrimitiveInformationEntry": {
+            "type": "object",
+            "required": [
+                "primitiveIndex",
+                "primitiveObjectId",
+                "sourceStream",
+                "maskExpansion"
+            ],
+            "properties": {
+                "primitiveIndex": {
+                    "type": "number"
+                },
+                "primitiveObjectId": {
+                    "type": ["number", "null"]
+                },
+                "primitiveType": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "sourceStream": {
+                    "const": "ExtendedPrimitiveInformation/Data"
+                },
+                "maskExpansion": {
+                    "type": "object",
+                    "properties": {
+                        "paste": {
+                            "$ref": "#/$defs/pcbMaskExpansionSidecar"
+                        },
+                        "solder": {
+                            "$ref": "#/$defs/pcbMaskExpansionSidecar"
+                        }
+                    },
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbMaskExpansionSidecar": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": ["number", "null"]
+                },
+                "source": {
+                    "type": "string"
+                },
+                "manualExpansion": {
+                    "type": ["number", "null"]
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbCustomPadShapes": {
+            "type": "object",
+            "required": ["entries", "byPrimitiveIndex"],
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "byPrimitiveIndex": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array"
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbUnions": {
+            "type": "object",
+            "required": [
+                "userUnions",
+                "smartUnions",
+                "byIndex",
+                "smartByIndex",
+                "membersByPrimitiveKey"
+            ],
+            "properties": {
+                "userUnions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbUserUnion"
+                    }
+                },
+                "smartUnions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbSmartUnion"
+                    }
+                },
+                "byIndex": {
+                    "type": "object"
+                },
+                "smartByIndex": {
+                    "type": "object"
+                },
+                "membersByPrimitiveKey": {
+                    "type": "object"
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbUserUnion": {
+            "type": "object",
+            "required": ["index", "name", "sourceStream"],
+            "properties": {
+                "index": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sourceStream": {
+                    "const": "UnionNames/Data"
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbSmartUnion": {
+            "type": "object",
+            "required": [
+                "index",
+                "name",
+                "type",
+                "typeName",
+                "sourceStream",
+                "members"
+            ],
+            "properties": {
+                "index": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": ["number", "string"]
+                },
+                "typeName": {
+                    "type": "string"
+                },
+                "sourceStream": {
+                    "const": "SmartUnions/Data"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbSmartUnionMember"
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbSmartUnionMember": {
+            "type": "object",
+            "required": ["primitiveObjectId", "primitiveIndex"],
+            "properties": {
+                "primitiveObjectId": {
+                    "type": "number"
+                },
+                "primitiveIndex": {
+                    "type": "number"
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbViaStructures": {
+            "type": "object",
+            "required": ["structures", "links", "byPrimitiveIndex"],
+            "properties": {
+                "structures": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbViaStructure"
+                    }
+                },
+                "links": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbViaStructureLink"
+                    }
+                },
+                "byPrimitiveIndex": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/$defs/pcbViaProtection"
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbViaStructure": {
+            "type": "object",
+            "required": ["index", "sourceStream", "features"],
+            "properties": {
+                "index": {
+                    "type": "number"
+                },
+                "ipc4761Type": {
+                    "type": ["number", "string"]
+                },
+                "structureType": {
+                    "type": ["number", "string"]
+                },
+                "sourceStream": {
+                    "type": "string"
+                },
+                "features": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbViaProtectionFeature"
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbViaStructureLink": {
+            "type": "object",
+            "required": ["primitiveIndex", "viaStructureIndex", "sourceStream"],
+            "properties": {
+                "primitiveIndex": {
+                    "type": "number"
+                },
+                "viaStructureIndex": {
+                    "type": "number"
+                },
+                "sourceStream": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbViaProtection": {
+            "type": "object",
+            "properties": {
+                "viaStructureIndex": {
+                    "type": "number"
+                },
+                "ipc4761Type": {
+                    "type": ["number", "string"]
+                },
+                "structureType": {
+                    "type": ["number", "string"]
+                },
+                "features": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pcbViaProtectionFeature"
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbViaProtectionFeature": {
+            "type": "object",
+            "required": ["index", "type", "side", "material"],
+            "properties": {
+                "index": {
+                    "type": "number"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "side": {
+                    "type": "string"
+                },
+                "material": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true
+        },
         "rawRecords": {
             "type": "array",
             "items": {
@@ -315,6 +1184,346 @@
                 },
                 "height": {
                     "type": ["number", "null"]
+                },
+                "provenance": {
+                    "$ref": "#/$defs/pcbComponentProvenance"
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbComponentProvenance": {
+            "type": "object",
+            "properties": {
+                "channelOffset": {
+                    "type": "number"
+                },
+                "sourceDesignator": {
+                    "type": "string"
+                },
+                "sourceUniqueId": {
+                    "type": "string"
+                },
+                "sourceUniqueIdSegments": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sourceHierarchicalPath": {
+                    "type": "string"
+                },
+                "sourceHierarchySegments": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sourceFootprintLibrary": {
+                    "type": "string"
+                },
+                "sourceFootprintLibraryName": {
+                    "type": "string"
+                },
+                "sourceLibReference": {
+                    "type": "string"
+                },
+                "sourceComponentLibrary": {
+                    "type": "string"
+                },
+                "sourceComponentLibraryIdentifierKind": {
+                    "type": "number"
+                },
+                "sourceComponentLibraryIdentifier": {
+                    "type": "string"
+                },
+                "footprintDescription": {
+                    "type": "string"
+                },
+                "nameAutoPosition": {
+                    "type": "number"
+                },
+                "commentAutoPosition": {
+                    "type": "number"
+                },
+                "lockStrings": {
+                    "type": "boolean"
+                },
+                "enablePinSwapping": {
+                    "type": "boolean"
+                },
+                "enablePartSwapping": {
+                    "type": "boolean"
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbRule": {
+            "type": "object",
+            "required": [
+                "ruleIndex",
+                "name",
+                "ruleKind",
+                "ruleType",
+                "constraints",
+                "constraintValues",
+                "typedConstraints"
+            ],
+            "properties": {
+                "ruleIndex": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "ruleKind": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": ["boolean", "null"]
+                },
+                "priority": {
+                    "type": ["number", "null"]
+                },
+                "uniqueId": {
+                    "type": "string"
+                },
+                "scope1": {
+                    "$ref": "#/$defs/pcbRuleScope"
+                },
+                "scope2": {
+                    "$ref": "#/$defs/pcbRuleScope"
+                },
+                "ruleType": {
+                    "$ref": "#/$defs/pcbRuleType"
+                },
+                "constraints": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "constraintValues": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "typedConstraints": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbRuleScope": {
+            "type": "object",
+            "required": ["rawExpression", "predicate", "arguments", "isAll"],
+            "properties": {
+                "rawExpression": {
+                    "type": "string"
+                },
+                "predicate": {
+                    "type": "string"
+                },
+                "arguments": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "isAll": {
+                    "type": "boolean"
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbRuleType": {
+            "type": "object",
+            "required": ["rawKind", "kind", "category", "displayName"],
+            "properties": {
+                "rawKind": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "displayName": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbDifferentialPair": {
+            "type": "object",
+            "required": [
+                "pairIndex",
+                "name",
+                "positiveNetName",
+                "negativeNetName",
+                "netNames",
+                "gatherControl",
+                "classNames"
+            ],
+            "properties": {
+                "pairIndex": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "positiveNetName": {
+                    "type": "string"
+                },
+                "negativeNetName": {
+                    "type": "string"
+                },
+                "netNames": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "gatherControl": {
+                    "type": "boolean"
+                },
+                "uniqueId": {
+                    "type": "string"
+                },
+                "classNames": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbDifferentialPairClass": {
+            "type": "object",
+            "required": [
+                "classIndex",
+                "name",
+                "members",
+                "pairNames",
+                "unresolvedMembers"
+            ],
+            "properties": {
+                "classIndex": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "pairNames": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "unresolvedMembers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pickPlaceModel": {
+            "type": "object",
+            "required": ["positionMode", "entries", "modes"],
+            "properties": {
+                "positionMode": {
+                    "enum": ["altium-pick-place", "component-origin"]
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/pickPlaceEntry"
+                    }
+                },
+                "modes": {
+                    "type": "object",
+                    "properties": {
+                        "componentOrigin": {
+                            "type": "object",
+                            "required": ["positionMode", "entries"],
+                            "properties": {
+                                "positionMode": {
+                                    "const": "component-origin"
+                                },
+                                "entries": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/$defs/pickPlaceEntry"
+                                    }
+                                }
+                            },
+                            "additionalProperties": true
+                        }
+                    },
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true
+        },
+        "pickPlaceEntry": {
+            "type": "object",
+            "required": [
+                "designator",
+                "pattern",
+                "layer",
+                "rotation",
+                "x",
+                "y",
+                "componentOriginX",
+                "componentOriginY",
+                "padAnchorCount",
+                "positionSource"
+            ],
+            "properties": {
+                "designator": {
+                    "type": "string"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "layer": {
+                    "type": "string"
+                },
+                "rotation": {
+                    "type": "number"
+                },
+                "x": {
+                    "type": "number"
+                },
+                "y": {
+                    "type": "number"
+                },
+                "componentOriginX": {
+                    "type": "number"
+                },
+                "componentOriginY": {
+                    "type": "number"
+                },
+                "padAnchorCount": {
+                    "type": "number"
+                },
+                "positionSource": {
+                    "type": "string"
                 }
             },
             "additionalProperties": true
@@ -324,6 +1533,16 @@
             "properties": {
                 "text": {
                     "type": "string"
+                },
+                "rawText": {
+                    "type": "string"
+                },
+                "resolvedText": {
+                    "type": "string"
+                },
+                "specialString": {
+                    "type": "object",
+                    "additionalProperties": true
                 },
                 "textSource": {
                     "const": "WideStrings6/Data"
@@ -544,6 +1763,344 @@
                 },
                 "componentBodies": {
                     "type": "array"
+                }
+            },
+            "additionalProperties": true
+        },
+        "designBundleSheet": {
+            "type": "object",
+            "required": ["bundleIndex", "fileName", "title"],
+            "properties": {
+                "bundleIndex": {
+                    "type": "number"
+                },
+                "fileName": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "documentPath": {
+                    "type": "string"
+                },
+                "uniqueId": {
+                    "type": "string"
+                },
+                "componentCount": {
+                    "type": "number"
+                },
+                "netCount": {
+                    "type": "number"
+                }
+            },
+            "additionalProperties": true
+        },
+        "designBundleComponent": {
+            "type": "object",
+            "required": ["bundleIndex", "designator"],
+            "properties": {
+                "bundleIndex": {
+                    "type": "number"
+                },
+                "designator": {
+                    "type": "string"
+                },
+                "schematic": {
+                    "type": ["object", "null"],
+                    "additionalProperties": true
+                },
+                "pcb": {
+                    "type": ["object", "null"],
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true
+        },
+        "schematicHierarchy": {
+            "type": "object",
+            "required": ["mode", "modeName", "sheets", "sheetSymbols"],
+            "properties": {
+                "mode": {
+                    "type": "string"
+                },
+                "modeName": {
+                    "type": "string"
+                },
+                "sheets": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "sheetSymbols": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "designBundleNet": {
+            "type": "object",
+            "required": ["bundleIndex", "name", "schematic", "pcb", "pins"],
+            "properties": {
+                "bundleIndex": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "schematic": {
+                    "type": "array"
+                },
+                "pcb": {
+                    "type": "array"
+                },
+                "pins": {
+                    "type": "array"
+                }
+            },
+            "additionalProperties": true
+        },
+        "designBundleIndexes": {
+            "type": "object",
+            "properties": {
+                "documentsByPath": {
+                    "type": "object"
+                },
+                "sheetsByFileName": {
+                    "type": "object"
+                },
+                "componentsByDesignator": {
+                    "type": "object"
+                },
+                "netsByName": {
+                    "type": "object"
+                },
+                "pnpByDesignator": {
+                    "type": "object"
+                }
+            },
+            "additionalProperties": true
+        },
+        "effectiveVariantView": {
+            "type": "object",
+            "required": [
+                "name",
+                "dnp",
+                "parameterOverrides",
+                "bom",
+                "pnp",
+                "nets",
+                "components"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "uniqueId": {
+                    "type": "string"
+                },
+                "dnp": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "parameterOverrides": {
+                    "type": "object"
+                },
+                "bom": {
+                    "type": "array"
+                },
+                "pnp": {
+                    "$ref": "#/$defs/pickPlaceModel"
+                },
+                "nets": {
+                    "type": "array"
+                },
+                "components": {
+                    "type": "array"
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbStatistics": {
+            "type": "object",
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.pcb.statistics.a1"
+                },
+                "board": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "drills": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "primitiveWidths": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "layers": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "planning": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true
+        },
+        "libraryRenderManifest": {
+            "type": "object",
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.library.render-manifest.a1"
+                },
+                "libraryKind": {
+                    "enum": ["schematic-symbols", "pcb-footprints"]
+                },
+                "outputs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "embeddedAssets": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "libraryIndexes": {
+            "type": "object",
+            "properties": {
+                "footprintsByName": {
+                    "type": "object"
+                }
+            },
+            "additionalProperties": true
+        },
+        "integratedLibraryIndexes": {
+            "type": "object",
+            "properties": {
+                "sourcesByFileName": {
+                    "type": "object"
+                },
+                "sourcesByKind": {
+                    "type": "object"
+                },
+                "modelsByComponent": {
+                    "type": "object"
+                },
+                "symbolsByComponent": {
+                    "type": "object"
+                },
+                "footprintsByComponent": {
+                    "type": "object"
+                }
+            },
+            "additionalProperties": true
+        },
+        "integratedLibrary": {
+            "type": "object",
+            "required": [
+                "version",
+                "streamNames",
+                "crossReferences",
+                "parameters",
+                "parameterRecords",
+                "sources"
+            ],
+            "properties": {
+                "version": {
+                    "type": "string"
+                },
+                "streamNames": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "crossReferences": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "parameterRecords": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "indexes": {
+                    "$ref": "#/$defs/integratedLibraryIndexes"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/integratedLibrarySource"
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "integratedLibrarySource": {
+            "type": "object",
+            "required": [
+                "path",
+                "fileName",
+                "fileType",
+                "libraryKind",
+                "compression",
+                "byteLength",
+                "payloadBase64",
+                "payloadText"
+            ],
+            "properties": {
+                "path": {
+                    "type": "string"
+                },
+                "fileName": {
+                    "type": "string"
+                },
+                "fileType": {
+                    "type": "string"
+                },
+                "libraryKind": {
+                    "type": "string"
+                },
+                "compression": {
+                    "enum": ["none", "zlib", "zlib-wrapper"]
+                },
+                "byteLength": {
+                    "type": "number"
+                },
+                "payloadBase64": {
+                    "type": "string"
+                },
+                "payloadText": {
+                    "type": "string"
                 }
             },
             "additionalProperties": true

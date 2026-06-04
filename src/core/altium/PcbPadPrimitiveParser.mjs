@@ -35,19 +35,18 @@ export class PcbPadPrimitiveParser {
             return []
         }
 
-        let offset = 0
+        const records = PcbPadPrimitiveParser.#readPadRecordSequence(
+            normalizedData,
+            0,
+            count
+        )
         const pads = []
 
-        for (let index = 0; index < count; index += 1) {
-            const record = PcbPadPrimitiveParser.#readPadRecordAt(
-                normalizedData,
-                offset
-            )
+        if (!records) {
+            return []
+        }
 
-            if (!record) {
-                return []
-            }
-
+        for (const record of records) {
             const pad = PcbPadPrimitiveParser.#parsePadSubrecords(
                 record.subrecords
             )
@@ -57,25 +56,69 @@ export class PcbPadPrimitiveParser {
             }
 
             pads.push(pad)
-            offset = record.nextOffset
-
-            if (index < count - 1) {
-                const nextOffset =
-                    PcbPadPrimitiveParser.#findNextPadRecordOffset(
-                        normalizedData,
-                        offset,
-                        count - index - 1
-                    )
-
-                if (nextOffset === null) {
-                    return []
-                }
-
-                offset = nextOffset
-            }
         }
 
         return pads
+    }
+
+    /**
+     * Reads all expected pad records without recursive suffix validation.
+     * @param {Uint8Array} bytes
+     * @param {number} offset
+     * @param {number} count
+     * @returns {{ subrecords: DataView[], nextOffset: number }[] | null}
+     */
+    static #readPadRecordSequence(bytes, offset, count) {
+        const firstRecord = PcbPadPrimitiveParser.#readPadRecordAt(
+            bytes,
+            offset
+        )
+
+        if (!firstRecord) {
+            return null
+        }
+
+        const records = [firstRecord]
+        const alternativeScanOffsets = [null]
+        let depth = 1
+        let scanOffset = firstRecord.nextOffset
+
+        while (depth < count) {
+            const candidate = PcbPadPrimitiveParser.#findNextPadRecordCandidate(
+                bytes,
+                scanOffset
+            )
+
+            if (!candidate) {
+                let foundAlternative = false
+
+                while (depth > 1 && !foundAlternative) {
+                    depth -= 1
+                    records.length = depth
+
+                    const alternativeOffset = alternativeScanOffsets[depth]
+                    alternativeScanOffsets.length = depth
+
+                    if (alternativeOffset !== null) {
+                        scanOffset = alternativeOffset
+                        foundAlternative = true
+                    }
+                }
+
+                if (!foundAlternative) {
+                    return null
+                }
+
+                continue
+            }
+
+            records[depth] = candidate.record
+            alternativeScanOffsets[depth] = candidate.alternativeOffset
+            depth += 1
+            scanOffset = candidate.record.nextOffset
+        }
+
+        return records
     }
 
     /**
@@ -149,30 +192,27 @@ export class PcbPadPrimitiveParser {
     }
 
     /**
-     * Finds the next pad record boundary after optional unknown subrecords.
+     * Finds the next readable pad record after optional unknown subrecords.
      * @param {Uint8Array} bytes
      * @param {number} offset
-     * @param {number} remainingCount
-     * @returns {number | null}
+     * @returns {{ record: { subrecords: DataView[], nextOffset: number }, alternativeOffset: number | null } | null}
      */
-    static #findNextPadRecordOffset(bytes, offset, remainingCount) {
+    static #findNextPadRecordCandidate(bytes, offset) {
         let cursor = offset
 
         while (cursor < bytes.byteLength) {
-            if (
-                PcbPadPrimitiveParser.#canReadPadRecordSequence(
-                    bytes,
-                    cursor,
-                    remainingCount
-                )
-            ) {
-                return cursor
-            }
-
+            const record = PcbPadPrimitiveParser.#readPadRecordAt(bytes, cursor)
             const unknownSubrecord = PcbPadPrimitiveParser.#readSubrecordAt(
                 bytes,
                 cursor
             )
+
+            if (record) {
+                return {
+                    record,
+                    alternativeOffset: unknownSubrecord?.nextOffset ?? null
+                }
+            }
 
             if (!unknownSubrecord) {
                 return null
@@ -182,33 +222,6 @@ export class PcbPadPrimitiveParser {
         }
 
         return null
-    }
-
-    /**
-     * Checks whether the remaining pad records can be read from an offset.
-     * @param {Uint8Array} bytes
-     * @param {number} offset
-     * @param {number} remainingCount
-     * @returns {boolean}
-     */
-    static #canReadPadRecordSequence(bytes, offset, remainingCount) {
-        const record = PcbPadPrimitiveParser.#readPadRecordAt(bytes, offset)
-
-        if (!record) {
-            return false
-        }
-
-        if (remainingCount <= 1) {
-            return true
-        }
-
-        return (
-            PcbPadPrimitiveParser.#findNextPadRecordOffset(
-                bytes,
-                record.nextOffset,
-                remainingCount - 1
-            ) !== null
-        )
     }
 
     /**

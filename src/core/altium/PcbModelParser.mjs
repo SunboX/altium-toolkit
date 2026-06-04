@@ -8,8 +8,17 @@ import { PcbBoardRegionSemanticsParser } from './PcbBoardRegionSemanticsParser.m
 import { PcbComponentAnnotationNormalizer } from './PcbComponentAnnotationNormalizer.mjs'
 import { PcbComponentBodyPlacementNormalizer } from './PcbComponentBodyPlacementNormalizer.mjs'
 import { PcbComponentPrimitiveIndexer } from './PcbComponentPrimitiveIndexer.mjs'
+import { PcbCustomPadShapeParser } from './PcbCustomPadShapeParser.mjs'
+import { PcbDimensionParser } from './PcbDimensionParser.mjs'
+import { PcbMechanicalLayerPairParser } from './PcbMechanicalLayerPairParser.mjs'
+import { PcbDefaultsParser } from './PcbDefaultsParser.mjs'
+import { PcbMaskPasteResolver } from './PcbMaskPasteResolver.mjs'
 import { PcbOutlineRecovery } from './PcbOutlineRecovery.mjs'
+import { PcbOwnershipGraphBuilder } from './PcbOwnershipGraphBuilder.mjs'
+import { PcbPickPlacePositionResolver } from './PcbPickPlacePositionResolver.mjs'
 import { PcbRuleParser } from './PcbRuleParser.mjs'
+import { PcbSpecialStringResolver } from './PcbSpecialStringResolver.mjs'
+import { PcbStatisticsBuilder } from './PcbStatisticsBuilder.mjs'
 import { ParserUtils } from './ParserUtils.mjs'
 
 const {
@@ -33,7 +42,7 @@ export class PcbModelParser {
      * resolved primitive netName fields keyed by numeric netIndex values.
      * @param {string} fileName
      * @param {{ raw: string, fields: Record<string, string | string[]>, sourceStream?: string }[]} records
-     * @param {{ streamNames: string[], binaryPrimitives: Record<string, object[]>, primitiveParameters?: object, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } } | null} pcbExtraction
+     * @param {{ streamNames: string[], binaryPrimitives: Record<string, object[]>, primitiveParameters?: object, viaStructures?: object, customPadShapes?: object, extendedPrimitiveInformation?: object, unions?: object, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } } | null} pcbExtraction
      * @returns {{ schema: string, kind: 'pcb', fileType: 'PcbDoc', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], pcb: Record<string, unknown>, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
      */
     static parse(fileName, records, pcbExtraction = null) {
@@ -93,11 +102,27 @@ export class PcbModelParser {
         const primitiveLayers = AltiumLayoutParser.parsePrimitiveLayerNames(
             boardRecords.map((record) => record.fields)
         )
+        const mechanicalLayerPairs = PcbMechanicalLayerPairParser.parse(
+            boardRecords.map((record) => record.fields),
+            layers,
+            primitiveLayers
+        )
+        const layerFlipMetadata =
+            PcbMechanicalLayerPairParser.buildFlipMetadata(mechanicalLayerPairs)
         const appearance3d = PcbModelParser.#parseAppearance3d(boardRecords)
         const nets = PcbModelParser.#parseNetRecords(records)
         const netNameByIndex = PcbModelParser.#buildNetNameMap(nets)
         const classes = PcbModelParser.#parseClassRecords(records)
+        const differentialPairData = PcbModelParser.#buildDifferentialPairData(
+            PcbModelParser.#parseDifferentialPairRecords(records),
+            classes
+        )
         const rules = PcbRuleParser.parse(records)
+        const defaults = PcbDefaultsParser.parse(
+            boardRecord?.fields || {},
+            'pcb-document'
+        )
+        const dimensions = PcbDimensionParser.parse(records)
         const polygons = polygonRecords
             .map((record) => ({
                 layer: getField(record.fields, 'LAYER') || 'UNKNOWN',
@@ -155,15 +180,50 @@ export class PcbModelParser {
         )
             ? pcbExtraction.embeddedFonts.fonts
             : []
+        const embeddedFiles = pcbExtraction?.embeddedFiles || {
+            schema: 'altium-toolkit.embedded-files.a1',
+            files: [],
+            diagnostics: []
+        }
+        const embeddedModelIntegrity = pcbExtraction?.embeddedModels
+            ?.integrity || {
+            schema: 'altium-toolkit.pcb.embedded-model-integrity.a1',
+            issues: []
+        }
         const rawRecords = Array.isArray(pcbExtraction?.rawRecords)
             ? pcbExtraction.rawRecords
             : []
-        const texts = PcbModelParser.#annotateTextFontMetrics(
-            PcbComponentAnnotationNormalizer.normalizeTexts(
-                rawTextPrimitives,
-                rawComponentRecords
+        const viaStructures = pcbExtraction?.viaStructures || {
+            structures: [],
+            links: [],
+            byPrimitiveIndex: {}
+        }
+        const customPadShapes = pcbExtraction?.customPadShapes || {
+            entries: [],
+            byPrimitiveIndex: {}
+        }
+        const extendedPrimitiveInformation =
+            pcbExtraction?.extendedPrimitiveInformation || {
+                entries: [],
+                byPrimitiveIndex: {},
+                byPrimitiveKey: {}
+            }
+        const unions = pcbExtraction?.unions || {
+            userUnions: [],
+            smartUnions: [],
+            byIndex: {},
+            smartByIndex: {},
+            membersByPrimitiveKey: {}
+        }
+        const texts = PcbSpecialStringResolver.annotateTexts(
+            PcbModelParser.#annotateTextFontMetrics(
+                PcbComponentAnnotationNormalizer.normalizeTexts(
+                    rawTextPrimitives,
+                    rawComponentRecords
+                ),
+                extractedEmbeddedFonts
             ),
-            extractedEmbeddedFonts
+            pcbExtraction?.specialStringParameters || {}
         )
         const recoveredOutline = PcbOutlineRecovery.recoverOutline({
             fallbackOutline: fallbackBoardOutline,
@@ -185,6 +245,11 @@ export class PcbModelParser {
             texts,
             components: componentRecords
         })
+        PcbCustomPadShapeParser.attachToPads(
+            normalizedPcb.pads,
+            customPadShapes,
+            normalizedPcb
+        )
         const boardRegionContexts =
             PcbBoardRegionSemanticsParser.buildBoardRegionContexts(
                 normalizedPcb.boardRegions
@@ -207,6 +272,27 @@ export class PcbModelParser {
         const componentPrimitives = PcbComponentPrimitiveIndexer.indexGroups(
             componentPrimitiveGroups
         )
+        const ownership = PcbOwnershipGraphBuilder.build({
+            ...normalizedPcb,
+            nets
+        })
+        const pnp = PcbPickPlacePositionResolver.buildModel(
+            normalizedPcb.components,
+            componentPrimitiveGroups,
+            { sourceComponents: componentRecords }
+        )
+        const statistics = PcbStatisticsBuilder.build({
+            ...normalizedPcb,
+            layers,
+            primitiveLayers,
+            rules
+        })
+        const maskPaste = PcbMaskPasteResolver.build({
+            pads: normalizedPcb.pads,
+            vias: normalizedPcb.vias,
+            rules,
+            defaults
+        })
         const bom = PcbModelParser.#groupBomRows(
             componentRecords.map((component) => ({
                 designator: component.designator,
@@ -325,6 +411,38 @@ export class PcbModelParser {
             })
         }
 
+        if (embeddedFiles.files.length) {
+            diagnostics.push({
+                severity: 'info',
+                message:
+                    'Inventoried ' +
+                    embeddedFiles.files.length +
+                    ' generic embedded payload ' +
+                    PcbModelParser.#plural(
+                        embeddedFiles.files.length,
+                        'stream',
+                        'streams'
+                    ) +
+                    '.'
+            })
+        }
+
+        for (const issue of embeddedModelIntegrity.issues || []) {
+            diagnostics.push({
+                severity: issue.severity === 'info' ? 'info' : 'warning',
+                code: issue.code,
+                message: issue.message
+            })
+        }
+
+        for (const issue of embeddedFiles.diagnostics || []) {
+            diagnostics.push({
+                severity: issue.severity === 'info' ? 'info' : 'warning',
+                code: issue.code,
+                message: issue.message
+            })
+        }
+
         if (rawRecords.length) {
             diagnostics.push({
                 severity: 'info',
@@ -332,6 +450,54 @@ export class PcbModelParser {
                     'Preserved ' +
                     rawRecords.length +
                     ' raw PCB primitive records.'
+            })
+        }
+
+        if (viaStructures.structures?.length) {
+            diagnostics.push({
+                severity: 'info',
+                message:
+                    'Recovered ' +
+                    viaStructures.structures.length +
+                    ' PCB via protection structure ' +
+                    PcbModelParser.#plural(
+                        viaStructures.structures.length,
+                        'definition',
+                        'definitions'
+                    ) +
+                    '.'
+            })
+        }
+
+        if (extendedPrimitiveInformation.entries?.length) {
+            diagnostics.push({
+                severity: 'info',
+                message:
+                    'Recovered ' +
+                    extendedPrimitiveInformation.entries.length +
+                    ' extended PCB primitive information records.'
+            })
+        }
+
+        if (customPadShapes.entries?.length) {
+            diagnostics.push({
+                severity: 'info',
+                message:
+                    'Recovered ' +
+                    customPadShapes.entries.length +
+                    ' custom pad shape sidecar records.'
+            })
+        }
+
+        if (unions.userUnions?.length || unions.smartUnions?.length) {
+            diagnostics.push({
+                severity: 'info',
+                message:
+                    'Recovered ' +
+                    unions.userUnions.length +
+                    ' user unions and ' +
+                    unions.smartUnions.length +
+                    ' smart unions.'
             })
         }
 
@@ -373,15 +539,30 @@ export class PcbModelParser {
                 bomRowCount: bom.length,
                 netCount: nets.length,
                 classCount: classes.length,
+                differentialPairCount:
+                    differentialPairData.differentialPairs.length,
+                differentialPairClassCount:
+                    differentialPairData.differentialPairClasses.length,
                 ruleCount: rules.length,
+                dimensionCount: dimensions.length,
+                mechanicalLayerPairCount: mechanicalLayerPairs.length,
                 polygonCount: polygons.length,
                 trackCount: tracks.length,
                 arcCount: arcs.length,
                 viaCount: vias.length,
+                viaStructureCount: viaStructures.structures?.length || 0,
+                extendedPrimitiveInformationCount:
+                    extendedPrimitiveInformation.entries?.length || 0,
+                customPadShapeCount: customPadShapes.entries?.length || 0,
+                userUnionCount: unions.userUnions?.length || 0,
+                smartUnionCount: unions.smartUnions?.length || 0,
                 boardRegionCount: boardRegionSummary.boardRegionCount,
                 flexRegionCount: boardRegionSummary.flexRegionCount,
                 bendingLineCount: boardRegionSummary.bendingLineCount,
+                embeddedModelIssueCount:
+                    embeddedModelIntegrity.issues?.length || 0,
                 embeddedFontCount: extractedEmbeddedFonts.length,
+                embeddedFileCount: embeddedFiles.files.length,
                 rawRecordCount: rawRecords.length,
                 boardWidthMil: Math.round(boardOutline.widthMil),
                 boardHeightMil: Math.round(boardOutline.heightMil)
@@ -391,30 +572,48 @@ export class PcbModelParser {
                 boardOutline: normalizedPcb.boardOutline,
                 layers,
                 layerSubstacks,
+                mechanicalLayerPairs,
+                layerFlipMetadata,
                 boardRegionContexts,
                 primitiveLayers,
                 appearance3d,
                 nets,
                 classes,
+                differentialPairs: differentialPairData.differentialPairs,
+                differentialPairClasses:
+                    differentialPairData.differentialPairClasses,
                 rules,
+                ...(defaults ? { defaults } : {}),
+                maskPaste,
+                dimensions,
                 components: normalizedPcb.components,
+                pickPlace: pnp,
                 polygons: normalizedPcb.polygons,
                 fills: normalizedPcb.fills,
                 tracks: normalizedPcb.tracks,
                 arcs: normalizedPcb.arcs,
                 vias: normalizedPcb.vias,
+                viaStructures,
+                extendedPrimitiveInformation,
+                customPadShapes,
+                unions,
                 pads: normalizedPcb.pads,
                 regions: normalizedPcb.regions,
                 shapeBasedRegions: normalizedPcb.shapeBasedRegions,
                 boardRegions: normalizedPcb.boardRegions,
                 texts: normalizedPcb.texts,
                 embeddedModels: extractedEmbeddedModels,
+                embeddedModelIntegrity,
                 embeddedFonts: extractedEmbeddedFonts,
+                embeddedFiles,
                 rawRecords,
                 componentBodies,
                 componentPrimitives,
-                componentPrimitiveGroups
+                componentPrimitiveGroups,
+                ownership,
+                statistics
             },
+            pnp,
             bom
         })
     }
@@ -444,31 +643,104 @@ export class PcbModelParser {
     /**
      * Normalizes component placement fields while preserving native index order.
      * @param {{ fields: Record<string, string | string[]> }[]} records
-     * @returns {{ componentIndex: number, designator: string, uniqueId: string, x: number, y: number, layer: string, pattern: string, rotation: number, source: string, description: string, height: number | null, nameOn: boolean, commentOn: boolean }[]}
+     * @returns {{ componentIndex: number, designator: string, uniqueId: string, x: number, y: number, layer: string, pattern: string, rotation: number, source: string, description: string, height: number | null, provenance: object, nameOn: boolean, commentOn: boolean }[]}
      */
     static #normalizeComponentRecords(records) {
         return records
-            .map((record, index) => ({
-                componentIndex: index,
-                designator: getField(record.fields, 'SOURCEDESIGNATOR'),
-                uniqueId:
-                    getField(record.fields, 'UNIQUEID') ||
-                    getField(record.fields, 'UID') ||
-                    getField(record.fields, 'UNIQUEIDPRIMITIVEINFORMATION'),
-                x: parseNumericField(record.fields, 'X') || 0,
-                y: parseNumericField(record.fields, 'Y') || 0,
-                layer: getField(record.fields, 'LAYER') || 'TOP',
-                pattern: getField(record.fields, 'PATTERN'),
-                rotation: parseNumericField(record.fields, 'ROTATION') || 0,
-                source:
-                    getField(record.fields, 'SOURCELIBREFERENCE') ||
-                    getField(record.fields, 'SOURCEFOOTPRINTLIBRARY'),
-                description: getField(record.fields, 'SOURCEDESCRIPTION'),
-                height: parseNumericField(record.fields, 'HEIGHT'),
-                nameOn: parseBoolean(record.fields.NAMEON),
-                commentOn: parseBoolean(record.fields.COMMENTON)
-            }))
+            .map((record, index) => {
+                const provenance = PcbModelParser.#parseComponentProvenance(
+                    record.fields
+                )
+
+                return {
+                    componentIndex: index,
+                    designator: getField(record.fields, 'SOURCEDESIGNATOR'),
+                    uniqueId:
+                        getField(record.fields, 'UNIQUEID') ||
+                        getField(record.fields, 'UID') ||
+                        getField(record.fields, 'UNIQUEIDPRIMITIVEINFORMATION'),
+                    x: parseNumericField(record.fields, 'X') || 0,
+                    y: parseNumericField(record.fields, 'Y') || 0,
+                    layer: getField(record.fields, 'LAYER') || 'TOP',
+                    pattern: getField(record.fields, 'PATTERN'),
+                    rotation: parseNumericField(record.fields, 'ROTATION') || 0,
+                    source:
+                        getField(record.fields, 'SOURCELIBREFERENCE') ||
+                        getField(record.fields, 'SOURCEFOOTPRINTLIBRARY'),
+                    description: getField(record.fields, 'SOURCEDESCRIPTION'),
+                    height: parseNumericField(record.fields, 'HEIGHT'),
+                    ...(Object.keys(provenance).length ? { provenance } : {}),
+                    nameOn: parseBoolean(record.fields.NAMEON),
+                    commentOn: parseBoolean(record.fields.COMMENTON)
+                }
+            })
             .filter((component) => component.pattern && component.designator)
+    }
+
+    /**
+     * Parses schematic/project provenance from one PCB component row.
+     * @param {Record<string, string | string[]>} fields
+     * @returns {Record<string, unknown>}
+     */
+    static #parseComponentProvenance(fields) {
+        const sourceUniqueId = getField(fields, 'SOURCEUNIQUEID')
+        const sourceHierarchicalPath = getField(
+            fields,
+            'SOURCEHIERARCHICALPATH'
+        )
+        const sourceFootprintLibrary = getField(
+            fields,
+            'SOURCEFOOTPRINTLIBRARY'
+        )
+
+        const provenance = PcbModelParser.#stripEmptyObject({
+            channelOffset: parseNumericField(fields, 'CHANNELOFFSET'),
+            sourceDesignator: getField(fields, 'SOURCEDESIGNATOR'),
+            sourceUniqueId,
+            sourceUniqueIdSegments:
+                PcbModelParser.#splitAltiumPath(sourceUniqueId),
+            sourceHierarchicalPath,
+            sourceHierarchySegments: PcbModelParser.#splitAltiumPath(
+                sourceHierarchicalPath
+            ),
+            sourceFootprintLibrary,
+            sourceFootprintLibraryName: PcbModelParser.#basenameFromAltiumPath(
+                sourceFootprintLibrary
+            ),
+            sourceLibReference: getField(fields, 'SOURCELIBREFERENCE'),
+            sourceComponentLibrary: getField(fields, 'SOURCECOMPONENTLIBRARY'),
+            sourceComponentLibraryIdentifierKind: parseNumericField(
+                fields,
+                'SOURCECOMPLIBIDENTIFIERKIND'
+            ),
+            sourceComponentLibraryIdentifier: getField(
+                fields,
+                'SOURCECOMPLIBRARYIDENTIFIER'
+            ),
+            footprintDescription: getField(fields, 'FOOTPRINTDESCRIPTION'),
+            nameAutoPosition: parseNumericField(fields, 'NAMEAUTOPOSITION'),
+            commentAutoPosition: parseNumericField(
+                fields,
+                'COMMENTAUTOPOSITION'
+            ),
+            lockStrings: PcbModelParser.#optionalBooleanField(
+                fields,
+                'LOCKSTRINGS'
+            ),
+            enablePinSwapping: PcbModelParser.#optionalBooleanField(
+                fields,
+                'ENABLEPINSWAPPING'
+            ),
+            enablePartSwapping: PcbModelParser.#optionalBooleanField(
+                fields,
+                'ENABLEPARTSWAPPING'
+            )
+        })
+        const nonRedundantKeys = Object.keys(provenance).filter(
+            (key) => !['sourceDesignator', 'sourceLibReference'].includes(key)
+        )
+
+        return nonRedundantKeys.length ? provenance : {}
     }
 
     /**
@@ -558,6 +830,172 @@ export class PcbModelParser {
         }
 
         return netNameByIndex
+    }
+
+    /**
+     * Parses native DifferentialPairs6/Data records in stream order.
+     * @param {{ fields: Record<string, string | string[]>, sourceStream?: string }[]} records
+     * @returns {{ pairIndex: number, name: string, positiveNetName: string, negativeNetName: string, netNames: string[], gatherControl: boolean, uniqueId: string }[]}
+     */
+    static #parseDifferentialPairRecords(records) {
+        return records
+            .filter(
+                (record) => record.sourceStream === 'DifferentialPairs6/Data'
+            )
+            .map((record, index) => {
+                const positiveNetName = getField(
+                    record.fields,
+                    'POSITIVENETNAME'
+                )
+                const negativeNetName = getField(
+                    record.fields,
+                    'NEGATIVENETNAME'
+                )
+
+                return {
+                    pairIndex: index,
+                    name: getField(record.fields, 'NAME'),
+                    positiveNetName,
+                    negativeNetName,
+                    netNames: [positiveNetName, negativeNetName].filter(
+                        Boolean
+                    ),
+                    gatherControl: PcbModelParser.#parseBooleanField(
+                        record.fields,
+                        'GATHERCONTROL',
+                        false
+                    ),
+                    uniqueId:
+                        getField(record.fields, 'UNIQUEID') ||
+                        getField(record.fields, 'UID')
+                }
+            })
+            .filter(
+                (pair) =>
+                    pair.name ||
+                    pair.positiveNetName ||
+                    pair.negativeNetName ||
+                    pair.uniqueId
+            )
+    }
+
+    /**
+     * Joins differential-pair class members to concrete pair records.
+     * @param {{ pairIndex: number, name: string, positiveNetName: string, negativeNetName: string, netNames: string[], gatherControl: boolean, uniqueId: string }[]} pairs
+     * @param {{ classIndex: number, name: string, kindName: string, members: string[] }[]} classes
+     * @returns {{ differentialPairs: object[], differentialPairClasses: object[] }}
+     */
+    static #buildDifferentialPairData(pairs, classes) {
+        const pairsByName = new Map(
+            (pairs || []).map((pair) => [
+                PcbModelParser.#normalizeLookupName(pair.name),
+                pair
+            ])
+        )
+        const classNamesByPair = new Map()
+        const differentialPairClasses = (classes || [])
+            .filter((classRecord) => classRecord.kindName === 'diff-pair')
+            .map((classRecord) => {
+                const pairNames = []
+                const unresolvedMembers = []
+
+                for (const member of classRecord.members || []) {
+                    const pair = pairsByName.get(
+                        PcbModelParser.#normalizeLookupName(member)
+                    )
+
+                    if (!pair) {
+                        unresolvedMembers.push(member)
+                        continue
+                    }
+
+                    pairNames.push(pair.name)
+                    const classNames = classNamesByPair.get(pair.name) || []
+                    classNames.push(classRecord.name)
+                    classNamesByPair.set(pair.name, classNames)
+                }
+
+                return {
+                    classIndex: classRecord.classIndex,
+                    name: classRecord.name,
+                    members: [...classRecord.members],
+                    pairNames,
+                    unresolvedMembers
+                }
+            })
+
+        return {
+            differentialPairs: (pairs || []).map((pair) => ({
+                ...pair,
+                classNames: classNamesByPair.get(pair.name) || []
+            })),
+            differentialPairClasses
+        }
+    }
+
+    /**
+     * Splits an authored hierarchy or unique-id path into stable segments.
+     * @param {string | undefined} value Path-like field value.
+     * @returns {string[]}
+     */
+    static #splitAltiumPath(value) {
+        return String(value || '')
+            .split(/[\\/]+/u)
+            .map((segment) => segment.trim())
+            .filter(Boolean)
+    }
+
+    /**
+     * Returns the terminal segment from a native path-like field value.
+     * @param {string | undefined} value Path-like field value.
+     * @returns {string}
+     */
+    static #basenameFromAltiumPath(value) {
+        const segments = PcbModelParser.#splitAltiumPath(value)
+
+        return segments.length ? segments[segments.length - 1] : ''
+    }
+
+    /**
+     * Removes empty values while preserving explicit false and zero values.
+     * @param {Record<string, unknown>} value Object to normalize.
+     * @returns {Record<string, unknown>}
+     */
+    static #stripEmptyObject(value) {
+        return Object.fromEntries(
+            Object.entries(value || {}).filter(([, entryValue]) => {
+                if (Array.isArray(entryValue)) {
+                    return entryValue.length > 0
+                }
+                if (typeof entryValue === 'string') {
+                    return entryValue.length > 0
+                }
+                return entryValue !== null && entryValue !== undefined
+            })
+        )
+    }
+
+    /**
+     * Parses an optional boolean field without inventing a default value.
+     * @param {Record<string, string | string[]>} fields Native fields.
+     * @param {string} key Field name.
+     * @returns {boolean | null}
+     */
+    static #optionalBooleanField(fields, key) {
+        const raw = getField(fields, key)
+
+        return raw ? parseBoolean(raw) : null
+    }
+
+    /**
+     * Builds a case-insensitive lookup key for class and pair names.
+     * @param {string | undefined} value Raw lookup value.
+     * @returns {string}
+     */
+    static #normalizeLookupName(value) {
+        return String(value || '')
+            .trim()
+            .toUpperCase()
     }
 
     /**

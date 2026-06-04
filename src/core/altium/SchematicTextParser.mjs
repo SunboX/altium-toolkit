@@ -58,6 +58,39 @@ export class SchematicTextParser {
     }
 
     /**
+     * Extracts deterministic render diagnostics for schematic sheet fonts.
+     * @param {Record<string, string | string[]> | undefined} fields
+     * @returns {{ schema: string, fontFallbacks: object[] }}
+     */
+    static extractSchematicFontDiagnostics(fields) {
+        const count = ParserUtils.parseNumericField(fields, 'FontIdCount') || 0
+        const fontFallbacks = []
+
+        for (let index = 1; index <= count; index += 1) {
+            const rawFamily = ParserUtils.getField(fields, 'FontName' + index)
+            if (!SchematicTextParser.#needsFontFamilyFallback(rawFamily)) {
+                continue
+            }
+
+            fontFallbacks.push({
+                code: 'schematic.font.family-fallback',
+                severity: 'warning',
+                fontId: String(index),
+                sourceFamily: rawFamily,
+                resolvedFamily:
+                    SchematicTextParser.#sanitizeFontFamily(rawFamily),
+                message:
+                    'Schematic font family was missing or malformed and was replaced for deterministic SVG rendering.'
+            })
+        }
+
+        return {
+            schema: 'altium-toolkit.schematic.render-diagnostics.a1',
+            fontFallbacks
+        }
+    }
+
+    /**
      * Normalizes one schematic text record into a drawable text node.
      * @param {Record<string, string | string[]>} fields
      * @param {Record<string, string>} metadata
@@ -119,6 +152,8 @@ export class SchematicTextParser {
             ownerIndex: ParserUtils.getField(fields, 'OwnerIndex') || undefined,
             recordType,
             style: ParserUtils.parseNumericField(fields, 'Style') || 0,
+            renderOrder:
+                ParserUtils.parseNumericField(fields, 'IndexInSheet') ?? 0,
             fontSize: SchematicTextParser.#toSvgFontSize(font.size),
             fontFamily: font.family,
             fontWeight: font.bold ? 700 : 400,
@@ -150,6 +185,19 @@ export class SchematicTextParser {
         }
 
         return textRecord
+    }
+
+    /**
+     * Builds a normalized text-frame read model from visible text records.
+     * @param {object[]} texts Normalized schematic text records.
+     * @returns {object[]}
+     */
+    static extractSchematicTextFrames(texts) {
+        return (texts || [])
+            .filter((text) => text?.recordType === '28')
+            .map((text) =>
+                SchematicTextParser.#normalizeTextFrameContract(text)
+            )
     }
 
     /**
@@ -624,6 +672,17 @@ export class SchematicTextParser {
     }
 
     /**
+     * Returns true when the font family must be replaced for SVG output.
+     * @param {string} family Raw font family value.
+     * @returns {boolean}
+     */
+    static #needsFontFamilyFallback(family) {
+        const normalized = String(family || '').trim()
+
+        return !normalized || /["|]/.test(normalized)
+    }
+
+    /**
      * Returns the default schematic font when no sheet font entry exists.
      * @returns {{ size: number, family: string, bold: boolean, italic: boolean, rotation: number }}
      */
@@ -697,12 +756,76 @@ export class SchematicTextParser {
                 fields.Color || fields.TextColor,
                 '#7b7753'
             ),
+            lineWidth:
+                ParserUtils.parseNumericField(fields, 'LineWidth') ?? undefined,
             isSolid: ParserUtils.parseBoolean(fields.IsSolid),
             showBorder: ParserUtils.parseBoolean(fields.ShowBorder),
             textMargin:
                 ParserUtils.parseNumericField(fields, 'TextMargin') || 4,
             noteLines
         }
+    }
+
+    /**
+     * Converts one rendered text-frame record into an explicit read model.
+     * @param {object} text Normalized text-frame text record.
+     * @returns {object}
+     */
+    static #normalizeTextFrameContract(text) {
+        const left = Math.min(Number(text.x || 0), Number(text.cornerX || 0))
+        const right = Math.max(Number(text.x || 0), Number(text.cornerX || 0))
+        const top = Math.max(Number(text.y || 0), Number(text.cornerY || 0))
+        const bottom = Math.min(Number(text.y || 0), Number(text.cornerY || 0))
+
+        return SchematicTextParser.#stripUndefined({
+            x: text.x,
+            y: text.y,
+            cornerX: text.cornerX,
+            cornerY: text.cornerY,
+            width: right - left,
+            height: top - bottom,
+            text: text.text,
+            alignment: SchematicTextParser.#alignmentFromAnchor(text.anchor),
+            borderWidth: text.lineWidth || 1,
+            color: text.color,
+            borderColor: text.borderColor,
+            fill: text.fill,
+            isSolid: text.isSolid,
+            showBorder: text.showBorder,
+            font: {
+                size: text.fontSize,
+                family: text.fontFamily,
+                weight: text.fontWeight,
+                ...(text.fontStyle ? { style: text.fontStyle } : {})
+            },
+            textMargin: text.textMargin,
+            renderOrder: text.renderOrder,
+            ownerIndex: text.ownerIndex
+        })
+    }
+
+    /**
+     * Converts SVG text-anchor naming to a read-model alignment label.
+     * @param {string | undefined} anchor Text anchor.
+     * @returns {'left' | 'center' | 'right'}
+     */
+    static #alignmentFromAnchor(anchor) {
+        if (anchor === 'middle') return 'center'
+        if (anchor === 'end') return 'right'
+        return 'left'
+    }
+
+    /**
+     * Removes undefined values from one object.
+     * @param {object} value Source object.
+     * @returns {object}
+     */
+    static #stripUndefined(value) {
+        return Object.fromEntries(
+            Object.entries(value || {}).filter(
+                ([, entryValue]) => entryValue !== undefined
+            )
+        )
     }
 
     /**

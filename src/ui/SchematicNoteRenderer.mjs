@@ -15,7 +15,7 @@ const MINIMUM_NOTE_TEXT_SIZE = 4
 export class SchematicNoteRenderer {
     /**
      * Builds one boxed schematic note/callout with wrapped text rows.
-     * @param {{ x: number, y: number, color: string, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }} text
+     * @param {{ x: number, y: number, color: string, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, lineWidth?: number, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }} text
      * @param {number} sheetHeight
      * @returns {string}
      */
@@ -51,6 +51,7 @@ export class SchematicNoteRenderer {
             '--schematic-note-border-color'
         )
         const noteStroke = text.showBorder ? borderColor : 'none'
+        const noteStrokeWidth = Number(text.lineWidth)
         const noteSourceLines = text.noteLines || []
         const compactSingleLineNote =
             SchematicNoteRenderer.#isCompactSingleLineNote(
@@ -112,7 +113,13 @@ export class SchematicNoteRenderer {
             escapeHtml(noteFill) +
             '" stroke="' +
             escapeHtml(noteStroke) +
-            '" />' +
+            '"' +
+            (Number.isFinite(noteStrokeWidth)
+                ? ' stroke-width="' +
+                  formatNumber(Math.max(noteStrokeWidth, 0.8)) +
+                  '"'
+                : '') +
+            ' />' +
             textMarkup +
             '</g>'
         )

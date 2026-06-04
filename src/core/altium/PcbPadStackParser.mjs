@@ -48,6 +48,12 @@ export class PcbPadStackParser {
 
     static #SOLDER_MASK_CACHE_VALID_OFFSET = 104
 
+    static #POSITIVE_TOLERANCE_OFFSET = 162
+
+    static #NEGATIVE_TOLERANCE_OFFSET = 166
+
+    static #HOLE_TOLERANCE_UNSET = 0x7fffffff
+
     static #EXTENSION_MIN_BYTE_LENGTH = 596
 
     static #INNER_LAYER_COUNT = 29
@@ -178,6 +184,7 @@ export class PcbPadStackParser {
 
         PcbPadStackParser.#assignPadCacheFields(result, mainRecord)
         PcbPadStackParser.#assignMaskCacheFields(result, mainRecord)
+        PcbPadStackParser.#assignHoleToleranceFields(result, mainRecord)
 
         return result
     }
@@ -293,6 +300,35 @@ export class PcbPadStackParser {
     }
 
     /**
+     * Adds optional hole tolerance fields to an output object.
+     * @param {Record<string, unknown>} result
+     * @param {DataView} mainRecord
+     */
+    static #assignHoleToleranceFields(result, mainRecord) {
+        const positiveTolerance = PcbPadStackParser.#readHoleTolerance(
+            mainRecord,
+            PcbPadStackParser.#POSITIVE_TOLERANCE_OFFSET
+        )
+        const negativeTolerance = PcbPadStackParser.#readHoleTolerance(
+            mainRecord,
+            PcbPadStackParser.#NEGATIVE_TOLERANCE_OFFSET
+        )
+        const holeTolerance = {}
+
+        if (positiveTolerance !== null) {
+            result.positiveTolerance = positiveTolerance
+            holeTolerance.positive = positiveTolerance
+        }
+        if (negativeTolerance !== null) {
+            result.negativeTolerance = negativeTolerance
+            holeTolerance.negative = negativeTolerance
+        }
+        if (Object.keys(holeTolerance).length) {
+            result.holeTolerance = holeTolerance
+        }
+    }
+
+    /**
      * Returns whether one decoded pad cache contains meaningful data.
      * @param {{ planeConnectionStyle: number, thermalReliefConductorWidth: number, thermalReliefConductorCount: number, thermalReliefAirGap: number, powerPlaneReliefExpansion: number, powerPlaneClearance: number, validity: Record<string, number> }} padCache
      * @returns {boolean}
@@ -309,6 +345,28 @@ export class PcbPadStackParser {
         ]
 
         return values.some((value) => value !== 0)
+    }
+
+    /**
+     * Reads one optional hole tolerance from a pad main record.
+     * @param {DataView} mainRecord
+     * @param {number} offset
+     * @returns {number | null}
+     */
+    static #readHoleTolerance(mainRecord, offset) {
+        if (!mainRecord || offset + 4 > mainRecord.byteLength) {
+            return null
+        }
+
+        const rawValue = mainRecord.getInt32(offset, true)
+        if (
+            rawValue === 0 ||
+            rawValue === PcbPadStackParser.#HOLE_TOLERANCE_UNSET
+        ) {
+            return null
+        }
+
+        return rawValue / 10000
     }
 
     /**

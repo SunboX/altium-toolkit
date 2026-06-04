@@ -1,0 +1,50 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.schematic.svg.semantics.a1",
+    "title": "Altium Toolkit Schematic SVG Semantics A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "elements"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.schematic.svg.semantics.a1"
+        },
+        "nets": {
+            "type": "array"
+        },
+        "components": {
+            "type": "array"
+        },
+        "elements": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["elementKey"],
+                "properties": {
+                    "elementKey": {
+                        "type": "string"
+                    },
+                    "primitive": {
+                        "type": "string"
+                    },
+                    "recordId": {
+                        "type": "string"
+                    },
+                    "component": {
+                        "type": "string"
+                    },
+                    "componentUniqueId": {
+                        "type": "string"
+                    },
+                    "net": {
+                        "type": "string"
+                    },
+                    "pin": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    }
+}

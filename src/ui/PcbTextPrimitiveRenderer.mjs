@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { PcbBarcodeTextRenderer } from './PcbBarcodeTextRenderer.mjs'
 import { SchematicSvgUtils } from './SchematicSvgUtils.mjs'
 
 /**
@@ -51,12 +52,17 @@ export class PcbTextPrimitiveRenderer {
     /**
      * Renders selected PCB texts into SVG markup.
      * @param {{ text: string, x: number, y: number, height?: number, rotation?: number, layerId?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string }[]} texts
+     * @param {{ semanticContext?: object }} [options] Render options.
      * @returns {string}
      */
-    static render(texts) {
+    static render(texts, options = {}) {
         return (texts || [])
             .map((text, index) =>
-                PcbTextPrimitiveRenderer.#renderText(text, index)
+                PcbTextPrimitiveRenderer.#renderText(
+                    text,
+                    index,
+                    options.semanticContext || {}
+                )
             )
             .join('')
     }
@@ -65,12 +71,29 @@ export class PcbTextPrimitiveRenderer {
      * Renders one PCB text primitive.
      * @param {{ text: string, x: number, y: number, height?: number, rotation?: number, layerId?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string }} text
      * @param {number} index Text index for stable SVG resource ids.
+     * @param {object} semanticContext Semantic lookup context.
      * @returns {string}
      */
-    static #renderText(text, index) {
+    static #renderText(text, index, semanticContext) {
         const fontSize = PcbTextPrimitiveRenderer.#resolveFontSize(text)
         const rotation = Number(text.rotation || 0)
         const lines = PcbTextPrimitiveRenderer.#textLines(text)
+        const semanticAttributes = PcbTextPrimitiveRenderer.#semanticAttributes(
+            text,
+            index,
+            semanticContext
+        )
+
+        if (PcbTextPrimitiveRenderer.#isBarcodeText(text)) {
+            return PcbBarcodeTextRenderer.render(text, {
+                transform: PcbTextPrimitiveRenderer.#renderTextTransform(
+                    text,
+                    rotation
+                ),
+                fontSize,
+                semanticAttributes
+            })
+        }
 
         if (PcbTextPrimitiveRenderer.#isInvertedText(text)) {
             return PcbTextPrimitiveRenderer.#renderInvertedText(
@@ -78,7 +101,8 @@ export class PcbTextPrimitiveRenderer {
                 index,
                 fontSize,
                 rotation,
-                lines
+                lines,
+                semanticAttributes
             )
         }
 
@@ -95,7 +119,9 @@ export class PcbTextPrimitiveRenderer {
             PcbTextPrimitiveRenderer.#formatTextNumber(fontSize) +
             '"' +
             PcbTextPrimitiveRenderer.#renderFontAttributes(text) +
-            ' text-anchor="start" dominant-baseline="alphabetic">' +
+            ' text-anchor="start" dominant-baseline="alphabetic"' +
+            semanticAttributes +
+            '>' +
             content +
             '</text>'
         )
@@ -109,9 +135,17 @@ export class PcbTextPrimitiveRenderer {
      * @param {number} fontSize Text font size in board units.
      * @param {number} rotation Text rotation in degrees.
      * @param {string[]} lines Text lines to render.
+     * @param {string} semanticAttributes SVG semantic attributes.
      * @returns {string}
      */
-    static #renderInvertedText(text, index, fontSize, rotation, lines) {
+    static #renderInvertedText(
+        text,
+        index,
+        fontSize,
+        rotation,
+        lines,
+        semanticAttributes
+    ) {
         const metrics = PcbTextPrimitiveRenderer.#measureLines(
             text,
             lines,
@@ -144,7 +178,9 @@ export class PcbTextPrimitiveRenderer {
             SchematicSvgUtils.escapeHtml(String(Number(text.layerId || 0))) +
             ' pcb-text--inverted" transform="' +
             PcbTextPrimitiveRenderer.#renderTextTransform(text, rotation) +
-            '">' +
+            '"' +
+            semanticAttributes +
+            '>' +
             '<mask id="' +
             SchematicSvgUtils.escapeHtml(maskId) +
             '" maskUnits="userSpaceOnUse" mask-type="luminance" x="' +
@@ -190,6 +226,142 @@ export class PcbTextPrimitiveRenderer {
             ')" />' +
             '</g>'
         )
+    }
+
+    /**
+     * Renders semantic data attributes for one text primitive.
+     * @param {object} text Text primitive.
+     * @param {number} fallbackIndex Rendered text index.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #semanticAttributes(text, fallbackIndex, semanticContext) {
+        const index =
+            semanticContext?.primitiveIndexes?.texts?.get(text) ?? fallbackIndex
+        const layer = PcbTextPrimitiveRenderer.#layerForText(
+            text,
+            semanticContext
+        )
+        const netName = PcbTextPrimitiveRenderer.#netNameForText(
+            text,
+            semanticContext
+        )
+        const component = PcbTextPrimitiveRenderer.#componentForText(
+            text,
+            semanticContext
+        )
+        const netClasses = netName
+            ? semanticContext?.netClassNamesByNetName?.get(netName) || []
+            : []
+
+        return PcbTextPrimitiveRenderer.#renderDataAttributes({
+            'data-primitive': 'text',
+            'data-element-key': 'pcb-text-' + index,
+            'data-layer-key': layer?.layerKey,
+            'data-layer-display-name': layer?.displayName,
+            'data-layer-id': layer?.layerId,
+            'data-net': netName,
+            'data-net-index': text?.netIndex,
+            'data-net-class': netClasses[0],
+            'data-net-classes': netClasses.length > 1 ? netClasses : undefined,
+            'data-component': component?.designator,
+            'data-component-index': component?.componentIndex,
+            'data-text-role':
+                text?.role ||
+                text?.textRole ||
+                (PcbTextPrimitiveRenderer.#isBarcodeText(text)
+                    ? 'barcode'
+                    : ''),
+            'data-barcode-kind': text?.barcode?.kindName,
+            'data-barcode-render-mode': text?.barcode?.renderModeName,
+            'data-barcode-inverted':
+                text?.barcode?.inverted === true ? 'true' : undefined
+        })
+    }
+
+    /**
+     * Resolves layer metadata for one text primitive.
+     * @param {object} text Text primitive.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {object | null}
+     */
+    static #layerForText(text, semanticContext) {
+        const layerId = Number(text?.layerId)
+        if (Number.isInteger(layerId)) {
+            return (
+                semanticContext?.layersById?.get(layerId) || {
+                    layerId,
+                    layerKey: 'L' + layerId,
+                    displayName: text?.layerName || 'Layer ' + layerId
+                }
+            )
+        }
+
+        return null
+    }
+
+    /**
+     * Resolves net metadata for one text primitive.
+     * @param {object} text Text primitive.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #netNameForText(text, semanticContext) {
+        if (text?.netName) {
+            return String(text.netName)
+        }
+
+        const netIndex = Number(text?.netIndex)
+        if (Number.isInteger(netIndex)) {
+            return semanticContext?.netByIndex?.get(netIndex)?.name || ''
+        }
+
+        return ''
+    }
+
+    /**
+     * Resolves component metadata for one text primitive.
+     * @param {object} text Text primitive.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {object | null}
+     */
+    static #componentForText(text, semanticContext) {
+        const componentIndex = Number(text?.componentIndex)
+        if (Number.isInteger(componentIndex)) {
+            return (
+                semanticContext?.componentsByIndex?.get(componentIndex) || null
+            )
+        }
+
+        return null
+    }
+
+    /**
+     * Renders a dictionary as SVG data attributes.
+     * @param {Record<string, unknown>} attributes Attribute dictionary.
+     * @returns {string}
+     */
+    static #renderDataAttributes(attributes) {
+        return Object.entries(attributes || {})
+            .filter(([, value]) => {
+                if (Array.isArray(value)) {
+                    return value.length > 0
+                }
+                return value !== null && value !== undefined && value !== ''
+            })
+            .map(([name, value]) => {
+                const renderedValue = Array.isArray(value)
+                    ? value.join(',')
+                    : String(value)
+                return (
+                    ' ' +
+                    name +
+                    '="' +
+                    SchematicSvgUtils.escapeHtml(renderedValue) +
+                    '"'
+                )
+            })
+            .join('')
     }
 
     /**
@@ -243,6 +415,20 @@ export class PcbTextPrimitiveRenderer {
             text?.isTrueType === true ||
             Number(text?.fontType) === 1 ||
             fontTypeName.includes('TRUETYPE')
+        )
+    }
+
+    /**
+     * Checks whether a text primitive should render as barcode artwork.
+     * @param {{ fontType?: number | string, fontTypeName?: string, barcode?: object }} text Text record.
+     * @returns {boolean}
+     */
+    static #isBarcodeText(text) {
+        const fontTypeName = String(text?.fontTypeName || '').toUpperCase()
+        return (
+            Boolean(text?.barcode) ||
+            Number(text?.fontType) === 2 ||
+            fontTypeName.includes('BARCODE')
         )
     }
 

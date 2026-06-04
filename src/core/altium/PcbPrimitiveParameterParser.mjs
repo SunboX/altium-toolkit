@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { PrintableTextDecoder } from './PrintableTextDecoder.mjs'
+
 /**
  * Decodes Altium PrimitiveParameters/Data sidecar records.
  */
@@ -153,8 +155,7 @@ export class PcbPrimitiveParameterParser {
      * @returns {Record<string, string>}
      */
     static #parseRecordFields(bytes) {
-        const text = new TextDecoder()
-            .decode(bytes)
+        const text = PrintableTextDecoder.decodeBytes(bytes)
             .replace(/\u0000/gu, '')
             .replace(/\r\n?/gu, '\n')
             .trim()

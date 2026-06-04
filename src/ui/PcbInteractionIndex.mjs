@@ -469,12 +469,17 @@ export class PcbInteractionIndex {
         const componentIndex = Number(primitive?.componentIndex)
         if (!Number.isInteger(componentIndex)) return null
 
-        return (
+        const explicitMatch =
             context.components.find(
-                (component, index) =>
-                    Number(component?.componentIndex) === componentIndex ||
-                    index === componentIndex
+                (component) =>
+                    Number(component?.componentIndex) === componentIndex
             ) || null
+        if (explicitMatch) return explicitMatch
+
+        return (
+            context.components.find((component, index) => {
+                return index === componentIndex
+            }) || null
         )
     }
 

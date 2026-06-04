@@ -1,0 +1,284 @@
+// SPDX-FileCopyrightText: 2026 André Fiedler
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { ParserUtils } from './ParserUtils.mjs'
+
+const { getDisplayText, getField, parseBoolean, parseNumericField, toColor } =
+    ParserUtils
+
+/**
+ * Builds deterministic read-only QA summaries for schematic documents.
+ */
+export class SchematicQaReportBuilder {
+    static SCHEMA_ID = 'altium-toolkit.schematic.qa.a1'
+
+    /**
+     * Builds a schematic QA report from parsed records and geometry.
+     * @param {{ records: object[], sheet?: object, lines?: object[], texts?: object[] }} input QA input.
+     * @returns {object}
+     */
+    static build(input) {
+        const records = input?.records || []
+        const fonts = SchematicQaReportBuilder.#fonts(input?.sheet)
+        const colors = SchematicQaReportBuilder.#colors(records)
+        const lineWidths = SchematicQaReportBuilder.#lineWidths(records)
+        const unresolvedParameters =
+            SchematicQaReportBuilder.#unresolvedParameters(records)
+        const findings = [
+            ...SchematicQaReportBuilder.#fontFindings(fonts),
+            ...SchematicQaReportBuilder.#unresolvedFindings(
+                unresolvedParameters
+            ),
+            ...SchematicQaReportBuilder.#titleBlockFindings(records)
+        ]
+
+        return {
+            schema: SchematicQaReportBuilder.SCHEMA_ID,
+            summary: {
+                recordCount: records.length,
+                fontFamilyCount: fonts.families.length,
+                colorCount: colors.values.length,
+                lineWidthCount: lineWidths.values.length,
+                unresolvedParameterCount: unresolvedParameters.length,
+                findingCount: findings.length
+            },
+            fonts,
+            colors,
+            lineWidths,
+            unresolvedParameters,
+            titleBlockResidue:
+                SchematicQaReportBuilder.#titleBlockResidue(records),
+            geometryFallbacks: SchematicQaReportBuilder.#geometryFallbacks(
+                input?.texts
+            ),
+            findings
+        }
+    }
+
+    /**
+     * Summarizes sheet fonts.
+     * @param {object | undefined} sheet Parsed sheet model.
+     * @returns {{ families: string[], entries: object[] }}
+     */
+    static #fonts(sheet) {
+        const entries = Object.entries(sheet?.fonts || {})
+            .map(([fontId, font]) => ({
+                fontId,
+                family: String(font?.family || '').trim(),
+                size: Number(font?.size || 0),
+                bold: font?.bold === true,
+                italic: font?.italic === true
+            }))
+            .filter((font) => font.family)
+            .sort(
+                (left, right) =>
+                    left.family.localeCompare(right.family) ||
+                    String(left.fontId).localeCompare(String(right.fontId))
+            )
+
+        return {
+            families: [...new Set(entries.map((font) => font.family))],
+            entries
+        }
+    }
+
+    /**
+     * Summarizes schematic colors.
+     * @param {object[]} records Schematic records.
+     * @returns {{ values: string[], records: object[] }}
+     */
+    static #colors(records) {
+        const rows = []
+
+        for (const record of records || []) {
+            for (const key of ['Color', 'TextColor', 'AreaColor']) {
+                if (!(key in (record.fields || {}))) {
+                    continue
+                }
+
+                rows.push({
+                    recordKey: SchematicQaReportBuilder.#recordKey(record),
+                    field: key,
+                    color: toColor(record.fields[key], '#000000')
+                })
+            }
+        }
+
+        return {
+            values: [...new Set(rows.map((row) => row.color))].sort(),
+            records: rows
+        }
+    }
+
+    /**
+     * Summarizes authored line widths.
+     * @param {object[]} records Schematic records.
+     * @returns {{ values: number[], records: object[] }}
+     */
+    static #lineWidths(records) {
+        const rows = (records || [])
+            .map((record) => ({
+                recordKey: SchematicQaReportBuilder.#recordKey(record),
+                width: parseNumericField(record.fields, 'LineWidth')
+            }))
+            .filter((row) => row.width !== null)
+
+        return {
+            values: [...new Set(rows.map((row) => row.width))].sort(
+                (left, right) => left - right
+            ),
+            records: rows
+        }
+    }
+
+    /**
+     * Collects unresolved `=Parameter` placeholders.
+     * @param {object[]} records Schematic records.
+     * @returns {string[]}
+     */
+    static #unresolvedParameters(records) {
+        const metadata = new Set(
+            (records || [])
+                .filter((record) => getField(record.fields, 'RECORD') === '41')
+                .map((record) => getField(record.fields, 'Name'))
+                .filter(Boolean)
+        )
+        const unresolved = []
+
+        for (const record of records || []) {
+            const text = getDisplayText(record.fields)
+            const match = text.match(/^=([A-Za-z_][\w.]*)$/)
+            if (!match) {
+                continue
+            }
+            if (
+                !metadata.has(match[1]) ||
+                text === getDisplayText(record.fields)
+            ) {
+                unresolved.push(match[1])
+            }
+        }
+
+        return [...new Set(unresolved)].sort()
+    }
+
+    /**
+     * Builds nonstandard-font findings.
+     * @param {{ families: string[] }} fonts Font summary.
+     * @returns {object[]}
+     */
+    static #fontFindings(fonts) {
+        const preferred = new Set(['Arial', 'Times New Roman'])
+
+        return (fonts.families || [])
+            .filter((family) => !preferred.has(family))
+            .map((family) => ({
+                code: 'schematic.font.nonstandard-family',
+                severity: 'info',
+                family,
+                message:
+                    'Schematic uses a font family outside the default parser baseline.'
+            }))
+    }
+
+    /**
+     * Builds unresolved-parameter findings.
+     * @param {string[]} parameters Unresolved parameters.
+     * @returns {object[]}
+     */
+    static #unresolvedFindings(parameters) {
+        return (parameters || []).map((parameter) => ({
+            code: 'schematic.text.unresolved-parameter',
+            severity: 'warning',
+            parameter,
+            message:
+                'Schematic text contains an unresolved project or document parameter.'
+        }))
+    }
+
+    /**
+     * Builds title-block findings.
+     * @param {object[]} records Schematic records.
+     * @returns {object[]}
+     */
+    static #titleBlockFindings(records) {
+        const sheet = (records || []).find(
+            (record) => getField(record.fields, 'RECORD') === '31'
+        )
+        if (!sheet || parseBoolean(sheet.fields.TitleBlockOn)) {
+            return []
+        }
+
+        const residue = SchematicQaReportBuilder.#titleBlockResidue(records)
+        return residue.length
+            ? [
+                  {
+                      code: 'schematic.title-block.hidden-residue',
+                      severity: 'info',
+                      count: residue.length,
+                      message:
+                          'Hidden title-block parameter records remain while the title block is disabled.'
+                  }
+              ]
+            : []
+    }
+
+    /**
+     * Collects hidden title-block-like parameter rows.
+     * @param {object[]} records Schematic records.
+     * @returns {object[]}
+     */
+    static #titleBlockResidue(records) {
+        const titleBlockNames = new Set([
+            'title',
+            'revision',
+            'documentnumber',
+            'sheetnumber',
+            'sheettotal',
+            'date',
+            'drawnby'
+        ])
+
+        return (records || [])
+            .filter(
+                (record) =>
+                    getField(record.fields, 'RECORD') === '41' &&
+                    parseBoolean(record.fields.IsHidden) &&
+                    titleBlockNames.has(
+                        getField(record.fields, 'Name')
+                            .replace(/\s+/g, '')
+                            .toLowerCase()
+                    )
+            )
+            .map((record) => ({
+                recordKey: SchematicQaReportBuilder.#recordKey(record),
+                name: getField(record.fields, 'Name'),
+                value: getDisplayText(record.fields)
+            }))
+    }
+
+    /**
+     * Collects text geometry fallback diagnostics already attached by parsers.
+     * @param {object[] | undefined} texts Parsed text rows.
+     * @returns {object[]}
+     */
+    static #geometryFallbacks(texts) {
+        return (texts || [])
+            .filter((text) => text?.diagnosticState)
+            .map((text, index) => ({
+                key: 'schematic-text-' + index,
+                state: text.diagnosticState,
+                text: text.text || ''
+            }))
+    }
+
+    /**
+     * Builds a stable schematic record key.
+     * @param {object} record Schematic record.
+     * @returns {string}
+     */
+    static #recordKey(record) {
+        return 'schematic-record-' + String(record?.recordIndex ?? 0)
+    }
+}

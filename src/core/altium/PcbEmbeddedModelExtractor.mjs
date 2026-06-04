@@ -24,12 +24,22 @@ export class PcbEmbeddedModelExtractor {
             PcbEmbeddedModelExtractor.#parseModelMetadataStream(
                 streams.get('Models/Data')
             )
-        const models = modelMetadataRecords
-            .map((record, index) =>
+        const modelMetadataRows = modelMetadataRecords.map((fields, index) => ({
+            fields,
+            index,
+            sourceStream: 'Models/' + index,
+            id: PcbEmbeddedModelExtractor.#getField(fields, 'ID'),
+            name: PcbEmbeddedModelExtractor.#getField(fields, 'NAME'),
+            checksum: PcbEmbeddedModelExtractor.#normalizeChecksum(
+                PcbEmbeddedModelExtractor.#parseIntegerField(fields, 'CHECKSUM')
+            )
+        }))
+        const models = modelMetadataRows
+            .map((row) =>
                 PcbEmbeddedModelExtractor.#normalizeEmbeddedModel(
-                    record,
-                    streams.get('Models/' + index),
-                    'Models/' + index
+                    row.fields,
+                    streams.get(row.sourceStream),
+                    row.sourceStream
                 )
             )
             .filter(Boolean)
@@ -44,10 +54,18 @@ export class PcbEmbeddedModelExtractor {
                     'ShapeBasedComponentBodies6/Data'
                 )
             ])
+        const integrity = PcbEmbeddedModelExtractor.#buildIntegrityReport(
+            modelMetadataRows,
+            models,
+            componentBodies,
+            streams
+        )
 
         return {
             models,
-            componentBodies
+            componentBodies,
+            integrity,
+            diagnostics: integrity.issues
         }
     }
 
@@ -351,6 +369,193 @@ export class PcbEmbeddedModelExtractor {
     }
 
     /**
+     * Builds model metadata and payload integrity diagnostics.
+     * @param {object[]} metadataRows Parsed model metadata rows.
+     * @param {object[]} models Recovered payload models.
+     * @param {object[]} componentBodies Recovered component bodies.
+     * @param {Map<string, Uint8Array>} streams Compound streams.
+     * @returns {{ schema: string, issues: object[] }}
+     */
+    static #buildIntegrityReport(
+        metadataRows,
+        models,
+        componentBodies,
+        streams
+    ) {
+        const issues = [
+            ...PcbEmbeddedModelExtractor.#missingPayloadIssues(
+                metadataRows,
+                models,
+                streams
+            ),
+            ...PcbEmbeddedModelExtractor.#duplicateChecksumIssues(metadataRows),
+            ...PcbEmbeddedModelExtractor.#unresolvedBodyIssues(
+                componentBodies,
+                models
+            ),
+            ...PcbEmbeddedModelExtractor.#unreferencedModelIssues(
+                models,
+                componentBodies
+            )
+        ]
+
+        return {
+            schema: 'altium-toolkit.pcb.embedded-model-integrity.a1',
+            issues
+        }
+    }
+
+    /**
+     * Reports metadata rows without a recoverable payload stream.
+     * @param {object[]} metadataRows Parsed metadata rows.
+     * @param {object[]} models Recovered model rows.
+     * @param {Map<string, Uint8Array>} streams Compound streams.
+     * @returns {object[]}
+     */
+    static #missingPayloadIssues(metadataRows, models, streams) {
+        return (metadataRows || [])
+            .filter(
+                (row) =>
+                    !streams.has(row.sourceStream) ||
+                    !models.some((model) => model.id === row.id)
+            )
+            .map((row) => ({
+                code: streams.has(row.sourceStream)
+                    ? 'pcb.model.payload-unreadable'
+                    : 'pcb.model.payload-missing',
+                severity: 'warning',
+                modelId: row.id,
+                checksum: row.checksum,
+                name: row.name,
+                sourceStream: row.sourceStream,
+                message: streams.has(row.sourceStream)
+                    ? 'Embedded model payload stream could not be decoded.'
+                    : 'Embedded model metadata references a missing payload stream.'
+            }))
+    }
+
+    /**
+     * Reports duplicate authored model checksums.
+     * @param {object[]} metadataRows Parsed metadata rows.
+     * @returns {object[]}
+     */
+    static #duplicateChecksumIssues(metadataRows) {
+        const rowsByChecksum = new Map()
+
+        for (const row of metadataRows || []) {
+            if (!Number.isInteger(row.checksum)) {
+                continue
+            }
+            if (!rowsByChecksum.has(row.checksum)) {
+                rowsByChecksum.set(row.checksum, [])
+            }
+            rowsByChecksum.get(row.checksum).push(row)
+        }
+
+        return [...rowsByChecksum.entries()]
+            .filter(([, rows]) => rows.length > 1)
+            .map(([checksum, rows]) => ({
+                code: 'pcb.model.checksum-duplicate',
+                severity: 'warning',
+                checksum,
+                modelIds: rows.map((row) => row.id).filter(Boolean),
+                sourceStreams: rows.map((row) => row.sourceStream),
+                message:
+                    'Multiple embedded model metadata rows share one checksum.'
+            }))
+    }
+
+    /**
+     * Reports component bodies that reference no recovered model.
+     * @param {object[]} componentBodies Component-body rows.
+     * @param {object[]} models Recovered model rows.
+     * @returns {object[]}
+     */
+    static #unresolvedBodyIssues(componentBodies, models) {
+        return (componentBodies || [])
+            .filter(
+                (componentBody) =>
+                    componentBody.embedded &&
+                    !PcbEmbeddedModelExtractor.#bodyMatchesAnyModel(
+                        componentBody,
+                        models
+                    )
+            )
+            .map((componentBody) => ({
+                code: 'pcb.model.body-unresolved',
+                severity: 'warning',
+                modelId: componentBody.modelId,
+                checksum: componentBody.checksum,
+                name: componentBody.name,
+                sourceStream: componentBody.sourceStream,
+                message:
+                    'Component body references an embedded model that was not recovered.'
+            }))
+    }
+
+    /**
+     * Reports recovered model payloads not referenced by any component body.
+     * @param {object[]} models Recovered model rows.
+     * @param {object[]} componentBodies Component-body rows.
+     * @returns {object[]}
+     */
+    static #unreferencedModelIssues(models, componentBodies) {
+        if (!(componentBodies || []).length) {
+            return []
+        }
+
+        return (models || [])
+            .filter(
+                (model) =>
+                    !(componentBodies || []).some((componentBody) =>
+                        PcbEmbeddedModelExtractor.#bodyMatchesModel(
+                            componentBody,
+                            model
+                        )
+                    )
+            )
+            .map((model) => ({
+                code: 'pcb.model.payload-unreferenced',
+                severity: 'info',
+                modelId: model.id,
+                checksum: model.checksum,
+                name: model.name,
+                sourceStream: model.sourceStream,
+                message:
+                    'Embedded model payload was recovered but no component body references it.'
+            }))
+    }
+
+    /**
+     * Returns true when a component body matches any recovered model.
+     * @param {object} componentBody Component body.
+     * @param {object[]} models Recovered models.
+     * @returns {boolean}
+     */
+    static #bodyMatchesAnyModel(componentBody, models) {
+        return (models || []).some((model) =>
+            PcbEmbeddedModelExtractor.#bodyMatchesModel(componentBody, model)
+        )
+    }
+
+    /**
+     * Returns true when a component body references a model.
+     * @param {object} componentBody Component body.
+     * @param {object} model Recovered model.
+     * @returns {boolean}
+     */
+    static #bodyMatchesModel(componentBody, model) {
+        return (
+            (componentBody.modelId && componentBody.modelId === model.id) ||
+            (Number.isInteger(componentBody.checksum) &&
+                componentBody.checksum === model.checksum) ||
+            (componentBody.name &&
+                String(componentBody.name).toLowerCase() ===
+                    String(model.name || '').toLowerCase())
+        )
+    }
+
+    /**
      * Resolves one model format from metadata and payload text.
      * @param {string} name
      * @param {string} payloadText
@@ -372,6 +577,27 @@ export class PcbEmbeddedModelExtractor {
             normalizedName.endsWith('.vrml')
         ) {
             return 'wrl'
+        }
+
+        if (
+            normalizedName.endsWith('.sldprt') ||
+            normalizedName.endsWith('.sldasm')
+        ) {
+            return 'solidworks'
+        }
+
+        if (
+            normalizedName.endsWith('.x_t') ||
+            normalizedName.endsWith('.xmt_txt')
+        ) {
+            return 'parasolid-text'
+        }
+
+        if (
+            normalizedName.endsWith('.x_b') ||
+            normalizedName.endsWith('.xmt_bin')
+        ) {
+            return 'parasolid-binary'
         }
 
         return 'unknown'

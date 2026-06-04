@@ -13,6 +13,8 @@ import { SchematicPinParser } from './SchematicPinParser.mjs'
 import { SchematicPrimitiveParser } from './SchematicPrimitiveParser.mjs'
 import { AltiumLayoutParser } from './AltiumLayoutParser.mjs'
 import { NormalizedModelSchema } from './NormalizedModelSchema.mjs'
+import { IntLibModelParser } from './IntLibModelParser.mjs'
+import { IntLibStreamExtractor } from './IntLibStreamExtractor.mjs'
 import { PcbModelParser } from './PcbModelParser.mjs'
 import { PcbLibModelParser } from './PcbLibModelParser.mjs'
 import { PcbLibStreamExtractor } from './PcbLibStreamExtractor.mjs'
@@ -25,8 +27,20 @@ import { SchematicJunctionParser } from './SchematicJunctionParser.mjs'
 import { SchematicBusEntryParser } from './SchematicBusEntryParser.mjs'
 import { SchematicImageParser } from './SchematicImageParser.mjs'
 import { SchematicNetlistBuilder } from './SchematicNetlistBuilder.mjs'
+import { SchematicRecordTypeRegistry } from './SchematicRecordTypeRegistry.mjs'
 import { SchematicComponentTextResolver } from './SchematicComponentTextResolver.mjs'
+import { SchematicComponentOwnerTextResolver } from './SchematicComponentOwnerTextResolver.mjs'
+import { SchematicOwnershipGraphParser } from './SchematicOwnershipGraphParser.mjs'
 import { SchematicStreamExtractor } from './SchematicStreamExtractor.mjs'
+import { SchematicTemplateParser } from './SchematicTemplateParser.mjs'
+import { SchematicHarnessParser } from './SchematicHarnessParser.mjs'
+import { SchematicImplementationParser } from './SchematicImplementationParser.mjs'
+import { SchematicCrossSheetConnectorParser } from './SchematicCrossSheetConnectorParser.mjs'
+import { SchematicRepeatedChannelParser } from './SchematicRepeatedChannelParser.mjs'
+import { SchematicDisplayModeCatalogParser } from './SchematicDisplayModeCatalogParser.mjs'
+import { SchematicBindingProvenanceParser } from './SchematicBindingProvenanceParser.mjs'
+import { SchematicConnectivityQaBuilder } from './SchematicConnectivityQaBuilder.mjs'
+import { SchematicQaReportBuilder } from './SchematicQaReportBuilder.mjs'
 import { SchematicWireNormalizer } from './SchematicWireNormalizer.mjs'
 import { CircuitJsonModelAdapter } from '../circuit-json/CircuitJsonModelAdapter.mjs'
 const {
@@ -41,6 +55,7 @@ const {
 } = ParserUtils
 const {
     extractSchematicFonts,
+    extractSchematicFontDiagnostics,
     extractSchematicMetadata,
     extractSchematicTitleBlock,
     normalizeSchematicTextRecord
@@ -74,7 +89,7 @@ export class AltiumParser {
      * Parses a native Altium buffer into the renderer compatibility model.
      * @param {string} fileName
      * @param {ArrayBuffer} arrayBuffer
-     * @returns {{ schema: string, kind: 'schematic' | 'pcb' | 'pcb-library' | 'project', fileType: 'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], schematic?: Record<string, unknown>, pcb?: Record<string, unknown>, pcbLibrary?: Record<string, unknown>, project?: Record<string, unknown>, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
+     * @returns {{ schema: string, kind: 'schematic' | 'pcb' | 'pcb-library' | 'project' | 'integrated-library', fileType: 'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb' | 'IntLib', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], schematic?: Record<string, unknown>, pcb?: Record<string, unknown>, pcbLibrary?: Record<string, unknown>, project?: Record<string, unknown>, integratedLibrary?: Record<string, unknown>, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
      */
     static parseArrayBufferToRendererModel(fileName, arrayBuffer) {
         const records = AsciiRecordParser.parse(arrayBuffer)
@@ -85,7 +100,8 @@ export class AltiumParser {
             return AltiumParser.#parseSchematic(
                 fileName,
                 schematicExtraction?.records || records,
-                arrayBuffer
+                arrayBuffer,
+                schematicExtraction
             )
         }
         if (fileType === 'PcbDoc') {
@@ -106,6 +122,12 @@ export class AltiumParser {
         if (fileType === 'PrjPcb') {
             return PrjPcbModelParser.parse(fileName, arrayBuffer)
         }
+        if (fileType === 'IntLib') {
+            return IntLibModelParser.parse(
+                fileName,
+                IntLibStreamExtractor.extractFromArrayBuffer(arrayBuffer)
+            )
+        }
         throw new Error('Unsupported file type: ' + fileName)
     }
 
@@ -113,7 +135,7 @@ export class AltiumParser {
      * Chooses the format based on extension and content.
      * @param {string} fileName
      * @param {{ fields: Record<string, string | string[]> }[]} records
-     * @returns {'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb'}
+     * @returns {'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb' | 'IntLib'}
      */
     static #sniffFileType(fileName, records) {
         const normalized = String(fileName || '').toLowerCase()
@@ -121,6 +143,7 @@ export class AltiumParser {
         if (normalized.endsWith('.pcbdoc')) return 'PcbDoc'
         if (normalized.endsWith('.pcblib')) return 'PcbLib'
         if (normalized.endsWith('.prjpcb')) return 'PrjPcb'
+        if (normalized.endsWith('.intlib')) return 'IntLib'
 
         const hasSchematicHeader = records.some((record) =>
             getField(record.fields, 'HEADER').includes('Schematic')
@@ -132,12 +155,23 @@ export class AltiumParser {
      * @param {string} fileName
      * @param {{ raw: string, fields: Record<string, string | string[]> }[]} records
      * @param {ArrayBuffer} arrayBuffer
+     * @param {{ embeddedFiles?: object } | null} schematicExtraction
      * @returns {ReturnType<typeof AltiumParser.parseArrayBufferToRendererModel>}
      */
-    static #parseSchematic(fileName, records, arrayBuffer) {
-        const componentRecords = records.filter(
+    static #parseSchematic(
+        fileName,
+        records,
+        arrayBuffer,
+        schematicExtraction = null
+    ) {
+        const recordIndexAwareRecords = records.map((record, recordIndex) => ({
+            ...record,
+            recordIndex
+        }))
+        const componentRecords = recordIndexAwareRecords.filter(
             (record) => getField(record.fields, 'RECORD') === '1'
         )
+        const recordTypes = SchematicRecordTypeRegistry.summarize(records)
         const ownersWithImplicitDisplayMode =
             AltiumParser.#collectOwnersWithImplicitDisplayMode(records)
         const activeMultipartOwnerParts =
@@ -176,6 +210,10 @@ export class AltiumParser {
                 getField(record.fields, 'RECORD') !== '30' &&
                 getField(record.fields, 'RECORD') !== '37' &&
                 !SchematicPrimitiveParser.isRectangleRecord(record.fields) &&
+                !SchematicPrimitiveParser.isRoundedRectangleRecord(
+                    record.fields
+                ) &&
+                !SchematicPrimitiveParser.isIeeeSymbolRecord(record.fields) &&
                 !AltiumParser.#hasDisplayText(record.fields) &&
                 AltiumParser.#hasCoordinatePair(record.fields, 'Location') &&
                 AltiumParser.#hasCoordinatePair(record.fields, 'Corner')
@@ -192,9 +230,31 @@ export class AltiumParser {
                 AltiumParser.#hasCoordinatePair(record.fields, 'Location') &&
                 AltiumParser.#hasCoordinatePair(record.fields, 'Corner')
         )
+        const roundedRectangleRecords = drawableRecords.filter(
+            (record) =>
+                SchematicPrimitiveParser.isRoundedRectangleRecord(
+                    record.fields
+                ) &&
+                AltiumParser.#hasCoordinatePair(record.fields, 'Location') &&
+                AltiumParser.#hasCoordinatePair(record.fields, 'Corner')
+        )
+        const ieeeSymbolRecords = drawableRecords.filter(
+            (record) =>
+                SchematicPrimitiveParser.isIeeeSymbolRecord(record.fields) &&
+                AltiumParser.#hasCoordinatePair(record.fields, 'Location')
+        )
         const arcRecords = drawableRecords.filter(
             (record) =>
                 ['11', '12'].includes(getField(record.fields, 'RECORD')) &&
+                AltiumParser.#hasCoordinatePair(record.fields, 'Location') &&
+                parseNumericField(record.fields, 'Radius') !== null
+        )
+        const bezierRecords = drawableRecords.filter(
+            (record) => getField(record.fields, 'RECORD') === '5'
+        )
+        const pieRecords = drawableRecords.filter(
+            (record) =>
+                getField(record.fields, 'RECORD') === '9' &&
                 AltiumParser.#hasCoordinatePair(record.fields, 'Location') &&
                 parseNumericField(record.fields, 'Radius') !== null
         )
@@ -227,10 +287,26 @@ export class AltiumParser {
         const crossRecords = drawableRecords.filter(
             (record) => getField(record.fields, 'RECORD') === '22'
         )
-        const recordIndexAwareRecords = records.map((record, recordIndex) => ({
-            ...record,
-            recordIndex
-        }))
+        const ownership = SchematicOwnershipGraphParser.parse(
+            recordIndexAwareRecords
+        )
+        const harnesses = SchematicHarnessParser.parse(recordIndexAwareRecords)
+        const implementations = SchematicImplementationParser.parse(
+            recordIndexAwareRecords
+        )
+        const displayModes = SchematicDisplayModeCatalogParser.parse(
+            recordIndexAwareRecords
+        )
+        const bindings = SchematicBindingProvenanceParser.parse(
+            recordIndexAwareRecords,
+            implementations
+        )
+        const crossSheetConnectors = SchematicCrossSheetConnectorParser.parse(
+            recordIndexAwareRecords
+        )
+        const repeatedChannels = SchematicRepeatedChannelParser.parse(
+            recordIndexAwareRecords
+        )
         const relatedTexts = new Map()
 
         for (const record of records) {
@@ -244,6 +320,9 @@ export class AltiumParser {
 
         const metadataTexts = extractSchematicMetadata(textRecords)
         const schematicFonts = extractSchematicFonts(sheetRecord?.fields)
+        const schematicRenderDiagnostics = extractSchematicFontDiagnostics(
+            sheetRecord?.fields
+        )
         const sheetWidth =
             parseNumericField(sheetRecord?.fields, 'CustomX') || 1500
         const sheetHeight =
@@ -343,6 +422,9 @@ export class AltiumParser {
                 polygons
             ))
         const arcs = SchematicPrimitiveParser.parseSchematicArcs(arcRecords)
+        const beziers =
+            SchematicPrimitiveParser.parseSchematicBeziers(bezierRecords)
+        const pies = SchematicPrimitiveParser.parseSchematicPies(pieRecords)
         const ellipses =
             SchematicPrimitiveParser.parseSchematicEllipses(ellipseRecords)
         const rectangles =
@@ -358,8 +440,20 @@ export class AltiumParser {
             )
         const regions =
             SchematicPrimitiveParser.parseSchematicRegions(regionRecords)
+        const roundedRectangles =
+            SchematicPrimitiveParser.parseSchematicRoundedRectangles(
+                roundedRectangleRecords
+            )
+        const ieeeSymbols =
+            SchematicPrimitiveParser.parseSchematicIeeeSymbols(
+                ieeeSymbolRecords
+            )
         const directives =
             SchematicDirectiveParser.parseSchematicDirectives(directiveRecords)
+        const directiveSemantics =
+            SchematicDirectiveParser.parseDirectiveSemantics(
+                recordIndexAwareRecords
+            )
         const { sheetSymbols, sheetEntries } = SchematicSheetParser.parse(
             recordIndexAwareRecords
         )
@@ -371,6 +465,11 @@ export class AltiumParser {
                 recordIndexAwareRecords,
                 arrayBuffer
             )
+        const template = SchematicTemplateParser.parse(
+            recordIndexAwareRecords,
+            sheetRecord,
+            sheet
+        )
 
         const ports = parseSchematicPorts(portRecords, lines)
         const crosses = parseSchematicCrosses(crossRecords)
@@ -421,6 +520,8 @@ export class AltiumParser {
                 pins,
                 ports
             )
+        const textFrames =
+            SchematicTextParser.extractSchematicTextFrames(anchoredTexts)
 
         const components = componentRecords.map((record) => {
             const x = parseNumericField(record.fields, 'Location.X') || 0
@@ -428,25 +529,28 @@ export class AltiumParser {
             const libReference =
                 getField(record.fields, 'LibReference') ||
                 getField(record.fields, 'DesignItemId')
-            const ownerIndex = String(
-                (parseNumericField(record.fields, 'IndexInSheet') || 0) + 1
+            const ownerTexts =
+                SchematicComponentOwnerTextResolver.resolveOwnerTexts(
+                    record,
+                    recordIndexAwareRecords,
+                    relatedTexts
+                )
+
+            const designator = SchematicComponentTextResolver.resolveDesignator(
+                ownerTexts,
+                anchoredTexts,
+                {
+                    x,
+                    y,
+                    libReference
+                }
             )
-            const ownerTexts = relatedTexts.get(ownerIndex) || []
 
             return {
                 x,
                 y,
                 libReference,
-                designator:
-                    SchematicComponentTextResolver.resolveDesignator(
-                        ownerTexts,
-                        anchoredTexts,
-                        {
-                            x,
-                            y,
-                            libReference
-                        }
-                    ) || 'U?',
+                designator: designator === null ? 'U?' : designator,
                 value: SchematicComponentTextResolver.resolveValue(
                     ownerTexts,
                     anchoredTexts,
@@ -513,6 +617,16 @@ export class AltiumParser {
                     'Sheet metadata record 31 was not found. Using fallback dimensions.'
             })
         }
+        diagnostics.push(
+            ...schematicRenderDiagnostics.fontFallbacks.map((fallback) => ({
+                severity: fallback.severity,
+                code: fallback.code,
+                fontId: fallback.fontId,
+                sourceFamily: fallback.sourceFamily,
+                resolvedFamily: fallback.resolvedFamily,
+                message: fallback.message
+            }))
+        )
         diagnostics.push(...imageDiagnostics)
         const { nets, diagnostics: netDiagnostics } =
             SchematicNetlistBuilder.build({
@@ -520,11 +634,36 @@ export class AltiumParser {
                 texts: anchoredTexts,
                 pins,
                 ports,
+                crossSheetConnectors: crossSheetConnectors?.connectors || [],
                 junctions,
                 busEntries,
                 sheetEntries
             })
         diagnostics.push(...netDiagnostics)
+        const qa = SchematicQaReportBuilder.build({
+            records: recordIndexAwareRecords,
+            sheet: resolvedSheet,
+            lines: normalizedLines,
+            texts: anchoredTexts
+        })
+        const connectivityQa = SchematicConnectivityQaBuilder.build({
+            nets,
+            texts: anchoredTexts,
+            pins,
+            ports,
+            junctions
+        })
+        const embeddedFiles = schematicExtraction?.embeddedFiles || null
+
+        if (embeddedFiles?.diagnostics?.length) {
+            diagnostics.push(
+                ...embeddedFiles.diagnostics.map((issue) => ({
+                    severity: issue.severity === 'info' ? 'info' : 'warning',
+                    code: issue.code,
+                    message: issue.message
+                }))
+            )
+        }
 
         return NormalizedModelSchema.attach({
             kind: 'schematic',
@@ -535,19 +674,30 @@ export class AltiumParser {
                 componentCount: components.length,
                 lineCount: lines.length,
                 textCount: anchoredTexts.length,
+                recordTypeCount: recordTypes.length,
                 bomRowCount: bom.length
             },
             diagnostics,
             schematic: {
                 sheet: resolvedSheet,
+                recordTypes,
+                ...(schematicRenderDiagnostics.fontFallbacks.length
+                    ? { renderDiagnostics: schematicRenderDiagnostics }
+                    : {}),
                 lines: normalizedLines,
                 polygons,
                 rectangles,
+                roundedRectangles,
                 regions,
                 ellipses,
                 arcs,
+                beziers,
+                pies,
+                ieeeSymbols,
                 directives,
+                directiveSemantics,
                 texts: anchoredTexts,
+                textFrames,
                 components,
                 pins,
                 ports,
@@ -560,7 +710,22 @@ export class AltiumParser {
                 junctions,
                 busEntries,
                 images,
-                nets
+                nets,
+                ownership,
+                ...(template ? { template } : {}),
+                ...(harnesses ? { harnesses } : {}),
+                ...(implementations ? { implementations } : {}),
+                ...(displayModes ? { displayModes } : {}),
+                ...(bindings ? { bindings } : {}),
+                ...(crossSheetConnectors ? { crossSheetConnectors } : {}),
+                ...(repeatedChannels ? { repeatedChannels } : {}),
+                ...(embeddedFiles &&
+                (embeddedFiles.files?.length ||
+                    embeddedFiles.diagnostics?.length)
+                    ? { embeddedFiles }
+                    : {}),
+                qa,
+                connectivityQa
             },
             bom
         })
@@ -598,7 +763,9 @@ export class AltiumParser {
                 ownerPartId &&
                 ownerPartId !== '-1' &&
                 !getField(record.fields, 'OwnerPartDisplayMode') &&
-                AltiumParser.#isDisplayModeSelectablePrimitive(record.fields)
+                SchematicComponentOwnerTextResolver.isDisplayModeSelectablePrimitive(
+                    record.fields
+                )
             ) {
                 owners.add(ownerIndex)
             }
@@ -649,27 +816,6 @@ export class AltiumParser {
                 fields,
                 activeMultipartOwnerParts
             )
-        )
-    }
-
-    /**
-     * Returns true when a schematic primitive participates in owner display
-     * mode selection.
-     * @param {Record<string, string | string[]>} fields
-     * @returns {boolean}
-     */
-    static #isDisplayModeSelectablePrimitive(fields) {
-        const recordType = getField(fields, 'RECORD')
-
-        return (
-            recordType === '2' ||
-            recordType === '6' ||
-            recordType === '11' ||
-            recordType === '12' ||
-            recordType === '13' ||
-            recordType === '27' ||
-            (AltiumParser.#hasCoordinatePair(fields, 'Location') &&
-                AltiumParser.#hasCoordinatePair(fields, 'Corner'))
         )
     }
 

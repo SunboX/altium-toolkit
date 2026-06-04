@@ -3,11 +3,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { AsciiRecordParser } from './AsciiRecordParser.mjs'
+import { EmbeddedFileInventoryBuilder } from './EmbeddedFileInventoryBuilder.mjs'
 import { PcbBinaryPrimitiveParser } from './PcbBinaryPrimitiveParser.mjs'
+import { PcbCustomPadShapeParser } from './PcbCustomPadShapeParser.mjs'
 import { PcbEmbeddedFontExtractor } from './PcbEmbeddedFontExtractor.mjs'
 import { PcbEmbeddedModelExtractor } from './PcbEmbeddedModelExtractor.mjs'
+import { PcbExtendedPrimitiveInformationParser } from './PcbExtendedPrimitiveInformationParser.mjs'
 import { PcbPrimitiveParameterParser } from './PcbPrimitiveParameterParser.mjs'
 import { PcbRawRecordRegistry } from './PcbRawRecordRegistry.mjs'
+import { PcbUnionParser } from './PcbUnionParser.mjs'
+import { PcbViaStructureParser } from './PcbViaStructureParser.mjs'
 import { PcbWideStringTableParser } from './PcbWideStringTableParser.mjs'
 import { OleCompoundDocument } from '../ole/OleCompoundDocument.mjs'
 import { OleConstants } from '../ole/OleConstants.mjs'
@@ -45,7 +50,7 @@ export class PcbStreamExtractor {
     /**
      * Extracts PCB content directly from one OLE-backed PcbDoc buffer.
      * @param {ArrayBuffer} arrayBuffer
-     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], binaryPrimitives: Record<string, object[]>, primitiveParameters: object, wideStrings: object, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number, primitiveParameterGroupCount: number, wideStringCount: number } } | null}
+     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], binaryPrimitives: Record<string, object[]>, primitiveParameters: object, wideStrings: object, viaStructures: object, extendedPrimitiveInformation: object, customPadShapes: object, unions: object, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number, primitiveParameterGroupCount: number, wideStringCount: number, viaStructureCount: number } } | null}
      */
     static extractFromArrayBuffer(arrayBuffer) {
         if (!PcbStreamExtractor.isCompoundDocument(arrayBuffer)) {
@@ -67,7 +72,7 @@ export class PcbStreamExtractor {
      * Extracts stream-scoped printable records and known binary primitives from
      * a stream map.
      * @param {Map<string, Uint8Array>} streams
-     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], binaryPrimitives: Record<string, object[]>, primitiveParameters: object, wideStrings: object, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number, primitiveParameterGroupCount: number, wideStringCount: number } }}
+     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], binaryPrimitives: Record<string, object[]>, primitiveParameters: object, wideStrings: object, viaStructures: object, extendedPrimitiveInformation: object, customPadShapes: object, unions: object, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number, primitiveParameterGroupCount: number, wideStringCount: number, viaStructureCount: number } }}
      */
     static extractFromStreams(streams) {
         const records = []
@@ -106,7 +111,9 @@ export class PcbStreamExtractor {
                 continue
             }
 
-            records.push(...streamRecords)
+            for (const record of streamRecords) {
+                records.push(record)
+            }
             printableStreamNames.add(name)
             usedStreamNames.add(name)
         }
@@ -142,6 +149,15 @@ export class PcbStreamExtractor {
         const wideStrings = PcbWideStringTableParser.parse(
             streams.get('WideStrings6/Data')
         )
+        const viaStructures = PcbViaStructureParser.extractFromStreams(streams)
+        const extendedPrimitiveInformation =
+            PcbExtendedPrimitiveInformationParser.parse(
+                streams.get('ExtendedPrimitiveInformation/Data')
+            )
+        const customPadShapes = PcbCustomPadShapeParser.parse(
+            streams.get('CustomShapes/Data')
+        )
+        const unions = PcbUnionParser.extractFromStreams(streams)
 
         if (primitiveParameters.groups.length) {
             usedStreamNames.add('PrimitiveParameters/Data')
@@ -149,6 +165,26 @@ export class PcbStreamExtractor {
 
         if (wideStrings.entries.length) {
             usedStreamNames.add('WideStrings6/Data')
+        }
+
+        for (const sourceStream of PcbStreamExtractor.#viaStructureStreamNames(
+            viaStructures
+        )) {
+            usedStreamNames.add(sourceStream)
+        }
+
+        if (extendedPrimitiveInformation.entries.length) {
+            usedStreamNames.add('ExtendedPrimitiveInformation/Data')
+        }
+
+        if (customPadShapes.entries.length) {
+            usedStreamNames.add('CustomShapes/Data')
+        }
+
+        for (const sourceStream of PcbStreamExtractor.#unionStreamNames(
+            unions
+        )) {
+            usedStreamNames.add(sourceStream)
         }
 
         if (arcHeaderBytes && arcDataBytes) {
@@ -175,6 +211,10 @@ export class PcbStreamExtractor {
             binaryPrimitives.vias = PcbBinaryPrimitiveParser.parseViaStream(
                 viaHeaderBytes,
                 viaDataBytes
+            )
+            PcbViaStructureParser.attachToVias(
+                binaryPrimitives.vias,
+                viaStructures
             )
             if (binaryPrimitives.vias.length) {
                 usedStreamNames.add('Vias6/Data')
@@ -246,6 +286,12 @@ export class PcbStreamExtractor {
             }
         }
 
+        PcbExtendedPrimitiveInformationParser.attachToPrimitives(
+            binaryPrimitives,
+            extendedPrimitiveInformation
+        )
+        PcbUnionParser.attachToPrimitives(binaryPrimitives, unions)
+
         const embeddedModels =
             PcbEmbeddedModelExtractor.extractFromStreams(streams)
         const embeddedFonts =
@@ -276,6 +322,19 @@ export class PcbStreamExtractor {
             )
         }
 
+        const embeddedFiles = EmbeddedFileInventoryBuilder.buildFromStreams(
+            streams,
+            {
+                skipStreamNames: usedStreamNames
+            }
+        )
+        embeddedFiles.files.forEach((file) =>
+            usedStreamNames.add(file.sourceStream)
+        )
+        embeddedFiles.diagnostics.forEach((diagnostic) =>
+            usedStreamNames.add(diagnostic.sourceStream)
+        )
+
         return {
             records,
             streamNames: [...usedStreamNames].sort((left, right) =>
@@ -284,16 +343,32 @@ export class PcbStreamExtractor {
             binaryPrimitives,
             primitiveParameters,
             wideStrings,
+            viaStructures,
+            extendedPrimitiveInformation,
+            customPadShapes,
+            unions,
             embeddedModels,
             embeddedFonts,
+            embeddedFiles,
             rawRecords,
             diagnostics: {
                 printableRecordCount: records.length,
                 printableStreamCount: printableStreamNames.size,
                 embeddedFontCount: embeddedFonts.fonts.length,
+                embeddedFileCount: embeddedFiles.files.length,
+                embeddedFileIssueCount: embeddedFiles.diagnostics.length,
+                embeddedModelIssueCount:
+                    embeddedModels.integrity?.issues?.length || 0,
                 rawRecordCount: rawRecords.length,
                 primitiveParameterGroupCount: primitiveParameters.groups.length,
                 wideStringCount: wideStrings.entries.length,
+                viaStructureCount: viaStructures.structures.length,
+                viaStructureLinkCount: viaStructures.links.length,
+                extendedPrimitiveInformationCount:
+                    extendedPrimitiveInformation.entries.length,
+                customPadShapeCount: customPadShapes.entries.length,
+                userUnionCount: unions.userUnions.length,
+                smartUnionCount: unions.smartUnions.length,
                 binaryPrimitiveCount:
                     binaryPrimitives.arcs.length +
                     binaryPrimitives.tracks.length +
@@ -327,7 +402,39 @@ export class PcbStreamExtractor {
      */
     static #isBinarySidecarDataStream(name) {
         return (
-            name === 'PrimitiveParameters/Data' || name === 'WideStrings6/Data'
+            name === 'PrimitiveParameters/Data' ||
+            name === 'WideStrings6/Data' ||
+            name === 'ViaStructures/Data' ||
+            name === 'ViaStructureManager/Data' ||
+            name === 'ExtendedPrimitiveInformation/Data' ||
+            name === 'CustomShapes/Data' ||
+            name === 'UnionNames/Data' ||
+            name === 'SmartUnions/Data'
         )
+    }
+
+    /**
+     * Collects sidecar source stream names that produced via-structure data.
+     * @param {{ structures?: { sourceStream?: string }[], links?: { sourceStream?: string }[] }} viaStructures
+     * @returns {string[]}
+     */
+    static #viaStructureStreamNames(viaStructures) {
+        return [
+            ...(viaStructures.structures || []),
+            ...(viaStructures.links || [])
+        ]
+            .map((record) => record.sourceStream)
+            .filter(Boolean)
+    }
+
+    /**
+     * Collects sidecar source stream names that produced union metadata.
+     * @param {{ userUnions?: { sourceStream?: string }[], smartUnions?: { sourceStream?: string }[] }} unions
+     * @returns {string[]}
+     */
+    static #unionStreamNames(unions) {
+        return [...(unions.userUnions || []), ...(unions.smartUnions || [])]
+            .map((record) => record.sourceStream)
+            .filter(Boolean)
     }
 }

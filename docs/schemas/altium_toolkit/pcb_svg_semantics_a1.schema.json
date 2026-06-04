@@ -1,0 +1,59 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.pcb.svg.semantics.a1",
+    "title": "Altium Toolkit PCB SVG Semantics A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "view", "layers", "elements"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.pcb.svg.semantics.a1"
+        },
+        "view": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "layerSet": {
+                    "type": "object"
+                },
+                "board": {
+                    "type": "object"
+                }
+            }
+        },
+        "boardOutline": {
+            "type": "object"
+        },
+        "layers": {
+            "type": "array"
+        },
+        "elements": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["elementKey", "primitive"],
+                "properties": {
+                    "elementKey": {
+                        "type": "string"
+                    },
+                    "primitive": {
+                        "type": "string"
+                    },
+                    "layerKey": {
+                        "type": "string"
+                    },
+                    "net": {
+                        "type": "string"
+                    },
+                    "component": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    }
+}

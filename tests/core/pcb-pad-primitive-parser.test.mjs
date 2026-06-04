@@ -80,6 +80,20 @@ test('PcbBinaryPrimitiveParser skips unknown pad subrecords before the next pad'
 })
 
 /**
+ * Verifies large pad streams do not depend on recursive boundary scanning.
+ */
+test('PcbBinaryPrimitiveParser decodes large pad streams iteratively', () => {
+    const recordCount = 12_000
+    const { headerBytes, dataBytes } =
+        PcbBinaryPrimitiveTestFactory.createLargePadStream(recordCount)
+    const pads = PcbBinaryPrimitiveParser.parsePadStream(headerBytes, dataBytes)
+
+    assert.equal(pads.length, recordCount)
+    assert.equal(pads[0].x, 100)
+    assert.equal(pads[recordCount - 1].x, 12_099)
+})
+
+/**
  * Verifies raw pad shape variants are exposed as stable normalized names.
  */
 test('PcbBinaryPrimitiveParser names pad shape variants', () => {
@@ -99,6 +113,37 @@ test('PcbBinaryPrimitiveParser names pad shape variants', () => {
         middle: 'octagonal',
         bottom: 'rounded-rectangle'
     })
+})
+
+/**
+ * Verifies pad main subrecords expose explicit hole tolerances and suppress the
+ * unset sentinel value.
+ */
+test('PcbBinaryPrimitiveParser decodes pad hole tolerances', () => {
+    const setStream =
+        PcbBinaryPrimitiveTestFactory.createPadHoleToleranceStream()
+    const unsetStream =
+        PcbBinaryPrimitiveTestFactory.createPadUnsetHoleToleranceStream()
+    const pads = PcbBinaryPrimitiveParser.parsePadStream(
+        setStream.headerBytes,
+        setStream.dataBytes
+    )
+    const unsetPads = PcbBinaryPrimitiveParser.parsePadStream(
+        unsetStream.headerBytes,
+        unsetStream.dataBytes
+    )
+
+    assert.equal(pads.length, 1)
+    assert.equal(pads[0].positiveTolerance, 1.1)
+    assert.equal(pads[0].negativeTolerance, -0.7)
+    assert.deepEqual(pads[0].holeTolerance, {
+        positive: 1.1,
+        negative: -0.7
+    })
+    assert.equal(unsetPads.length, 1)
+    assert.equal(unsetPads[0].positiveTolerance, undefined)
+    assert.equal(unsetPads[0].negativeTolerance, undefined)
+    assert.equal(unsetPads[0].holeTolerance, undefined)
 })
 
 /**

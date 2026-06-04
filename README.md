@@ -18,20 +18,30 @@ browser or Node-based tools.
 
 ## Features
 
-- Parse standalone native `.SchDoc`, `.PcbDoc`, `.PcbLib`, and `.PrjPcb` files from
-  `ArrayBuffer`
+- Parse standalone native `.SchDoc`, `.PcbDoc`, `.PcbLib`, `.PrjPcb`, and
+  `.IntLib` files from `ArrayBuffer`
 - Recover schematic records, PCB outlines, placements, PCB library footprints,
   project document references, variants, parameters, primitives, embedded
   schematic images, component annotations from PrimitiveParameters/Text streams,
-  embedded PCB STEP payload metadata, and embedded PCB/PcbLib font payloads with
-  basic text metrics
+  PCB pad/via stack and hole-tolerance detail, via-protection sidecars, custom
+  pad shape links, extended mask/paste sidecars, PCB union metadata, embedded
+  PCB 3D payload metadata, PCB component provenance, differential-pair class
+  joins, schematic directive semantics, barcode PCB text metadata, mechanical
+  layer pairs, pick-and-place coordinate modes, PCB dimensions, project
+  class-generation policy, project-level design bundles, annotation mappings,
+  effective variant views, schematic/PCB ownership sidecars, deterministic
+  wirelist/netlist exports, library render manifests, library lookup indexes,
+  schematic project-parameter text resolution, PCB QA statistics, structured
+  diagnostics, and embedded PCB/PcbLib font payloads with basic text metrics
 - Preserve raw PCB primitive records through a read-only record registry so
   unsupported or partially decoded stream data remains inspectable
 - Emit Circuit JSON arrays from parser roots, with non-serialized
   renderer-compatibility fields for existing consumers
-- Render schematic SVG, PCB SVG, and grouped BOM HTML
+- Render semantically annotated schematic SVG, semantically annotated PCB SVG,
+  deterministic per-layer PCB SVG exports, and grouped BOM HTML
 - Build non-interactive PCB 3D scene-description data for host applications,
-  including refined board outlines and silkscreen drill cutouts
+  including refined board outlines, silkscreen drill cutouts, and external
+  model projection diagnostics
 - Render a static 3D board summary
 - Run entirely with local input data; no network calls are made by the parser
 
@@ -78,6 +88,8 @@ import 'altium-toolkit/styles/altium-renderers.css'
 - [API](docs/api.md)
 - [Model Format](docs/model-format.md)
 - [Normalized Model Schema](docs/schemas/altium_toolkit/normalized_model_a1.schema.json)
+- [Project Bundle Schema](docs/schemas/altium_toolkit/project_bundle_a1.schema.json)
+- [Netlist Schema](docs/schemas/altium_toolkit/netlist_a1.schema.json)
 - [Testing](docs/testing.md)
 - [Scope](spec/library-scope.md)
 

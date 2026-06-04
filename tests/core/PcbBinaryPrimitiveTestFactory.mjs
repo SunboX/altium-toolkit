@@ -166,6 +166,25 @@ export class PcbBinaryPrimitiveTestFactory {
     }
 
     /**
+     * Creates a via stream whose tail stores unset tolerance sentinels and a
+     * propagation delay value.
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static createViaStreamWithUnsetToleranceAndPropagation() {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+        const dataBytes = PcbBinaryPrimitiveTestFactory.#createViaRecord(321)
+        const dataView = new DataView(dataBytes.buffer)
+
+        headerView.setUint32(0, 1, true)
+        dataView.setInt32(296, 0x7fffffff, true)
+        dataView.setInt32(300, 0x7fffffff, true)
+        dataView.setFloat32(321, 6.25e-11, true)
+
+        return { headerBytes, dataBytes }
+    }
+
+    /**
      * Creates a one-fill stream pair.
      * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
      */
@@ -291,6 +310,71 @@ export class PcbBinaryPrimitiveTestFactory {
     }
 
     /**
+     * Creates a one-pad stream whose main subrecord carries hole tolerances.
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static createPadHoleToleranceStream() {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+
+        headerView.setUint32(0, 1, true)
+
+        return {
+            headerBytes,
+            dataBytes:
+                PcbBinaryPrimitiveTestFactory.#createLengthPrefixedRecord(2, [
+                    new Uint8Array(0),
+                    new Uint8Array(0),
+                    new Uint8Array(0),
+                    new Uint8Array(0),
+                    PcbBinaryPrimitiveTestFactory.#createBasicPadPayload({
+                        x: 160,
+                        y: 240,
+                        componentIndex: 3,
+                        netIndex: 11,
+                        byteLength: 170,
+                        holePositiveTolerance: 1.1,
+                        holeNegativeTolerance: -0.7
+                    }),
+                    new Uint8Array(0)
+                ])
+        }
+    }
+
+    /**
+     * Creates a one-pad stream whose main subrecord stores unset tolerance
+     * sentinels.
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static createPadUnsetHoleToleranceStream() {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+
+        headerView.setUint32(0, 1, true)
+
+        return {
+            headerBytes,
+            dataBytes:
+                PcbBinaryPrimitiveTestFactory.#createLengthPrefixedRecord(2, [
+                    new Uint8Array(0),
+                    new Uint8Array(0),
+                    new Uint8Array(0),
+                    new Uint8Array(0),
+                    PcbBinaryPrimitiveTestFactory.#createBasicPadPayload({
+                        x: 180,
+                        y: 260,
+                        componentIndex: 3,
+                        netIndex: 11,
+                        byteLength: 170,
+                        holePositiveTolerance: null,
+                        holeNegativeTolerance: null
+                    }),
+                    new Uint8Array(0)
+                ])
+        }
+    }
+
+    /**
      * Creates a two-pad stream where the first pad carries an unknown optional
      * subrecord after the known extension subrecord.
      * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
@@ -334,6 +418,50 @@ export class PcbBinaryPrimitiveTestFactory {
         headerView.setUint32(0, 2, true)
         dataBytes.set(firstPad, 0)
         dataBytes.set(secondPad, firstPad.byteLength)
+
+        return { headerBytes, dataBytes }
+    }
+
+    /**
+     * Creates a large stream of ordinary pad records.
+     * @param {number} recordCount
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static createLargePadStream(recordCount) {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+        const records = []
+        let byteLength = 0
+
+        headerView.setUint32(0, recordCount, true)
+
+        for (let index = 0; index < recordCount; index += 1) {
+            const record =
+                PcbBinaryPrimitiveTestFactory.#createLengthPrefixedRecord(2, [
+                    new Uint8Array(0),
+                    new Uint8Array(0),
+                    new Uint8Array(0),
+                    new Uint8Array(0),
+                    PcbBinaryPrimitiveTestFactory.#createBasicPadPayload({
+                        x: 100 + index,
+                        y: 200 + index,
+                        componentIndex: 1,
+                        netIndex: 2
+                    }),
+                    new Uint8Array(0)
+                ])
+
+            records.push(record)
+            byteLength += record.byteLength
+        }
+
+        const dataBytes = new Uint8Array(byteLength)
+        let offset = 0
+
+        for (const record of records) {
+            dataBytes.set(record, offset)
+            offset += record.byteLength
+        }
 
         return { headerBytes, dataBytes }
     }
@@ -592,11 +720,11 @@ export class PcbBinaryPrimitiveTestFactory {
 
     /**
      * Creates one basic plated through-hole pad main subrecord.
-     * @param {{ x: number, y: number, componentIndex: number, netIndex: number, shapeTop?: number, shapeMid?: number, shapeBottom?: number }} options
+     * @param {{ x: number, y: number, componentIndex: number, netIndex: number, shapeTop?: number, shapeMid?: number, shapeBottom?: number, byteLength?: number, holePositiveTolerance?: number | null, holeNegativeTolerance?: number | null }} options
      * @returns {Uint8Array}
      */
     static #createBasicPadPayload(options) {
-        const mainPayload = new Uint8Array(64)
+        const mainPayload = new Uint8Array(options.byteLength || 64)
         const payloadView = new DataView(mainPayload.buffer)
 
         payloadView.setUint8(0, 74)
@@ -618,7 +746,42 @@ export class PcbBinaryPrimitiveTestFactory {
         payloadView.setFloat64(52, 0, true)
         payloadView.setUint8(60, 1)
 
+        if (mainPayload.byteLength >= 170) {
+            PcbBinaryPrimitiveTestFactory.#writeOptionalHoleTolerance(
+                payloadView,
+                162,
+                options.holePositiveTolerance
+            )
+            PcbBinaryPrimitiveTestFactory.#writeOptionalHoleTolerance(
+                payloadView,
+                166,
+                options.holeNegativeTolerance
+            )
+        }
+
         return mainPayload
+    }
+
+    /**
+     * Writes one optional hole tolerance or its unset sentinel.
+     * @param {DataView} dataView
+     * @param {number} offset
+     * @param {number | null | undefined} valueMil
+     */
+    static #writeOptionalHoleTolerance(dataView, offset, valueMil) {
+        if (valueMil === null) {
+            dataView.setInt32(offset, 0x7fffffff, true)
+            return
+        }
+        if (valueMil === undefined) {
+            return
+        }
+
+        PcbBinaryPrimitiveTestFactory.#writeSignedMil(
+            dataView,
+            offset,
+            valueMil
+        )
     }
 
     /**

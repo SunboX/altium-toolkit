@@ -3,7 +3,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbBinaryPrimitiveParser } from './PcbBinaryPrimitiveParser.mjs'
+import { PcbCustomPadShapeParser } from './PcbCustomPadShapeParser.mjs'
 import { PcbEmbeddedFontExtractor } from './PcbEmbeddedFontExtractor.mjs'
+import { PcbEmbeddedModelExtractor } from './PcbEmbeddedModelExtractor.mjs'
+import { PcbExtendedPrimitiveInformationParser } from './PcbExtendedPrimitiveInformationParser.mjs'
 import { PcbRawRecordRegistry } from './PcbRawRecordRegistry.mjs'
 import { OleCompoundDocument } from '../ole/OleCompoundDocument.mjs'
 import { OleConstants } from '../ole/OleConstants.mjs'
@@ -159,6 +162,8 @@ export class PcbLibStreamExtractor {
         )
         const embeddedFonts =
             PcbEmbeddedFontExtractor.extractFromStreams(streams)
+        const embeddedModels =
+            PcbEmbeddedModelExtractor.extractFromStreams(streams)
 
         return {
             libraryHeader: parsedLibraryData.libraryHeader,
@@ -168,15 +173,19 @@ export class PcbLibStreamExtractor {
             streamNames: PcbLibStreamExtractor.#collectUsedStreamNames(
                 footprints,
                 streams,
-                embeddedFonts
+                embeddedFonts,
+                embeddedModels
             ),
             embeddedFonts,
+            embeddedModels,
             diagnostics: {
                 declaredFootprintCount: parsedLibraryData.footprintNames.length,
                 footprintCount: footprints.length,
                 primitiveCount,
                 rawRecordCount,
                 embeddedFontCount: embeddedFonts.fonts.length,
+                embeddedModelCount: embeddedModels.models.length,
+                componentBodyCount: embeddedModels.componentBodies.length,
                 missingFootprintCount:
                     parsedLibraryData.footprintNames.length - footprints.length
             }
@@ -339,6 +348,21 @@ export class PcbLibStreamExtractor {
         const wideStrings = PcbLibStreamExtractor.#parseWideStrings(
             streams.get(storageName + '/WideStrings')
         )
+        const extendedPrimitiveInformation =
+            PcbExtendedPrimitiveInformationParser.parse(
+                PcbLibStreamExtractor.#firstStream(streams, [
+                    storageName + '/ExtendedPrimitiveInformation/Data',
+                    storageName + '/ExtendedPrimitiveInformation'
+                ]),
+                storageName + '/ExtendedPrimitiveInformation/Data'
+            )
+        const customPadShapes = PcbCustomPadShapeParser.parse(
+            PcbLibStreamExtractor.#firstStream(streams, [
+                storageName + '/CustomShapes/Data',
+                storageName + '/CustomShapes'
+            ]),
+            storageName + '/CustomShapes/Data'
+        )
         const parsedData = PcbLibStreamExtractor.#parseFootprintData(
             streams.get(storageName + '/Data') || new Uint8Array(),
             declaredPrimitiveCount,
@@ -364,8 +388,20 @@ export class PcbLibStreamExtractor {
             vias: parsedData.vias,
             fills: parsedData.fills,
             texts: parsedData.texts,
-            regions: parsedData.regions
+            regions: parsedData.regions,
+            extendedPrimitiveInformation,
+            customPadShapes
         }
+    }
+
+    /**
+     * Returns the first present stream from a candidate list.
+     * @param {Map<string, Uint8Array>} streams Stream map.
+     * @param {string[]} candidates Candidate stream names.
+     * @returns {Uint8Array | undefined}
+     */
+    static #firstStream(streams, candidates) {
+        return candidates.map((name) => streams.get(name)).find(Boolean)
     }
 
     /**
@@ -903,9 +939,15 @@ export class PcbLibStreamExtractor {
      * @param {object[]} footprints
      * @param {Map<string, Uint8Array>} streams
      * @param {{ fonts?: { sourceStream: string }[] }} embeddedFonts
+     * @param {{ models?: { sourceStream: string }[], componentBodies?: { sourceStream: string }[] }} embeddedModels
      * @returns {string[]}
      */
-    static #collectUsedStreamNames(footprints, streams, embeddedFonts) {
+    static #collectUsedStreamNames(
+        footprints,
+        streams,
+        embeddedFonts,
+        embeddedModels
+    ) {
         const names = new Set()
 
         for (const baseName of [
@@ -923,7 +965,11 @@ export class PcbLibStreamExtractor {
                 'Header',
                 'Data',
                 'Parameters',
-                'WideStrings'
+                'WideStrings',
+                'ExtendedPrimitiveInformation/Data',
+                'ExtendedPrimitiveInformation',
+                'CustomShapes/Data',
+                'CustomShapes'
             ]) {
                 const name = footprint.sourceStorage + '/' + suffix
                 if (streams.has(name)) {
@@ -935,6 +981,18 @@ export class PcbLibStreamExtractor {
         for (const font of embeddedFonts.fonts || []) {
             if (streams.has(font.sourceStream)) {
                 names.add(font.sourceStream)
+            }
+        }
+
+        for (const model of embeddedModels.models || []) {
+            if (streams.has(model.sourceStream)) {
+                names.add(model.sourceStream)
+            }
+        }
+
+        for (const componentBody of embeddedModels.componentBodies || []) {
+            if (streams.has(componentBody.sourceStream)) {
+                names.add(componentBody.sourceStream)
             }
         }
 

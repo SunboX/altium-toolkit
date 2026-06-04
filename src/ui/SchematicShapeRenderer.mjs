@@ -67,6 +67,164 @@ export class SchematicShapeRenderer {
     }
 
     /**
+     * Builds one schematic cubic Bezier primitive.
+     * @param {{ segments: { start: { x: number, y: number }, control1: { x: number, y: number }, control2: { x: number, y: number }, end: { x: number, y: number } }[], color: string, width: number, lineStyle?: number }} bezier
+     * @param {number} sheetHeight
+     * @returns {string}
+     */
+    static buildBezierMarkup(bezier, sheetHeight) {
+        const segments = Array.isArray(bezier?.segments) ? bezier.segments : []
+        if (!segments.length) {
+            return ''
+        }
+
+        const path = segments
+            .map((segment, index) => {
+                const start = SchematicShapeRenderer.#projectPoint(
+                    segment.start,
+                    sheetHeight
+                )
+                const control1 = SchematicShapeRenderer.#projectPoint(
+                    segment.control1,
+                    sheetHeight
+                )
+                const control2 = SchematicShapeRenderer.#projectPoint(
+                    segment.control2,
+                    sheetHeight
+                )
+                const end = SchematicShapeRenderer.#projectPoint(
+                    segment.end,
+                    sheetHeight
+                )
+                const move =
+                    index === 0
+                        ? 'M ' +
+                          formatNumber(start.x) +
+                          ' ' +
+                          formatNumber(start.y) +
+                          ' '
+                        : ''
+
+                return (
+                    move +
+                    'C ' +
+                    formatNumber(control1.x) +
+                    ' ' +
+                    formatNumber(control1.y) +
+                    ' ' +
+                    formatNumber(control2.x) +
+                    ' ' +
+                    formatNumber(control2.y) +
+                    ' ' +
+                    formatNumber(end.x) +
+                    ' ' +
+                    formatNumber(end.y)
+                )
+            })
+            .join(' ')
+
+        return (
+            '<path class="schematic-bezier" d="' +
+            escapeHtml(path) +
+            '" stroke="' +
+            escapeHtml(
+                SchematicColorResolver.resolveColor(
+                    bezier.color,
+                    '--schematic-default-ink-color'
+                )
+            ) +
+            '" stroke-width="' +
+            formatNumber(Math.max(bezier.width || 1, 0.8)) +
+            '"' +
+            SchematicShapeRenderer.#buildSchematicStrokeStyleAttributes(
+                bezier.width,
+                bezier.lineStyle
+            ) +
+            ' fill="none" />'
+        )
+    }
+
+    /**
+     * Builds one schematic pie/wedge primitive.
+     * @param {{ x: number, y: number, radius: number, radiusY?: number, startAngle: number, endAngle: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number }} pie
+     * @param {number} sheetHeight
+     * @returns {string}
+     */
+    static buildPieMarkup(pie, sheetHeight) {
+        const radiusX = Math.max(Number(pie.radius) || 0, 0.8)
+        const radiusY = Math.max(Number(pie.radiusY ?? pie.radius) || 0, 0.8)
+        const delta = SchematicShapeRenderer.#normalizeArcDelta(
+            pie.startAngle,
+            pie.endAngle
+        )
+        const sweep = delta >= 0 ? 0 : 1
+        const center = {
+            x: Number(pie.x) || 0,
+            y: projectSchematicY(sheetHeight, Number(pie.y) || 0)
+        }
+        const start = SchematicShapeRenderer.#projectArcPoint(
+            pie,
+            pie.startAngle,
+            sheetHeight,
+            radiusX,
+            radiusY
+        )
+        const end = SchematicShapeRenderer.#projectArcPoint(
+            pie,
+            pie.endAngle,
+            sheetHeight,
+            radiusX,
+            radiusY
+        )
+        const largeArc = Math.abs(delta) > 180 ? 1 : 0
+        const path =
+            'M ' +
+            formatNumber(center.x) +
+            ' ' +
+            formatNumber(center.y) +
+            ' L ' +
+            formatNumber(start.x) +
+            ' ' +
+            formatNumber(start.y) +
+            ' A ' +
+            formatNumber(radiusX) +
+            ' ' +
+            formatNumber(radiusY) +
+            ' 0 ' +
+            largeArc +
+            ' ' +
+            sweep +
+            ' ' +
+            formatNumber(end.x) +
+            ' ' +
+            formatNumber(end.y) +
+            ' Z'
+
+        return (
+            '<path class="schematic-pie" d="' +
+            escapeHtml(path) +
+            '" fill="' +
+            escapeHtml(
+                SchematicColorResolver.resolveFill(
+                    SchematicShapeRenderer.#resolveSchematicPieFill(pie),
+                    '--schematic-fill-color',
+                    true
+                )
+            ) +
+            '" stroke="' +
+            escapeHtml(
+                SchematicColorResolver.resolveColor(
+                    pie.color,
+                    '--schematic-default-ink-color'
+                )
+            ) +
+            '" stroke-width="' +
+            formatNumber(Math.max(pie.lineWidth || 1, 0.8)) +
+            '" />'
+        )
+    }
+
+    /**
      * Builds one schematic rectangle primitive.
      * @param {{ x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, lineStyle?: number }} rectangle
      * @param {number} sheetHeight
@@ -108,6 +266,92 @@ export class SchematicShapeRenderer {
                 rectangle.lineStyle
             ) +
             ' />'
+        )
+    }
+
+    /**
+     * Builds one schematic rounded-rectangle primitive.
+     * @param {{ x: number, y: number, width: number, height: number, radius?: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, lineStyle?: number }} rectangle
+     * @param {number} sheetHeight
+     * @returns {string}
+     */
+    static buildRoundedRectangleMarkup(rectangle, sheetHeight) {
+        const radius = Math.max(Number(rectangle.radius || 0), 0)
+
+        return (
+            '<rect class="schematic-rounded-rectangle" x="' +
+            formatNumber(rectangle.x) +
+            '" y="' +
+            formatNumber(
+                projectSchematicY(sheetHeight, rectangle.y + rectangle.height)
+            ) +
+            '" width="' +
+            formatNumber(rectangle.width) +
+            '" height="' +
+            formatNumber(rectangle.height) +
+            '" rx="' +
+            formatNumber(radius) +
+            '" ry="' +
+            formatNumber(radius) +
+            '" fill="' +
+            escapeHtml(
+                SchematicColorResolver.resolveFill(
+                    SchematicShapeRenderer.#resolveSchematicRectangleFill(
+                        rectangle
+                    ),
+                    '--schematic-fill-color'
+                )
+            ) +
+            '" stroke="' +
+            escapeHtml(
+                SchematicColorResolver.resolveColor(
+                    rectangle.color,
+                    '--schematic-default-ink-color'
+                )
+            ) +
+            '" stroke-width="' +
+            formatNumber(Math.max(rectangle.lineWidth || 1, 0.8)) +
+            '"' +
+            SchematicShapeRenderer.#buildSchematicStrokeStyleAttributes(
+                rectangle.lineWidth,
+                rectangle.lineStyle
+            ) +
+            ' />'
+        )
+    }
+
+    /**
+     * Builds one schematic IEEE-symbol primitive.
+     * @param {{ x: number, y: number, symbolName?: string, size?: number, color: string, lineWidth?: number }} symbol
+     * @param {number} sheetHeight
+     * @returns {string}
+     */
+    static buildIeeeSymbolMarkup(symbol, sheetHeight) {
+        const name = String(symbol?.symbolName || 'unknown')
+        const size = Math.max(Number(symbol?.size || 12), 1)
+        const x = Number(symbol?.x || 0)
+        const y = projectSchematicY(sheetHeight, Number(symbol?.y || 0))
+        const color = escapeHtml(
+            SchematicColorResolver.resolveColor(
+                symbol.color,
+                '--schematic-default-ink-color'
+            )
+        )
+        const strokeWidth = formatNumber(Math.max(symbol.lineWidth || 1, 0.8))
+
+        return (
+            '<g class="schematic-ieee-symbol schematic-ieee-symbol--' +
+            escapeHtml(name) +
+            '">' +
+            SchematicShapeRenderer.#buildIeeeSymbolShape(
+                name,
+                x,
+                y,
+                size,
+                color,
+                strokeWidth
+            ) +
+            '</g>'
         )
     }
 
@@ -222,6 +466,124 @@ export class SchematicShapeRenderer {
         }
 
         return ellipse.fill || 'none'
+    }
+
+    /**
+     * Resolves the visible fill for one schematic pie primitive.
+     * @param {{ fill: string, isSolid: boolean, transparent: boolean }} pie
+     * @returns {string}
+     */
+    static #resolveSchematicPieFill(pie) {
+        if (pie.transparent || !pie.isSolid) {
+            return 'none'
+        }
+
+        return pie.fill || 'none'
+    }
+
+    /**
+     * Builds the inner geometry for one normalized IEEE symbol.
+     * @param {string} name Symbol name.
+     * @param {number} x Center X.
+     * @param {number} y Center Y.
+     * @param {number} size Symbol size.
+     * @param {string} color SVG color.
+     * @param {string} strokeWidth SVG stroke width.
+     * @returns {string}
+     */
+    static #buildIeeeSymbolShape(name, x, y, size, color, strokeWidth) {
+        const half = size / 2
+        const left = x - half
+        const right = x + half
+        const top = y - half
+        const bottom = y + half
+
+        if (name === 'inverter' || name === 'buffer') {
+            const bubble =
+                name === 'inverter'
+                    ? '<circle cx="' +
+                      formatNumber(right + size * 0.18) +
+                      '" cy="' +
+                      formatNumber(y) +
+                      '" r="' +
+                      formatNumber(size * 0.18) +
+                      '" fill="none" stroke="' +
+                      color +
+                      '" stroke-width="' +
+                      strokeWidth +
+                      '" />'
+                    : ''
+
+            return (
+                '<path d="M ' +
+                formatNumber(left) +
+                ' ' +
+                formatNumber(top) +
+                ' L ' +
+                formatNumber(left) +
+                ' ' +
+                formatNumber(bottom) +
+                ' L ' +
+                formatNumber(right) +
+                ' ' +
+                formatNumber(y) +
+                ' Z" fill="none" stroke="' +
+                color +
+                '" stroke-width="' +
+                strokeWidth +
+                '" stroke-linejoin="round" />' +
+                bubble
+            )
+        }
+
+        if (name === 'clock') {
+            return (
+                '<path d="M ' +
+                formatNumber(left) +
+                ' ' +
+                formatNumber(top) +
+                ' L ' +
+                formatNumber(x) +
+                ' ' +
+                formatNumber(y) +
+                ' L ' +
+                formatNumber(left) +
+                ' ' +
+                formatNumber(bottom) +
+                '" fill="none" stroke="' +
+                color +
+                '" stroke-width="' +
+                strokeWidth +
+                '" stroke-linejoin="round" />'
+            )
+        }
+
+        return (
+            '<circle cx="' +
+            formatNumber(x) +
+            '" cy="' +
+            formatNumber(y) +
+            '" r="' +
+            formatNumber(half) +
+            '" fill="none" stroke="' +
+            color +
+            '" stroke-width="' +
+            strokeWidth +
+            '" />'
+        )
+    }
+
+    /**
+     * Projects one schematic coordinate pair into SVG coordinates.
+     * @param {{ x: number, y: number }} point Source point.
+     * @param {number} sheetHeight Sheet height.
+     * @returns {{ x: number, y: number }}
+     */
+    static #projectPoint(point, sheetHeight) {
+        return {
+            x: Number(point?.x) || 0,
+            y: projectSchematicY(sheetHeight, Number(point?.y) || 0)
+        }
     }
 
     /**

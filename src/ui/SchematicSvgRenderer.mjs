@@ -18,6 +18,8 @@ import { SchematicOwnerPinLabelLayout } from './SchematicOwnerPinLabelLayout.mjs
 import { SchematicRegionRenderer } from './SchematicRegionRenderer.mjs'
 import { SchematicSheetSymbolRenderer } from './SchematicSheetSymbolRenderer.mjs'
 import { SchematicImageRenderer } from './SchematicImageRenderer.mjs'
+import { TextGeometrySidecarBuilder } from './TextGeometrySidecarBuilder.mjs'
+import { SchematicProjectParameterResolver } from '../core/altium/SchematicProjectParameterResolver.mjs'
 
 const { createSvgText, escapeHtml, formatNumber, projectSchematicY } =
     SchematicSvgUtils
@@ -30,13 +32,25 @@ const SECTION_HEADING_LINE_X_PADDING = 15
  * Renders normalized schematic models into presentational SVG.
  */
 export class SchematicSvgRenderer {
+    static #SEMANTIC_SCHEMA = 'altium-toolkit.schematic.svg.semantics.a1'
+
     /**
      * Renders a normalized schematic model into SVG markup.
      * @param {{ fileName?: string, summary: { title?: string }, schematic?: { sheet: { width: number, height: number, sourceWidth?: number, sourceHeight?: number, paperSize?: string, borderOn?: boolean, titleBlockOn?: boolean, marginWidth?: number, xZones?: number, yZones?: number, titleBlock?: { title?: string, revision?: string, documentNumber?: string, sheetNumber?: string, sheetTotal?: string, date?: string, drawnBy?: string } }, lines: { x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle?: number, isBus?: boolean, ownerIndex?: string, renderOrder?: number, recordType?: string }[], polygons?: { points: { x: number, y: number }[], color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], rectangles?: { x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], regions?: { x: number, y: number, width: number, height: number, color: string, fill: string, renderOrder?: number }[], ellipses?: { x: number, y: number, radiusX: number, radiusY: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, color: string, width: number, ownerIndex?: string, renderOrder?: number }[], directives?: { x: number, y: number, color: string, name: string, orientation?: number }[], texts: { x: number, y: number, text: string, color: string, recordType?: string, style?: number, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, anchor?: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }[], components: { x: number, y: number, designator: string }[], pins?: { x: number, y: number, length: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color: string, labelColor?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', ownerIndex?: string }[], ports?: { x: number, y: number, width: number, height: number, name: string, fill: string, color: string, direction?: 'left' | 'right' | 'up' | 'down', shape?: 'single' | 'double' | 'plain' }[], crosses?: { x: number, y: number, size: number, color: string }[] } }} documentModel
+     * @param {{ projectParameters?: Record<string, string | number | boolean | null | undefined> }} options Render options.
      * @returns {string}
      */
-    static render(documentModel) {
-        const schematic = documentModel?.schematic
+    static render(documentModel, options = {}) {
+        const renderOptions =
+            SchematicSvgRenderer.#normalizeRenderOptions(options)
+        const renderModel = options.projectParameters
+            ? SchematicProjectParameterResolver.applyToDocumentModel(
+                  documentModel,
+                  options.projectParameters,
+                  { replaceText: true }
+              )
+            : documentModel
+        const schematic = renderModel?.schematic
         if (!schematic) {
             return '<section class="altium-renderer-empty">No schematic entities were recovered from this file.</section>'
         }
@@ -52,15 +66,22 @@ export class SchematicSvgRenderer {
                 ? schematic
                 : { ...schematic, sheet: renderedSheet.contentSheet }
         const allTexts = schematic.texts || []
-        const lines = schematic.lines.slice(0, 2500)
+        const lines = (schematic.lines || []).slice(0, 2500)
         const polygons = (schematic.polygons || []).slice(0, 1000)
         const rectangles = (schematic.rectangles || []).slice(0, 500)
+        const roundedRectangles = (schematic.roundedRectangles || []).slice(
+            0,
+            500
+        )
         const regions = (schematic.regions || []).slice(0, 250)
         const ellipses = (schematic.ellipses || []).slice(0, 500)
         const arcs = (schematic.arcs || []).slice(0, 1000)
+        const beziers = (schematic.beziers || []).slice(0, 500)
+        const pies = (schematic.pies || []).slice(0, 500)
+        const ieeeSymbols = (schematic.ieeeSymbols || []).slice(0, 500)
         const directives = (schematic.directives || []).slice(0, 250)
         const texts = allTexts
-        const components = schematic.components.slice(0, 180)
+        const components = (schematic.components || []).slice(0, 180)
         const pins = (schematic.pins || []).slice(0, 1000)
         const ports = (schematic.ports || []).slice(0, 250)
         const crosses = (schematic.crosses || []).slice(0, 250)
@@ -69,6 +90,18 @@ export class SchematicSvgRenderer {
         const authoredJunctions = (schematic.junctions || []).slice(0, 500)
         const busEntries = (schematic.busEntries || []).slice(0, 500)
         const images = (schematic.images || []).slice(0, 100)
+        const semanticContext =
+            SchematicSvgRenderer.#buildSemanticContext(schematic)
+        const semanticMetadata = SchematicSvgRenderer.#buildSemanticMetadata(
+            schematic,
+            semanticContext
+        )
+        const textGeometryMarkup = renderOptions.includeTextGeometrySidecar
+            ? SchematicSvgRenderer.#buildTextGeometryMetadataMarkup(
+                  texts,
+                  semanticContext
+              )
+            : ''
         const drawableComponents = components.filter(
             (component) =>
                 SchematicSvgRenderer.#isDrawableSchematicComponent(component) &&
@@ -81,7 +114,7 @@ export class SchematicSvgRenderer {
             width,
             height,
             renderedSheet.sheet,
-            documentModel?.fileName
+            renderModel?.fileName
         )
         const regionMarkup = SchematicRegionRenderer.buildMarkup(
             regions,
@@ -110,10 +143,18 @@ export class SchematicSvgRenderer {
         const ownerlessRectangles = rectangles.filter(
             (rectangle) => !rectangle.ownerIndex
         )
+        const ownerlessRoundedRectangles = roundedRectangles.filter(
+            (rectangle) => !rectangle.ownerIndex
+        )
         const ownerlessEllipses = ellipses.filter(
             (ellipse) => !ellipse.ownerIndex
         )
         const ownerlessArcs = arcs.filter((arc) => !arc.ownerIndex)
+        const ownerlessBeziers = beziers.filter((bezier) => !bezier.ownerIndex)
+        const ownerlessPies = pies.filter((pie) => !pie.ownerIndex)
+        const ownerlessIeeeSymbols = ieeeSymbols.filter(
+            (symbol) => !symbol.ownerIndex
+        )
         const resolvedTexts = texts.map((text) =>
             text.recordType === '17'
                 ? {
@@ -128,40 +169,180 @@ export class SchematicSvgRenderer {
                 : text
         )
         const polygonMarkup = ownerlessPolygons
-            .map((polygon) =>
-                SchematicShapeRenderer.buildPolygonMarkup(
-                    polygon,
-                    contentHeight
+            .map((polygon, index) =>
+                SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildPolygonMarkup(
+                        polygon,
+                        contentHeight
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'polygon',
+                        polygon,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'polygons',
+                            polygon,
+                            index
+                        ),
+                        semanticContext
+                    )
                 )
             )
             .join('')
         const rectangleMarkup = ownerlessRectangles
-            .map((rectangle) =>
-                SchematicShapeRenderer.buildRectangleMarkup(
-                    rectangle,
-                    contentHeight
+            .map((rectangle, index) =>
+                SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildRectangleMarkup(
+                        rectangle,
+                        contentHeight
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'rectangle',
+                        rectangle,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'rectangles',
+                            rectangle,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
+            )
+            .join('')
+        const roundedRectangleMarkup = ownerlessRoundedRectangles
+            .map((rectangle, index) =>
+                SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildRoundedRectangleMarkup(
+                        rectangle,
+                        contentHeight
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'rounded-rectangle',
+                        rectangle,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'roundedRectangles',
+                            rectangle,
+                            index
+                        ),
+                        semanticContext
+                    )
                 )
             )
             .join('')
         const ellipseMarkup = ownerlessEllipses
-            .map((ellipse) =>
-                SchematicShapeRenderer.buildEllipseMarkup(
-                    ellipse,
-                    contentHeight
+            .map((ellipse, index) =>
+                SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildEllipseMarkup(
+                        ellipse,
+                        contentHeight
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'ellipse',
+                        ellipse,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'ellipses',
+                            ellipse,
+                            index
+                        ),
+                        semanticContext
+                    )
                 )
             )
             .join('')
         const lineMarkup = ownerlessLines
-            .map((line) =>
+            .map((line, index) =>
                 SchematicSvgRenderer.#buildSchematicLineMarkup(
                     line,
-                    contentHeight
+                    contentHeight,
+                    SchematicSvgRenderer.#primitiveIndex(
+                        semanticContext,
+                        'lines',
+                        line,
+                        index
+                    ),
+                    semanticContext
                 )
             )
             .join('')
         const arcMarkup = ownerlessArcs
-            .map((arc) =>
-                SchematicShapeRenderer.buildArcMarkup(arc, contentHeight)
+            .map((arc, index) =>
+                SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildArcMarkup(arc, contentHeight),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'arc',
+                        arc,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'arcs',
+                            arc,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
+            )
+            .join('')
+        const bezierMarkup = ownerlessBeziers
+            .map((bezier, index) =>
+                SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildBezierMarkup(
+                        bezier,
+                        contentHeight
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'bezier',
+                        bezier,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'beziers',
+                            bezier,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
+            )
+            .join('')
+        const pieMarkup = ownerlessPies
+            .map((pie, index) =>
+                SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildPieMarkup(pie, contentHeight),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'pie',
+                        pie,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'pies',
+                            pie,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
+            )
+            .join('')
+        const ieeeSymbolMarkup = ownerlessIeeeSymbols
+            .map((symbol, index) =>
+                SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildIeeeSymbolMarkup(
+                        symbol,
+                        contentHeight
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'ieee-symbol',
+                        symbol,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'ieeeSymbols',
+                            symbol,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
             )
             .join('')
         const ownerGeometryMarkup =
@@ -169,9 +350,14 @@ export class SchematicSvgRenderer {
                 lines,
                 polygons,
                 rectangles,
+                roundedRectangles,
                 ellipses,
                 arcs,
-                contentHeight
+                beziers,
+                pies,
+                ieeeSymbols,
+                contentHeight,
+                semanticContext
             )
         const sheetSymbolMarkup =
             SchematicSheetSymbolRenderer.buildSheetSymbolMarkup(
@@ -208,24 +394,40 @@ export class SchematicSvgRenderer {
             images,
             contentHeight
         )
+        const markerDefsMarkup =
+            SchematicSvgRenderer.#buildSchematicLineMarkerDefs(lines)
 
         const textMarkup = resolvedTexts
-            .map((text) =>
+            .map((text, index) =>
                 SchematicSvgRenderer.#buildSchematicTextMarkup(
                     text,
                     contentHeight,
                     lines,
-                    pins
+                    pins,
+                    SchematicSvgRenderer.#primitiveIndex(
+                        semanticContext,
+                        'texts',
+                        text,
+                        index
+                    ),
+                    semanticContext
                 )
             )
             .join('')
 
         const componentMarkup = drawableComponents
-            .map((component) =>
+            .map((component, index) =>
                 SchematicSvgRenderer.#buildFallbackComponentMarkup(
                     component,
                     contentHeight,
-                    renderedSheet.contentSheet
+                    renderedSheet.contentSheet,
+                    SchematicSvgRenderer.#primitiveIndex(
+                        semanticContext,
+                        'components',
+                        component,
+                        index
+                    ),
+                    semanticContext
                 )
             )
             .join('')
@@ -240,14 +442,27 @@ export class SchematicSvgRenderer {
                 pins
             )
         const pinMarkup = pins
-            .map((pin) =>
-                SchematicPinSvgRenderer.buildMarkup(
-                    pin,
-                    contentHeight,
-                    renderedSheet.contentSheet,
-                    rotatedVerticalNumberOwners,
-                    explicitOwnerPinNameLabels,
-                    explicitOwnerPinLabelOffsets
+            .map((pin, index) =>
+                SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicPinSvgRenderer.buildMarkup(
+                        pin,
+                        contentHeight,
+                        renderedSheet.contentSheet,
+                        rotatedVerticalNumberOwners,
+                        explicitOwnerPinNameLabels,
+                        explicitOwnerPinLabelOffsets
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'pin',
+                        pin,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'pins',
+                            pin,
+                            index
+                        ),
+                        semanticContext
+                    )
                 )
             )
             .join('')
@@ -256,11 +471,28 @@ export class SchematicSvgRenderer {
             contentHeight,
             renderedSheet.contentSheet
         )
-        const directiveMarkup = SchematicDirectiveRenderer.buildMarkup(
-            directives,
-            contentHeight,
-            renderedSheet.contentSheet
-        )
+        const directiveMarkup = directives
+            .map((directive, index) =>
+                SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicDirectiveRenderer.buildMarkup(
+                        [directive],
+                        contentHeight,
+                        renderedSheet.contentSheet
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'directive',
+                        directive,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'directives',
+                            directive,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
+            )
+            .join('')
         const junctionMarkup = SchematicJunctionRenderer.buildMarkup(
             lines,
             crosses,
@@ -281,23 +513,38 @@ export class SchematicSvgRenderer {
         return (
             '<section class="svg-panel">' +
             '<header class="svg-panel__header"><h3>' +
-            escapeHtml(documentModel?.summary?.title || 'Schematic') +
+            escapeHtml(renderModel?.summary?.title || 'Schematic') +
             '</h3><p>' +
             lines.length +
             ' line segments, ' +
             components.length +
             ' components</p></header>' +
-            '<svg class="schematic-svg" viewBox="0 0 ' +
-            formatNumber(width) +
-            ' ' +
-            formatNumber(height) +
-            '" preserveAspectRatio="xMidYMid meet" aria-label="Schematic view">' +
+            '<svg class="schematic-svg"' +
+            SchematicSvgRenderer.#renderRootViewBoxAttributes(
+                renderOptions,
+                '0 0 ' + formatNumber(width) + ' ' + formatNumber(height)
+            ) +
+            ' preserveAspectRatio="xMidYMid meet" aria-label="Schematic view" data-semantic-schema="' +
+            SchematicSvgRenderer.#SEMANTIC_SCHEMA +
+            '"' +
+            SchematicSvgRenderer.#renderDataAttributes({
+                'data-doc-id': renderOptions.documentId,
+                'data-doc-ver': renderOptions.documentVersion
+            }) +
+            '>' +
             '<rect class="sheet-backdrop" x="0" y="0" width="' +
             formatNumber(width) +
             '" height="' +
             formatNumber(height) +
             '" rx="18" />' +
             contentClipMarkup +
+            '<metadata id="schematic-semantic-metadata" data-schema="' +
+            SchematicSvgRenderer.#SEMANTIC_SCHEMA +
+            '">' +
+            escapeHtml(JSON.stringify(semanticMetadata)) +
+            '</metadata>' +
+            textGeometryMarkup +
+            markerDefsMarkup +
             '<g class="schematic-content"' +
             ' clip-path="url(#' +
             escapeHtml(contentClipId) +
@@ -309,6 +556,7 @@ export class SchematicSvgRenderer {
             '</g>' +
             '<g class="schematic-rectangles">' +
             rectangleMarkup +
+            roundedRectangleMarkup +
             '</g>' +
             '<g class="schematic-ellipses">' +
             ellipseMarkup +
@@ -318,6 +566,15 @@ export class SchematicSvgRenderer {
             '</g>' +
             '<g class="schematic-arcs" stroke-linecap="round">' +
             arcMarkup +
+            '</g>' +
+            '<g class="schematic-beziers" stroke-linecap="round">' +
+            bezierMarkup +
+            '</g>' +
+            '<g class="schematic-pies">' +
+            pieMarkup +
+            '</g>' +
+            '<g class="schematic-ieee-symbols">' +
+            ieeeSymbolMarkup +
             '</g>' +
             '<g class="schematic-owner-geometry" stroke-linecap="round">' +
             ownerGeometryMarkup +
@@ -362,6 +619,824 @@ export class SchematicSvgRenderer {
             regionMarkup +
             '</g>' +
             '</svg></section>'
+        )
+    }
+
+    /**
+     * Normalizes schematic SVG export options.
+     * @param {Record<string, unknown>} options Raw render options.
+     * @returns {{ includeViewBox: boolean, documentId: string, documentVersion: string, includeTextGeometrySidecar: boolean }}
+     */
+    static #normalizeRenderOptions(options) {
+        const includeViewBox =
+            options?.includeViewBox ?? options?.include_view_box
+
+        return {
+            includeViewBox: includeViewBox === false ? false : true,
+            documentId: String(options?.documentId || options?.docId || ''),
+            documentVersion: String(
+                options?.documentVersion || options?.documentVer || ''
+            ),
+            includeTextGeometrySidecar:
+                options?.includeTextGeometrySidecar === true ||
+                options?.textGeometry === 'sidecar'
+        }
+    }
+
+    /**
+     * Renders root SVG viewBox attributes according to export options.
+     * @param {{ includeViewBox: boolean }} options Normalized options.
+     * @param {string} viewBox ViewBox value.
+     * @returns {string}
+     */
+    static #renderRootViewBoxAttributes(options, viewBox) {
+        return options.includeViewBox
+            ? ' viewBox="' + escapeHtml(viewBox) + '"'
+            : ''
+    }
+
+    /**
+     * Builds optional text geometry metadata markup.
+     * @param {object[]} texts Text rows.
+     * @param {object} semanticContext Semantic context.
+     * @returns {string}
+     */
+    static #buildTextGeometryMetadataMarkup(texts, semanticContext) {
+        const metadata = TextGeometrySidecarBuilder.buildSchematic(
+            texts,
+            semanticContext.primitiveIndexes?.texts
+        )
+
+        return (
+            '<metadata id="schematic-text-geometry" data-schema="' +
+            TextGeometrySidecarBuilder.SCHEMA_ID +
+            '">' +
+            escapeHtml(JSON.stringify(metadata)) +
+            '</metadata>'
+        )
+    }
+
+    /**
+     * Builds reusable SVG marker definitions for authored line endpoints.
+     * @param {{ startMarker?: object, endMarker?: object }[]} lines Drawable lines.
+     * @returns {string}
+     */
+    static #buildSchematicLineMarkerDefs(lines) {
+        const markers = SchematicSvgRenderer.#collectSchematicLineMarkers(lines)
+
+        if (!markers.length) {
+            return ''
+        }
+
+        return (
+            '<defs class="schematic-line-marker-defs">' +
+            markers
+                .map((marker) =>
+                    SchematicSvgRenderer.#buildSchematicLineMarkerDef(marker)
+                )
+                .join('') +
+            '</defs>'
+        )
+    }
+
+    /**
+     * Collects unique endpoint markers in stable order.
+     * @param {{ startMarker?: object, endMarker?: object }[]} lines Drawable lines.
+     * @returns {object[]}
+     */
+    static #collectSchematicLineMarkers(lines) {
+        const seen = new Set()
+        const markers = []
+
+        for (const line of lines || []) {
+            for (const marker of [line.startMarker, line.endMarker]) {
+                if (!marker) {
+                    continue
+                }
+
+                const id = SchematicSvgRenderer.#schematicLineMarkerId(marker)
+                if (seen.has(id)) {
+                    continue
+                }
+
+                seen.add(id)
+                markers.push(marker)
+            }
+        }
+
+        return markers
+    }
+
+    /**
+     * Builds one SVG marker definition.
+     * @param {{ shapeName?: string, size?: number }} marker Marker metadata.
+     * @returns {string}
+     */
+    static #buildSchematicLineMarkerDef(marker) {
+        const id = SchematicSvgRenderer.#schematicLineMarkerId(marker)
+        const shapeName = String(marker?.shapeName || '')
+        const fill =
+            shapeName === 'filled-arrow' || shapeName === 'square'
+                ? 'context-stroke'
+                : 'none'
+        const shape =
+            shapeName === 'circle'
+                ? '<circle cx="5" cy="5" r="3.2" fill="none" stroke="context-stroke" stroke-width="1.4" />'
+                : shapeName === 'square'
+                  ? '<rect x="2" y="2" width="6" height="6" fill="context-stroke" stroke="context-stroke" stroke-width="1" />'
+                  : '<path d="M 1 1 L 9 5 L 1 9" fill="' +
+                    fill +
+                    '" stroke="context-stroke" stroke-width="1.4" stroke-linejoin="round" />'
+
+        return (
+            '<marker id="' +
+            escapeHtml(id) +
+            '" viewBox="0 0 10 10" markerWidth="' +
+            formatNumber(Math.max(Number(marker?.size || 6), 1)) +
+            '" markerHeight="' +
+            formatNumber(Math.max(Number(marker?.size || 6), 1)) +
+            '" refX="5" refY="5" orient="auto-start-reverse">' +
+            shape +
+            '</marker>'
+        )
+    }
+
+    /**
+     * Builds a deterministic marker id from normalized marker metadata.
+     * @param {{ shapeName?: string, size?: number }} marker Marker metadata.
+     * @returns {string}
+     */
+    static #schematicLineMarkerId(marker) {
+        return (
+            'schematic-marker-' +
+            String(marker?.shapeName || 'marker')
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/gu, '-') +
+            '-' +
+            formatNumber(Math.max(Number(marker?.size || 6), 1)).replace(
+                /\./gu,
+                '-'
+            )
+        )
+    }
+
+    /**
+     * Builds reusable semantic lookup data for one schematic render.
+     * @param {object} schematic Normalized schematic model.
+     * @returns {object}
+     */
+    static #buildSemanticContext(schematic) {
+        const components = schematic?.components || []
+        const componentsByOwnerIndex = new Map()
+        const componentsByDesignator = new Map()
+
+        for (const component of components) {
+            const ownerKey = String(component?.ownerIndex || '').trim()
+            if (ownerKey) {
+                componentsByOwnerIndex.set(ownerKey, component)
+            }
+            if (component?.designator) {
+                componentsByDesignator.set(component.designator, component)
+            }
+        }
+
+        const netByPrimitive = new Map()
+        for (const net of schematic?.nets || []) {
+            for (const segment of net.segments || []) {
+                netByPrimitive.set(segment, net)
+            }
+            for (const label of net.labels || []) {
+                netByPrimitive.set(label, net)
+            }
+            for (const powerPort of net.powerPorts || []) {
+                netByPrimitive.set(powerPort, net)
+            }
+            for (const pin of net.pins || []) {
+                netByPrimitive.set(pin, net)
+            }
+            for (const port of net.ports || []) {
+                netByPrimitive.set(port, net)
+            }
+            for (const sheetEntry of net.sheetEntries || []) {
+                netByPrimitive.set(sheetEntry, net)
+            }
+        }
+
+        return {
+            componentsByOwnerIndex,
+            componentsByDesignator,
+            netByPrimitive,
+            primitiveIndexes: {
+                lines: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.lines || []
+                ),
+                polygons: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.polygons || []
+                ),
+                rectangles: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.rectangles || []
+                ),
+                roundedRectangles: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.roundedRectangles || []
+                ),
+                ellipses: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.ellipses || []
+                ),
+                arcs: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.arcs || []
+                ),
+                beziers: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.beziers || []
+                ),
+                pies: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.pies || []
+                ),
+                ieeeSymbols: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.ieeeSymbols || []
+                ),
+                directives: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.directives || []
+                ),
+                texts: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.texts || []
+                ),
+                pins: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.pins || []
+                ),
+                ports: SchematicSvgRenderer.#objectIndexMap(
+                    schematic?.ports || []
+                ),
+                components: SchematicSvgRenderer.#objectIndexMap(components)
+            }
+        }
+    }
+
+    /**
+     * Builds a compact JSON sidecar describing schematic SVG semantic links.
+     * @param {object} schematic Normalized schematic model.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {{ schema: string, nets: object[], components: object[] }}
+     */
+    static #buildSemanticMetadata(schematic, semanticContext) {
+        return {
+            schema: SchematicSvgRenderer.#SEMANTIC_SCHEMA,
+            elements: SchematicSvgRenderer.#buildElementMetadata(
+                schematic,
+                semanticContext
+            ),
+            nets: (schematic?.nets || []).map((net) =>
+                SchematicSvgRenderer.#buildNetMetadata(net, semanticContext)
+            ),
+            components: (schematic?.components || []).map((component) =>
+                SchematicSvgRenderer.#buildComponentMetadata(
+                    component,
+                    schematic,
+                    semanticContext
+                )
+            )
+        }
+    }
+
+    /**
+     * Builds one flat element sidecar for every source-addressable schematic
+     * primitive family that can participate in SVG review tooling.
+     * @param {object} schematic Normalized schematic model.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {object[]}
+     */
+    static #buildElementMetadata(schematic, semanticContext) {
+        return [
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.lines || [],
+                'lines',
+                'line',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.polygons || [],
+                'polygons',
+                'polygon',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.rectangles || [],
+                'rectangles',
+                'rectangle',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.roundedRectangles || [],
+                'roundedRectangles',
+                'rounded-rectangle',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.ellipses || [],
+                'ellipses',
+                'ellipse',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.arcs || [],
+                'arcs',
+                'arc',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.beziers || [],
+                'beziers',
+                'bezier',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.pies || [],
+                'pies',
+                'pie',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.ieeeSymbols || [],
+                'ieeeSymbols',
+                'ieee-symbol',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.texts || [],
+                'texts',
+                'text',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.components || [],
+                'components',
+                'component',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.pins || [],
+                'pins',
+                'pin',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.ports || [],
+                'ports',
+                'port',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementMetadataForCollection(
+                schematic?.directives || [],
+                'directives',
+                'directive',
+                semanticContext
+            )
+        ]
+    }
+
+    /**
+     * Builds semantic metadata entries for one primitive collection.
+     * @param {object[]} records Primitive records.
+     * @param {string} collectionKey Collection key.
+     * @param {string} primitiveKind Primitive kind.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {object[]}
+     */
+    static #elementMetadataForCollection(
+        records,
+        collectionKey,
+        primitiveKind,
+        semanticContext
+    ) {
+        return (records || []).map((record, fallbackIndex) => {
+            const index = SchematicSvgRenderer.#primitiveIndex(
+                semanticContext,
+                collectionKey,
+                record,
+                fallbackIndex
+            )
+            const component =
+                SchematicSvgRenderer.#componentForSchematicPrimitive(
+                    primitiveKind,
+                    record,
+                    semanticContext
+                )
+            const net = semanticContext.netByPrimitive.get(record)
+
+            return SchematicSvgRenderer.#stripEmptySemanticObject({
+                elementKey:
+                    'schematic-' +
+                    SchematicSvgRenderer.#elementKeyPrimitiveKind(
+                        primitiveKind,
+                        record
+                    ) +
+                    '-' +
+                    index,
+                primitive: SchematicSvgRenderer.#metadataPrimitiveKind(
+                    primitiveKind,
+                    record
+                ),
+                recordId: SchematicSvgRenderer.#recordId(
+                    primitiveKind,
+                    record,
+                    index
+                ),
+                component: component?.designator,
+                componentUniqueId: component?.uniqueId,
+                net: net?.name,
+                pin:
+                    primitiveKind === 'pin'
+                        ? SchematicSvgRenderer.#pinLabel(record)
+                        : undefined
+            })
+        })
+    }
+
+    /**
+     * Builds metadata for one schematic net.
+     * @param {object} net Net record.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {object}
+     */
+    static #buildNetMetadata(net, semanticContext) {
+        const pins = []
+        const components = []
+        const elementKeys = [
+            ...SchematicSvgRenderer.#elementKeysForObjects(
+                net.segments || [],
+                'lines',
+                'line',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementKeysForObjects(
+                [...(net.labels || []), ...(net.powerPorts || [])],
+                'texts',
+                'text',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementKeysForObjects(
+                net.pins || [],
+                'pins',
+                'pin',
+                semanticContext
+            ),
+            ...SchematicSvgRenderer.#elementKeysForObjects(
+                net.ports || [],
+                'ports',
+                'port',
+                semanticContext
+            )
+        ]
+
+        for (const pin of net.pins || []) {
+            const component =
+                SchematicSvgRenderer.#componentForSchematicPrimitive(
+                    'pin',
+                    pin,
+                    semanticContext
+                )
+            if (component?.designator) {
+                components.push(component.designator)
+                pins.push(
+                    component.designator +
+                        ':' +
+                        SchematicSvgRenderer.#pinLabel(pin)
+                )
+                continue
+            }
+            const pinLabel = SchematicSvgRenderer.#pinLabel(pin)
+            if (pinLabel) {
+                pins.push(pinLabel)
+            }
+        }
+
+        return SchematicSvgRenderer.#stripEmptySemanticObject({
+            name: net.name,
+            elementKeys: SchematicSvgRenderer.#dedupe(elementKeys),
+            components: SchematicSvgRenderer.#dedupe(components),
+            pins: SchematicSvgRenderer.#dedupe(pins)
+        })
+    }
+
+    /**
+     * Builds metadata for one schematic component.
+     * @param {object} component Component record.
+     * @param {object} schematic Normalized schematic model.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {object}
+     */
+    static #buildComponentMetadata(component, schematic, semanticContext) {
+        const componentIndex = SchematicSvgRenderer.#primitiveIndex(
+            semanticContext,
+            'components',
+            component,
+            0
+        )
+        const pins = (schematic?.pins || []).filter(
+            (pin) =>
+                SchematicSvgRenderer.#componentForSchematicPrimitive(
+                    'pin',
+                    pin,
+                    semanticContext
+                ) === component
+        )
+        const nets = pins
+            .map((pin) => semanticContext.netByPrimitive.get(pin)?.name)
+            .filter(Boolean)
+        const pinLabels = pins
+            .map((pin) => SchematicSvgRenderer.#pinLabel(pin))
+            .filter(Boolean)
+        const elementKeys = [
+            'schematic-component-' + componentIndex,
+            ...SchematicSvgRenderer.#elementKeysForObjects(
+                pins,
+                'pins',
+                'pin',
+                semanticContext
+            )
+        ]
+
+        return SchematicSvgRenderer.#stripEmptySemanticObject({
+            designator: component.designator,
+            uniqueId: component.uniqueId,
+            elementKeys: SchematicSvgRenderer.#dedupe(elementKeys),
+            pins: SchematicSvgRenderer.#dedupe(pinLabels),
+            nets: SchematicSvgRenderer.#dedupe(nets)
+        })
+    }
+
+    /**
+     * Builds SVG data attributes for one schematic primitive.
+     * @param {string} primitiveKind Public primitive kind.
+     * @param {object} primitive Primitive record.
+     * @param {number} index Stable primitive index.
+     * @param {object | undefined} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #semanticAttributes(
+        primitiveKind,
+        primitive,
+        index,
+        semanticContext
+    ) {
+        if (!semanticContext) {
+            return ''
+        }
+
+        if (!SchematicSvgRenderer.#hasExplicitRecordId(primitive)) {
+            return ''
+        }
+
+        const component = SchematicSvgRenderer.#componentForSchematicPrimitive(
+            primitiveKind,
+            primitive,
+            semanticContext
+        )
+        const net = semanticContext.netByPrimitive.get(primitive)
+
+        return SchematicSvgRenderer.#renderDataAttributes({
+            'data-primitive': primitiveKind,
+            'data-element-key': 'schematic-' + primitiveKind + '-' + index,
+            'data-record-id': SchematicSvgRenderer.#recordId(
+                primitiveKind,
+                primitive,
+                index
+            ),
+            'data-component': component?.designator,
+            'data-component-unique-id': component?.uniqueId,
+            'data-net': net?.name,
+            'data-pin':
+                primitiveKind === 'pin'
+                    ? SchematicSvgRenderer.#pinLabel(primitive)
+                    : undefined
+        })
+    }
+
+    /**
+     * Finds the component associated with a schematic primitive.
+     * @param {string} primitiveKind Public primitive kind.
+     * @param {object} primitive Primitive record.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {object | null}
+     */
+    static #componentForSchematicPrimitive(
+        primitiveKind,
+        primitive,
+        semanticContext
+    ) {
+        if (primitiveKind === 'component') {
+            return primitive
+        }
+
+        const explicitDesignator =
+            primitive?.componentDesignator || primitive?.component || ''
+        if (explicitDesignator) {
+            return (
+                semanticContext.componentsByDesignator.get(
+                    explicitDesignator
+                ) || null
+            )
+        }
+
+        const ownerIndex = String(primitive?.ownerIndex || '').trim()
+        return ownerIndex
+            ? semanticContext.componentsByOwnerIndex.get(ownerIndex) || null
+            : null
+    }
+
+    /**
+     * Returns element keys for a primitive object list.
+     * @param {object[]} records Primitive records.
+     * @param {string} collectionKey Primitive collection key.
+     * @param {string} primitiveKind Public primitive kind.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string[]}
+     */
+    static #elementKeysForObjects(
+        records,
+        collectionKey,
+        primitiveKind,
+        semanticContext
+    ) {
+        return (records || [])
+            .map((record) => {
+                const index =
+                    semanticContext.primitiveIndexes?.[collectionKey]?.get(
+                        record
+                    )
+                return Number.isInteger(index)
+                    ? 'schematic-' + primitiveKind + '-' + index
+                    : ''
+            })
+            .filter(Boolean)
+    }
+
+    /**
+     * Returns a stable primitive index from the original schematic collection.
+     * @param {object} semanticContext Semantic lookup context.
+     * @param {string} collectionKey Primitive collection key.
+     * @param {object} primitive Primitive record.
+     * @param {number} fallbackIndex Rendered fallback index.
+     * @returns {number}
+     */
+    static #primitiveIndex(
+        semanticContext,
+        collectionKey,
+        primitive,
+        fallbackIndex
+    ) {
+        const resolved =
+            semanticContext.primitiveIndexes?.[collectionKey]?.get(primitive)
+
+        return Number.isInteger(resolved) ? resolved : fallbackIndex
+    }
+
+    /**
+     * Builds an object identity map for stable primitive indexes.
+     * @param {object[]} records Primitive records.
+     * @returns {Map<object, number>}
+     */
+    static #objectIndexMap(records) {
+        return new Map((records || []).map((record, index) => [record, index]))
+    }
+
+    /**
+     * Inserts generated attributes into the first SVG element in a markup
+     * fragment.
+     * @param {string} markup SVG markup.
+     * @param {string} attributes Rendered attributes.
+     * @returns {string}
+     */
+    static #appendSvgAttributes(markup, attributes) {
+        if (!markup || !attributes) {
+            return markup || ''
+        }
+
+        return String(markup).replace(/(\s*\/?>)/u, attributes + '$1')
+    }
+
+    /**
+     * Renders a dictionary as SVG data attributes.
+     * @param {Record<string, unknown>} attributes Attribute dictionary.
+     * @returns {string}
+     */
+    static #renderDataAttributes(attributes) {
+        return Object.entries(attributes || {})
+            .filter(([, value]) => {
+                if (Array.isArray(value)) {
+                    return value.length > 0
+                }
+                return value !== null && value !== undefined && value !== ''
+            })
+            .map(([name, value]) => {
+                const renderedValue = Array.isArray(value)
+                    ? value.join(',')
+                    : String(value)
+                return ' ' + name + '="' + escapeHtml(renderedValue) + '"'
+            })
+            .join('')
+    }
+
+    /**
+     * Returns a stable source record id when present, else a renderer key.
+     * @param {string} primitiveKind Public primitive kind.
+     * @param {object} primitive Primitive record.
+     * @param {number} index Stable primitive index.
+     * @returns {string}
+     */
+    static #recordId(primitiveKind, primitive, index) {
+        const candidate =
+            primitive?.recordId ??
+            primitive?.sourceRecordId ??
+            primitive?.sourceRecordIndex
+
+        return candidate === null || candidate === undefined || candidate === ''
+            ? 'schematic-' + primitiveKind + '-' + index
+            : String(candidate)
+    }
+
+    /**
+     * Resolves the primitive token used by SVG element keys.
+     * @param {string} primitiveKind Public primitive kind.
+     * @param {object} primitive Primitive record.
+     * @returns {string}
+     */
+    static #elementKeyPrimitiveKind(primitiveKind, primitive) {
+        if (primitiveKind === 'text' && primitive?.recordType === '28') {
+            return 'text'
+        }
+
+        return primitiveKind
+    }
+
+    /**
+     * Resolves the primitive token used by semantic metadata.
+     * @param {string} primitiveKind Public primitive kind.
+     * @param {object} primitive Primitive record.
+     * @returns {string}
+     */
+    static #metadataPrimitiveKind(primitiveKind, primitive) {
+        if (primitiveKind === 'text' && primitive?.recordType === '28') {
+            return 'text-frame'
+        }
+
+        return primitiveKind
+    }
+
+    /**
+     * Returns true when a primitive carries source record identity.
+     * @param {object} primitive Primitive record.
+     * @returns {boolean}
+     */
+    static #hasExplicitRecordId(primitive) {
+        return (
+            (primitive?.recordId !== null &&
+                primitive?.recordId !== undefined &&
+                primitive?.recordId !== '') ||
+            (primitive?.sourceRecordId !== null &&
+                primitive?.sourceRecordId !== undefined &&
+                primitive?.sourceRecordId !== '') ||
+            (primitive?.sourceRecordIndex !== null &&
+                primitive?.sourceRecordIndex !== undefined &&
+                primitive?.sourceRecordIndex !== '')
+        )
+    }
+
+    /**
+     * Returns a displayable pin designator.
+     * @param {object} pin Pin record.
+     * @returns {string}
+     */
+    static #pinLabel(pin) {
+        return String(pin?.designator || pin?.pinNumber || pin?.name || '')
+    }
+
+    /**
+     * Deduplicates values while preserving insertion order.
+     * @param {unknown[]} values Candidate values.
+     * @returns {unknown[]}
+     */
+    static #dedupe(values) {
+        return [...new Set((values || []).filter(Boolean))]
+    }
+
+    /**
+     * Removes empty fields from a semantic metadata object.
+     * @param {Record<string, unknown>} value Metadata object.
+     * @returns {Record<string, unknown>}
+     */
+    static #stripEmptySemanticObject(value) {
+        return Object.fromEntries(
+            Object.entries(value || {}).filter(([, entryValue]) => {
+                if (Array.isArray(entryValue)) {
+                    return entryValue.length > 0
+                }
+                return (
+                    entryValue !== null &&
+                    entryValue !== undefined &&
+                    entryValue !== ''
+                )
+            })
         )
     }
 
@@ -446,22 +1521,32 @@ export class SchematicSvgRenderer {
      * @param {{ x1: number, y1: number, x2: number, y2: number, ownerIndex?: string, renderOrder?: number }[]} lines
      * @param {{ points: { x: number, y: number }[], ownerIndex?: string, renderOrder?: number }[]} polygons
      * @param {{ x: number, y: number, width: number, height: number, ownerIndex?: string, renderOrder?: number }[]} rectangles
+     * @param {{ x: number, y: number, width: number, height: number, ownerIndex?: string, renderOrder?: number }[]} roundedRectangles
      * @param {{ x: number, y: number, radiusX: number, radiusY: number, ownerIndex?: string, renderOrder?: number }[]} ellipses
      * @param {{ x: number, y: number, radius: number, startAngle: number, endAngle: number, ownerIndex?: string, renderOrder?: number }[]} arcs
+     * @param {{ segments: object[], ownerIndex?: string, renderOrder?: number }[]} beziers
+     * @param {{ x: number, y: number, radius: number, radiusY?: number, startAngle: number, endAngle: number, ownerIndex?: string, renderOrder?: number }[]} pies
+     * @param {{ x: number, y: number, symbolName?: string, ownerIndex?: string, renderOrder?: number }[]} ieeeSymbols
      * @param {number} sheetHeight
+     * @param {object} semanticContext Semantic lookup context.
      * @returns {string}
      */
     static #buildOwnerGeometryMarkup(
         lines,
         polygons,
         rectangles,
+        roundedRectangles,
         ellipses,
         arcs,
-        sheetHeight
+        beziers,
+        pies,
+        ieeeSymbols,
+        sheetHeight,
+        semanticContext
     ) {
         const items = []
 
-        for (const polygon of polygons) {
+        for (const [index, polygon] of polygons.entries()) {
             if (!polygon.ownerIndex) {
                 continue
             }
@@ -470,14 +1555,27 @@ export class SchematicSvgRenderer {
                 renderOrder:
                     SchematicSvgRenderer.#resolvePrimitiveRenderOrder(polygon),
                 typeOrder: 0,
-                markup: SchematicShapeRenderer.buildPolygonMarkup(
-                    polygon,
-                    sheetHeight
+                markup: SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildPolygonMarkup(
+                        polygon,
+                        sheetHeight
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'polygon',
+                        polygon,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'polygons',
+                            polygon,
+                            index
+                        ),
+                        semanticContext
+                    )
                 )
             })
         }
 
-        for (const rectangle of rectangles) {
+        for (const [index, rectangle] of rectangles.entries()) {
             if (!rectangle.ownerIndex) {
                 continue
             }
@@ -488,14 +1586,58 @@ export class SchematicSvgRenderer {
                         rectangle
                     ),
                 typeOrder: 1,
-                markup: SchematicShapeRenderer.buildRectangleMarkup(
-                    rectangle,
-                    sheetHeight
+                markup: SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildRectangleMarkup(
+                        rectangle,
+                        sheetHeight
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'rectangle',
+                        rectangle,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'rectangles',
+                            rectangle,
+                            index
+                        ),
+                        semanticContext
+                    )
                 )
             })
         }
 
-        for (const ellipse of ellipses) {
+        for (const [index, rectangle] of roundedRectangles.entries()) {
+            if (!rectangle.ownerIndex) {
+                continue
+            }
+
+            items.push({
+                renderOrder:
+                    SchematicSvgRenderer.#resolvePrimitiveRenderOrder(
+                        rectangle
+                    ),
+                typeOrder: 1.5,
+                markup: SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildRoundedRectangleMarkup(
+                        rectangle,
+                        sheetHeight
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'rounded-rectangle',
+                        rectangle,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'roundedRectangles',
+                            rectangle,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
+            })
+        }
+
+        for (const [index, ellipse] of ellipses.entries()) {
             if (!ellipse.ownerIndex) {
                 continue
             }
@@ -504,14 +1646,27 @@ export class SchematicSvgRenderer {
                 renderOrder:
                     SchematicSvgRenderer.#resolvePrimitiveRenderOrder(ellipse),
                 typeOrder: 2,
-                markup: SchematicShapeRenderer.buildEllipseMarkup(
-                    ellipse,
-                    sheetHeight
+                markup: SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildEllipseMarkup(
+                        ellipse,
+                        sheetHeight
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'ellipse',
+                        ellipse,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'ellipses',
+                            ellipse,
+                            index
+                        ),
+                        semanticContext
+                    )
                 )
             })
         }
 
-        for (const line of lines) {
+        for (const [index, line] of lines.entries()) {
             if (!line.ownerIndex) {
                 continue
             }
@@ -522,12 +1677,19 @@ export class SchematicSvgRenderer {
                 typeOrder: 3,
                 markup: SchematicSvgRenderer.#buildSchematicLineMarkup(
                     line,
-                    sheetHeight
+                    sheetHeight,
+                    SchematicSvgRenderer.#primitiveIndex(
+                        semanticContext,
+                        'lines',
+                        line,
+                        index
+                    ),
+                    semanticContext
                 )
             })
         }
 
-        for (const arc of arcs) {
+        for (const [index, arc] of arcs.entries()) {
             if (!arc.ownerIndex) {
                 continue
             }
@@ -536,7 +1698,104 @@ export class SchematicSvgRenderer {
                 renderOrder:
                     SchematicSvgRenderer.#resolvePrimitiveRenderOrder(arc),
                 typeOrder: 4,
-                markup: SchematicShapeRenderer.buildArcMarkup(arc, sheetHeight)
+                markup: SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildArcMarkup(arc, sheetHeight),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'arc',
+                        arc,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'arcs',
+                            arc,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
+            })
+        }
+
+        for (const [index, bezier] of beziers.entries()) {
+            if (!bezier.ownerIndex) {
+                continue
+            }
+
+            items.push({
+                renderOrder:
+                    SchematicSvgRenderer.#resolvePrimitiveRenderOrder(bezier),
+                typeOrder: 5,
+                markup: SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildBezierMarkup(
+                        bezier,
+                        sheetHeight
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'bezier',
+                        bezier,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'beziers',
+                            bezier,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
+            })
+        }
+
+        for (const [index, pie] of pies.entries()) {
+            if (!pie.ownerIndex) {
+                continue
+            }
+
+            items.push({
+                renderOrder:
+                    SchematicSvgRenderer.#resolvePrimitiveRenderOrder(pie),
+                typeOrder: 6,
+                markup: SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildPieMarkup(pie, sheetHeight),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'pie',
+                        pie,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'pies',
+                            pie,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
+            })
+        }
+
+        for (const [index, symbol] of ieeeSymbols.entries()) {
+            if (!symbol.ownerIndex) {
+                continue
+            }
+
+            items.push({
+                renderOrder:
+                    SchematicSvgRenderer.#resolvePrimitiveRenderOrder(symbol),
+                typeOrder: 7,
+                markup: SchematicSvgRenderer.#appendSvgAttributes(
+                    SchematicShapeRenderer.buildIeeeSymbolMarkup(
+                        symbol,
+                        sheetHeight
+                    ),
+                    SchematicSvgRenderer.#semanticAttributes(
+                        'ieee-symbol',
+                        symbol,
+                        SchematicSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'ieeeSymbols',
+                            symbol,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
             })
         }
 
@@ -575,9 +1834,16 @@ export class SchematicSvgRenderer {
      * the source primitive requests them.
      * @param {{ x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle?: number, isBus?: boolean, recordType?: string }} line
      * @param {number} sheetHeight
+     * @param {number} index Stable primitive index.
+     * @param {object | undefined} semanticContext Semantic lookup context.
      * @returns {string}
      */
-    static #buildSchematicLineMarkup(line, sheetHeight) {
+    static #buildSchematicLineMarkup(
+        line,
+        sheetHeight,
+        index = 0,
+        semanticContext = undefined
+    ) {
         return (
             '<line x1="' +
             formatNumber(line.x1) +
@@ -600,6 +1866,13 @@ export class SchematicSvgRenderer {
             ) +
             '"' +
             SchematicSvgRenderer.#buildSchematicLineStyleAttributes(line) +
+            SchematicSvgRenderer.#buildSchematicLineMarkerAttributes(line) +
+            SchematicSvgRenderer.#semanticAttributes(
+                'line',
+                line,
+                index,
+                semanticContext
+            ) +
             ' />'
         )
     }
@@ -644,6 +1917,34 @@ export class SchematicSvgRenderer {
     }
 
     /**
+     * Builds SVG marker attributes for one schematic line.
+     * @param {{ startMarker?: object, endMarker?: object }} line Line primitive.
+     * @returns {string}
+     */
+    static #buildSchematicLineMarkerAttributes(line) {
+        return (
+            (line.startMarker
+                ? ' marker-start="url(#' +
+                  escapeHtml(
+                      SchematicSvgRenderer.#schematicLineMarkerId(
+                          line.startMarker
+                      )
+                  ) +
+                  ')"'
+                : '') +
+            (line.endMarker
+                ? ' marker-end="url(#' +
+                  escapeHtml(
+                      SchematicSvgRenderer.#schematicLineMarkerId(
+                          line.endMarker
+                      )
+                  ) +
+                  ')"'
+                : '')
+        )
+    }
+
+    /**
      * Builds page border and title-block chrome from sheet metadata.
      * @param {number} width
      * @param {number} height
@@ -666,9 +1967,18 @@ export class SchematicSvgRenderer {
      * @param {number} sheetHeight
      * @param {{ x1: number, y1: number, x2: number, y2: number }[]} lines
      * @param {{ x: number, y: number, length: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
+     * @param {number} index Stable primitive index.
+     * @param {object | undefined} semanticContext Semantic lookup context.
      * @returns {string}
      */
-    static #buildSchematicTextMarkup(text, sheetHeight, lines, pins) {
+    static #buildSchematicTextMarkup(
+        text,
+        sheetHeight,
+        lines,
+        pins,
+        index = 0,
+        semanticContext = undefined
+    ) {
         const matchedOwnerPin =
             SchematicOwnerPinLabelLayout.findExplicitOwnerPinLabelMatch(
                 text,
@@ -676,16 +1986,32 @@ export class SchematicSvgRenderer {
             )
 
         if (text.recordType === '17') {
-            return SchematicPowerPortRenderer.buildMarkup(
-                text,
-                lines,
-                pins,
-                sheetHeight
+            return SchematicSvgRenderer.#appendSvgAttributes(
+                SchematicPowerPortRenderer.buildMarkup(
+                    text,
+                    lines,
+                    pins,
+                    sheetHeight
+                ),
+                SchematicSvgRenderer.#semanticAttributes(
+                    'text',
+                    text,
+                    index,
+                    semanticContext
+                )
             )
         }
 
         if (text.recordType === '209' || text.recordType === '28') {
-            return SchematicNoteRenderer.buildMarkup(text, sheetHeight)
+            return SchematicSvgRenderer.#appendSvgAttributes(
+                SchematicNoteRenderer.buildMarkup(text, sheetHeight),
+                SchematicSvgRenderer.#semanticAttributes(
+                    'text',
+                    text,
+                    index,
+                    semanticContext
+                )
+            )
         }
         const placement = SchematicSvgRenderer.#resolveSchematicTextPlacement(
             text,
@@ -694,21 +2020,29 @@ export class SchematicSvgRenderer {
             matchedOwnerPin
         )
 
-        return createSvgText(
-            'schematic-label',
-            placement.x,
-            placement.y,
-            text.text,
-            SchematicColorResolver.resolveColor(
-                text.color,
-                '--schematic-text-color'
+        return SchematicSvgRenderer.#appendSvgAttributes(
+            createSvgText(
+                'schematic-label',
+                placement.x,
+                placement.y,
+                text.resolvedText ?? text.text,
+                SchematicColorResolver.resolveColor(
+                    text.color,
+                    '--schematic-text-color'
+                ),
+                SchematicOwnerPinLabelLayout.resolveSchematicTextAnchor(
+                    text,
+                    placement.anchor,
+                    matchedOwnerPin
+                ),
+                SchematicTypography.buildSchematicTextRenderOptions(text)
             ),
-            SchematicOwnerPinLabelLayout.resolveSchematicTextAnchor(
+            SchematicSvgRenderer.#semanticAttributes(
+                'text',
                 text,
-                placement.anchor,
-                matchedOwnerPin
-            ),
-            SchematicTypography.buildSchematicTextRenderOptions(text)
+                index,
+                semanticContext
+            )
         )
     }
 
@@ -1029,17 +2363,33 @@ export class SchematicSvgRenderer {
      * @param {{ x: number, y: number, designator?: string }} component
      * @param {number} sheetHeight
      * @param {{ fonts?: Record<string, { size: number, family: string, bold: boolean }> }} sheet
+     * @param {number} index Stable primitive index.
+     * @param {object | undefined} semanticContext Semantic lookup context.
      * @returns {string}
      */
-    static #buildFallbackComponentMarkup(component, sheetHeight, sheet) {
-        return createSvgText(
-            'schematic-designator',
-            component.x + 8,
-            projectSchematicY(sheetHeight, component.y) - 8,
-            component.designator || '',
-            'var(--schematic-default-ink-color)',
-            'start',
-            SchematicTypography.buildViewerSchematicFontOptions(sheet)
+    static #buildFallbackComponentMarkup(
+        component,
+        sheetHeight,
+        sheet,
+        index = 0,
+        semanticContext = undefined
+    ) {
+        return SchematicSvgRenderer.#appendSvgAttributes(
+            createSvgText(
+                'schematic-designator',
+                component.x + 8,
+                projectSchematicY(sheetHeight, component.y) - 8,
+                component.designator || '',
+                'var(--schematic-default-ink-color)',
+                'start',
+                SchematicTypography.buildViewerSchematicFontOptions(sheet)
+            ),
+            SchematicSvgRenderer.#semanticAttributes(
+                'component',
+                component,
+                index,
+                semanticContext
+            )
         )
     }
 

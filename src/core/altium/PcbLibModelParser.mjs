@@ -4,6 +4,11 @@
 
 import { NormalizedModelSchema } from './NormalizedModelSchema.mjs'
 import { ParserUtils } from './ParserUtils.mjs'
+import { LibraryRenderManifestBuilder } from './LibraryRenderManifestBuilder.mjs'
+import { PcbCustomPadShapeParser } from './PcbCustomPadShapeParser.mjs'
+import { PcbDefaultsParser } from './PcbDefaultsParser.mjs'
+import { PcbExtendedPrimitiveInformationParser } from './PcbExtendedPrimitiveInformationParser.mjs'
+import { PcbMaskPasteResolver } from './PcbMaskPasteResolver.mjs'
 
 const { stripExtension } = ParserUtils
 
@@ -19,24 +24,56 @@ export class PcbLibModelParser {
      */
     static parse(fileName, extraction) {
         const safeExtraction = extraction || {}
+        const embeddedModels = Array.isArray(
+            safeExtraction.embeddedModels?.models
+        )
+            ? safeExtraction.embeddedModels.models
+            : []
+        const componentBodies = Array.isArray(
+            safeExtraction.embeddedModels?.componentBodies
+        )
+            ? safeExtraction.embeddedModels.componentBodies
+            : []
         const footprints = Array.isArray(safeExtraction.footprints)
             ? safeExtraction.footprints.map((footprint) =>
-                  PcbLibModelParser.#normalizeFootprint(footprint)
+                  PcbLibModelParser.#normalizeFootprint(
+                      footprint,
+                      embeddedModels
+                  )
               )
             : []
         const embeddedFonts = Array.isArray(safeExtraction.embeddedFonts?.fonts)
             ? safeExtraction.embeddedFonts.fonts
             : []
+        const defaults = PcbDefaultsParser.parse(
+            safeExtraction.libraryHeader || {},
+            'pcb-library'
+        )
         const summary = PcbLibModelParser.#buildSummary(
             fileName,
             footprints,
-            embeddedFonts
+            embeddedFonts,
+            embeddedModels
         )
         const diagnostics = PcbLibModelParser.#buildDiagnostics(
             footprints,
             embeddedFonts,
+            embeddedModels,
             safeExtraction
         )
+        const pcbLibrary = {
+            libraryHeader: safeExtraction.libraryHeader || {},
+            componentParamsToc: safeExtraction.componentParamsToc || {},
+            sectionKeys: safeExtraction.sectionKeys || {},
+            footprints,
+            indexes: PcbLibModelParser.#buildIndexes(footprints),
+            embeddedFonts,
+            embeddedModels,
+            componentBodies,
+            ...(defaults ? { defaults } : {})
+        }
+        pcbLibrary.renderManifest =
+            LibraryRenderManifestBuilder.buildPcbLibraryManifest(pcbLibrary)
 
         return NormalizedModelSchema.attach({
             kind: 'pcb-library',
@@ -44,13 +81,7 @@ export class PcbLibModelParser {
             fileName,
             summary,
             diagnostics,
-            pcbLibrary: {
-                libraryHeader: safeExtraction.libraryHeader || {},
-                componentParamsToc: safeExtraction.componentParamsToc || {},
-                sectionKeys: safeExtraction.sectionKeys || {},
-                footprints,
-                embeddedFonts
-            },
+            pcbLibrary,
             bom: []
         })
     }
@@ -60,9 +91,10 @@ export class PcbLibModelParser {
      * @param {string} fileName
      * @param {object[]} footprints
      * @param {object[]} embeddedFonts
+     * @param {object[]} embeddedModels
      * @returns {Record<string, number | string>}
      */
-    static #buildSummary(fileName, footprints, embeddedFonts) {
+    static #buildSummary(fileName, footprints, embeddedFonts, embeddedModels) {
         return {
             title: stripExtension(fileName),
             footprintCount: footprints.length,
@@ -81,7 +113,8 @@ export class PcbLibModelParser {
                 footprints,
                 'rawRecords'
             ),
-            embeddedFontCount: embeddedFonts.length
+            embeddedFontCount: embeddedFonts.length,
+            embeddedModelCount: embeddedModels.length
         }
     }
 
@@ -89,10 +122,16 @@ export class PcbLibModelParser {
      * Builds parser diagnostics from extraction metadata.
      * @param {object[]} footprints
      * @param {object[]} embeddedFonts
+     * @param {object[]} embeddedModels
      * @param {{ streamNames?: string[], diagnostics?: Record<string, number> }} extraction
      * @returns {{ severity: 'info' | 'warning', message: string }[]}
      */
-    static #buildDiagnostics(footprints, embeddedFonts, extraction) {
+    static #buildDiagnostics(
+        footprints,
+        embeddedFonts,
+        embeddedModels,
+        extraction
+    ) {
         const diagnostics = [
             {
                 severity: 'info',
@@ -123,6 +162,16 @@ export class PcbLibModelParser {
             })
         }
 
+        if (embeddedModels.length) {
+            diagnostics.push({
+                severity: 'info',
+                message:
+                    'Recovered ' +
+                    embeddedModels.length +
+                    ' embedded PcbLib model payloads.'
+            })
+        }
+
         if (extraction.diagnostics?.missingFootprintCount) {
             diagnostics.push({
                 severity: 'warning',
@@ -139,9 +188,10 @@ export class PcbLibModelParser {
     /**
      * Normalizes one extracted footprint object with stable primitive arrays.
      * @param {object} footprint
+     * @param {object[]} libraryEmbeddedModels Library-level embedded models.
      * @returns {object}
      */
-    static #normalizeFootprint(footprint) {
+    static #normalizeFootprint(footprint, libraryEmbeddedModels = []) {
         const normalized = {
             name: String(footprint.name || ''),
             dataName: String(footprint.dataName || footprint.name || ''),
@@ -158,6 +208,13 @@ export class PcbLibModelParser {
             unknownRecords: Array.isArray(footprint.unknownRecords)
                 ? footprint.unknownRecords
                 : [],
+            implementations: PcbLibModelParser.#array(
+                footprint.implementations
+            ),
+            componentModels: PcbLibModelParser.#array(
+                footprint.componentModels
+            ),
+            pinDisplayModes: footprint.pinDisplayModes || {},
             rawRecords: PcbLibModelParser.#array(footprint.rawRecords),
             pads: PcbLibModelParser.#array(footprint.pads),
             tracks: PcbLibModelParser.#array(footprint.tracks),
@@ -165,8 +222,51 @@ export class PcbLibModelParser {
             vias: PcbLibModelParser.#array(footprint.vias),
             fills: PcbLibModelParser.#array(footprint.fills),
             texts: PcbLibModelParser.#array(footprint.texts),
-            regions: PcbLibModelParser.#array(footprint.regions)
+            regions: PcbLibModelParser.#array(footprint.regions),
+            shapeBasedRegions: PcbLibModelParser.#array(
+                footprint.shapeBasedRegions
+            ),
+            extendedPrimitiveInformation:
+                footprint.extendedPrimitiveInformation || {
+                    entries: [],
+                    byPrimitiveIndex: {},
+                    byPrimitiveKey: {}
+                },
+            customPadShapes: footprint.customPadShapes || {
+                entries: [],
+                byPrimitiveIndex: {}
+            },
+            embeddedModels: PcbLibModelParser.#array(footprint.embeddedModels),
+            componentBodies: PcbLibModelParser.#array(footprint.componentBodies)
         }
+        normalized.defaults = PcbDefaultsParser.parse(
+            {
+                ...(footprint.defaults || {}),
+                ...(footprint.parameters || {})
+            },
+            'pcb-library-footprint'
+        )
+        PcbExtendedPrimitiveInformationParser.attachToPrimitives(
+            normalized,
+            normalized.extendedPrimitiveInformation
+        )
+        PcbCustomPadShapeParser.attachToPads(
+            normalized.pads,
+            normalized.customPadShapes,
+            normalized
+        )
+        normalized.componentBodies = PcbLibModelParser.#annotateComponentBodies(
+            normalized.componentBodies,
+            normalized.embeddedModels.length
+                ? normalized.embeddedModels
+                : libraryEmbeddedModels
+        )
+        normalized.maskPaste = PcbMaskPasteResolver.build({
+            pads: normalized.pads,
+            vias: normalized.vias,
+            rules: footprint.rules || [],
+            defaults: normalized.defaults
+        })
 
         return {
             ...normalized,
@@ -174,6 +274,127 @@ export class PcbLibModelParser {
                 Number(footprint.primitiveCount) ||
                 normalized.primitiveOrder.length
         }
+    }
+
+    /**
+     * Adds deterministic projection diagnostics to footprint body records.
+     * @param {object[]} componentBodies Component body records.
+     * @param {object[]} embeddedModels Embedded model records.
+     * @returns {object[]}
+     */
+    static #annotateComponentBodies(componentBodies, embeddedModels) {
+        return componentBodies.map((componentBody) => ({
+            ...componentBody,
+            projectionDiagnostics: PcbLibModelParser.#projectionDiagnostics(
+                componentBody,
+                embeddedModels
+            )
+        }))
+    }
+
+    /**
+     * Resolves one component-body projection diagnostic.
+     * @param {object} componentBody Component body record.
+     * @param {object[]} embeddedModels Embedded model records.
+     * @returns {{ source: string, reason: string }}
+     */
+    static #projectionDiagnostics(componentBody, embeddedModels) {
+        const matchedModel = (embeddedModels || []).find(
+            (model) =>
+                PcbLibModelParser.#sameNonEmptyValue(
+                    model?.id,
+                    componentBody?.modelId
+                ) ||
+                PcbLibModelParser.#sameNonEmptyValue(
+                    model?.checksum,
+                    componentBody?.checksum
+                ) ||
+                PcbLibModelParser.#sameNonEmptyValue(
+                    model?.name,
+                    componentBody?.name
+                )
+        )
+
+        if (matchedModel) {
+            return {
+                source: 'embedded-model',
+                reason: 'matched embedded model payload'
+            }
+        }
+
+        return {
+            source: 'fallback',
+            reason: 'no embedded model payload matched this body'
+        }
+    }
+
+    /**
+     * Compares two values only when both are present.
+     * @param {unknown} left First value.
+     * @param {unknown} right Second value.
+     * @returns {boolean}
+     */
+    static #sameNonEmptyValue(left, right) {
+        return (
+            left !== null &&
+            left !== undefined &&
+            left !== '' &&
+            right !== null &&
+            right !== undefined &&
+            right !== '' &&
+            String(left) === String(right)
+        )
+    }
+
+    /**
+     * Builds footprint lookup indexes for library consumers.
+     * @param {object[]} footprints Normalized footprints.
+     * @returns {object}
+     */
+    static #buildIndexes(footprints) {
+        const footprintsByName = {}
+
+        for (const [index, footprint] of footprints.entries()) {
+            footprintsByName[footprint.name] =
+                PcbLibModelParser.#footprintIndexEntry(footprint, index)
+        }
+
+        return { footprintsByName }
+    }
+
+    /**
+     * Builds one footprint index entry.
+     * @param {object} footprint Normalized footprint.
+     * @param {number} index Footprint index.
+     * @returns {object}
+     */
+    static #footprintIndexEntry(footprint, index) {
+        return {
+            index,
+            name: footprint.name,
+            dataName: footprint.dataName,
+            sourceStorage: footprint.sourceStorage,
+            primitiveCount: footprint.primitiveCount,
+            padCount: footprint.pads.length,
+            textCount: footprint.texts.length,
+            keywords: PcbLibModelParser.#buildFootprintKeywords(footprint)
+        }
+    }
+
+    /**
+     * Builds searchable metadata tokens for one footprint.
+     * @param {object} footprint Normalized footprint.
+     * @returns {string[]}
+     */
+    static #buildFootprintKeywords(footprint) {
+        return [
+            footprint.name,
+            footprint.dataName,
+            ...Object.values(footprint.parameters || {}),
+            ...Object.values(footprint.componentParams || {})
+        ]
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
     }
 
     /**
