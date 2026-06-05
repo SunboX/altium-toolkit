@@ -222,6 +222,14 @@ test('ProjectDesignBundleBuilder composes project and document models', () => {
     assert.equal(bundle.summary.netCount, 1)
     assert.equal(bundle.summary.pnpCount, 2)
     assert.equal(bundle.project.name, 'bundle-check')
+    assert.deepEqual(bundle.units, {
+        coordinate: 'mil',
+        length: 'mil',
+        board: 'mil',
+        pnp: 'mil',
+        angle: 'deg'
+    })
+    assert.deepEqual(bundle.pnp.units, { coordinate: 'mil', angle: 'deg' })
     assert.equal(bundle.variants.length, 1)
     assert.deepEqual(
         bundle.sheets.map((sheet) => sheet.fileName),
@@ -496,6 +504,10 @@ test('ProjectNetlistExporter builds deterministic wirelist and netlist JSON', ()
     assert.deepEqual(ProjectNetlistExporter.buildNetlistJson(bundle), {
         schema: 'altium-toolkit.netlist.a1',
         project: 'bundle-check',
+        units: {
+            coordinate: 'mil',
+            length: 'mil'
+        },
         nets: [
             {
                 name: 'NET_A',

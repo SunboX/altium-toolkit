@@ -23,6 +23,12 @@
         "project": {
             "type": "object"
         },
+        "units": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
         "variants": {
             "type": "array"
         },

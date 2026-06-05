@@ -1,0 +1,25 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.parser-compatibility-fuzz.a1",
+    "title": "Altium Toolkit Parser Compatibility Fuzz A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "summary", "cases"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.parser-compatibility-fuzz.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "cases": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["key", "status"]
+            }
+        }
+    }
+}

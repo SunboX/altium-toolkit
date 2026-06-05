@@ -32,7 +32,7 @@ export class ProjectNetlistExporter {
     /**
      * Builds a deterministic JSON netlist contract.
      * @param {object} bundle Normalized design bundle or effective variant.
-     * @returns {{ schema: string, project: string, nets: object[] }}
+     * @returns {{ schema: string, project: string, units: object, nets: object[] }}
      */
     static buildNetlistJson(bundle) {
         const projectName =
@@ -61,6 +61,10 @@ export class ProjectNetlistExporter {
         return {
             schema: 'altium-toolkit.netlist.a1',
             project: projectName,
+            units: {
+                coordinate: 'mil',
+                length: 'mil'
+            },
             nets
         }
     }

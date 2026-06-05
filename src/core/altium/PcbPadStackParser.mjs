@@ -81,6 +81,10 @@ export class PcbPadStackParser {
         const flags = PcbPadStackParser.#parseFlags(mainRecord)
         const mainRecordTail =
             PcbPadStackParser.#parseMainRecordTail(mainRecord)
+        const extension = PcbPadStackParser.#parseExtensionRecord(
+            extensionRecord,
+            padContext
+        )
 
         return {
             ...flags,
@@ -90,8 +94,10 @@ export class PcbPadStackParser {
                 mainRecordTail,
                 padContext
             ),
-            ...PcbPadStackParser.#parseExtensionRecord(
-                extensionRecord,
+            ...extension,
+            ...PcbPadStackParser.#buildLocalStack(
+                mainRecordTail,
+                extension,
                 padContext
             )
         }
@@ -720,6 +726,169 @@ export class PcbPadStackParser {
             fullStackLayerEntries:
                 PcbPadStackParser.#parseFullStackLayerEntries(extensionRecord)
         }
+    }
+
+    /**
+     * Builds a normalized local-stack geometry read model.
+     * @param {Record<string, boolean | number>} mainRecordTail Main tail fields.
+     * @param {Record<string, unknown>} extension Extension fields.
+     * @param {Record<string, unknown>} padContext Parsed pad fields.
+     * @returns {{ localStack?: object }}
+     */
+    static #buildLocalStack(mainRecordTail, extension, padContext) {
+        const mode = Number(mainRecordTail.padMode)
+        if (mode === 1) {
+            return {
+                localStack: {
+                    schema: 'altium-toolkit.pcb.pad-local-stack.a1',
+                    mode,
+                    modeName: String(mainRecordTail.padModeName || ''),
+                    source: 'main-record',
+                    layers: [
+                        PcbPadStackParser.#localStackLayer(
+                            'top',
+                            1,
+                            'L1',
+                            padContext,
+                            extension
+                        ),
+                        PcbPadStackParser.#localStackLayer(
+                            'middle',
+                            null,
+                            'INNER',
+                            padContext,
+                            extension
+                        ),
+                        PcbPadStackParser.#localStackLayer(
+                            'bottom',
+                            32,
+                            'L32',
+                            padContext,
+                            extension
+                        )
+                    ],
+                    hole: PcbPadStackParser.#localStackHole(
+                        padContext,
+                        extension
+                    )
+                }
+            }
+        }
+
+        if (
+            mode === 2 &&
+            Array.isArray(extension.fullStackLayerEntries) &&
+            extension.fullStackLayerEntries.length
+        ) {
+            return {
+                localStack: {
+                    schema: 'altium-toolkit.pcb.pad-local-stack.a1',
+                    mode,
+                    modeName: String(mainRecordTail.padModeName || ''),
+                    source: 'extension-record',
+                    layers: extension.fullStackLayerEntries.map((entry) => ({
+                        role: 'layer',
+                        layerId: Number(entry.layerCode),
+                        layerKey: 'L' + Number(entry.layerCode),
+                        enabled: entry.enabled,
+                        width: entry.sizeX,
+                        height: entry.sizeY,
+                        cornerRadius: entry.cornerRadius,
+                        modeFlags: entry.modeFlags
+                    })),
+                    hole: PcbPadStackParser.#localStackHole(
+                        padContext,
+                        extension
+                    )
+                }
+            }
+        }
+
+        return {}
+    }
+
+    /**
+     * Builds one top/middle/bottom local-stack layer entry.
+     * @param {'top' | 'middle' | 'bottom'} role Layer role.
+     * @param {number | null} layerId Layer id.
+     * @param {string} layerKey Stable layer key.
+     * @param {Record<string, unknown>} padContext Parsed pad fields.
+     * @param {Record<string, unknown>} extension Extension fields.
+     * @returns {object}
+     */
+    static #localStackLayer(role, layerId, layerKey, padContext, extension) {
+        const suffix =
+            role === 'top' ? 'Top' : role === 'bottom' ? 'Bottom' : 'Mid'
+        const offset = PcbPadStackParser.#layerOffset(role, extension)
+
+        return {
+            role,
+            layerId,
+            layerKey,
+            width: Number(padContext['size' + suffix + 'X'] || 0),
+            height: Number(padContext['size' + suffix + 'Y'] || 0),
+            shape: PcbPadStackParser.#numericOrNull(
+                padContext['shape' + suffix]
+            ),
+            shapeName: PcbPadShapeCodec.padShapeName(
+                padContext['shape' + suffix]
+            ),
+            offsetX: offset.x,
+            offsetY: offset.y
+        }
+    }
+
+    /**
+     * Resolves layer offsets from extension data when present.
+     * @param {'top' | 'middle' | 'bottom'} role Layer role.
+     * @param {Record<string, unknown>} extension Extension fields.
+     * @returns {{ x: number, y: number }}
+     */
+    static #layerOffset(role, extension) {
+        const layerNumber = role === 'top' ? 1 : role === 'bottom' ? 32 : null
+        const offset = Array.isArray(extension.layerOffsets)
+            ? extension.layerOffsets.find(
+                  (entry) => entry.layerNumber === layerNumber
+              )
+            : null
+
+        return {
+            x: Number(offset?.x || 0),
+            y: Number(offset?.y || 0)
+        }
+    }
+
+    /**
+     * Builds local-stack hole geometry.
+     * @param {Record<string, unknown>} padContext Parsed pad fields.
+     * @param {Record<string, unknown>} extension Extension fields.
+     * @returns {object}
+     */
+    static #localStackHole(padContext, extension) {
+        const shape = PcbPadStackParser.#numericOrNull(extension.holeShape)
+
+        return {
+            diameter: Number(padContext.holeDiameter || 0),
+            shape,
+            shapeName:
+                shape === null ? null : PcbPadShapeCodec.holeShapeName(shape),
+            slotLength: extension.holeSlotLength ?? null,
+            rotation: extension.holeRotation ?? null
+        }
+    }
+
+    /**
+     * Converts finite numeric values and nullish values into stable output.
+     * @param {unknown} value Candidate value.
+     * @returns {number | null}
+     */
+    static #numericOrNull(value) {
+        if (value === null || value === undefined || value === '') {
+            return null
+        }
+
+        const number = Number(value)
+        return Number.isFinite(number) ? number : null
     }
 
     /**

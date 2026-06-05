@@ -345,6 +345,31 @@ test('PcbBinaryPrimitiveParser decodes extended pad streams', () => {
                         cornerRadius: 20
                     }
                 ],
+                localStack: {
+                    schema: 'altium-toolkit.pcb.pad-local-stack.a1',
+                    mode: 2,
+                    modeName: 'full-stack',
+                    source: 'extension-record',
+                    layers: [
+                        {
+                            role: 'layer',
+                            layerId: 37,
+                            layerKey: 'L37',
+                            enabled: true,
+                            width: 80,
+                            height: 25,
+                            cornerRadius: 20,
+                            modeFlags: 3
+                        }
+                    ],
+                    hole: {
+                        diameter: 39.3701,
+                        shape: 2,
+                        shapeName: 'slot',
+                        slotLength: 98.4252,
+                        rotation: 0
+                    }
+                },
                 componentIndex: 8,
                 netIndex: 22,
                 polygonIndex: null,

@@ -8,7 +8,7 @@
 export class CircuitJsonModelSchema {
     static CURRENT_SCHEMA_ID = 'https://github.com/tscircuit/circuit-json'
 
-    static CURRENT_SCHEMA_VERSION = '0.0.431'
+    static CURRENT_SCHEMA_VERSION = '0.0.433'
 
     static FORMAT_NAME = 'circuit-json'
 

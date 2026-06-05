@@ -10,6 +10,19 @@ import { ProjectVariantViewBuilder } from './ProjectVariantViewBuilder.mjs'
  * bundle for multi-document consumers.
  */
 export class ProjectDesignBundleBuilder {
+    static #UNITS = {
+        coordinate: 'mil',
+        length: 'mil',
+        board: 'mil',
+        pnp: 'mil',
+        angle: 'deg'
+    }
+
+    static #PNP_UNITS = {
+        coordinate: 'mil',
+        angle: 'deg'
+    }
+
     /**
      * Builds a normalized project/design bundle from already parsed models.
      * @param {{ projectModel?: object, documentModels?: object[], annotationModels?: object[], variantName?: string }} options Bundle options.
@@ -78,6 +91,7 @@ export class ProjectDesignBundleBuilder {
                 }
             ],
             project,
+            units: ProjectDesignBundleBuilder.#UNITS,
             variants: project.variants || [],
             sheets,
             components,
@@ -215,6 +229,7 @@ export class ProjectDesignBundleBuilder {
         }
 
         return {
+            units: ProjectDesignBundleBuilder.#PNP_UNITS,
             positionMode,
             entries,
             modes: {}

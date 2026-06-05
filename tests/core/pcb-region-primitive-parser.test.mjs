@@ -79,6 +79,63 @@ class PcbRegionPrimitiveTestFactory {
     }
 
     /**
+     * Creates legacy region records whose cutout identity is stored in KIND.
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static createLegacyCutoutRegionStream() {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+        const firstRecord = PcbRegionPrimitiveTestFactory.#createRegionRecord({
+            layerId: 37,
+            flags2: 0,
+            netIndex: null,
+            polygonIndex: 12,
+            componentIndex: null,
+            holeCount: 0,
+            properties: {
+                KIND: 'BoardCutout',
+                ISSHAPEBASED: 'FALSE'
+            },
+            addPropertyTerminator: true,
+            points: [
+                [100, 200],
+                [300, 200],
+                [300, 400],
+                [100, 400]
+            ],
+            holes: []
+        })
+        const secondRecord = PcbRegionPrimitiveTestFactory.#createRegionRecord({
+            layerId: 1,
+            flags2: 0,
+            netIndex: null,
+            polygonIndex: 13,
+            componentIndex: null,
+            holeCount: 0,
+            properties: {
+                KIND: 'PolygonPourCutout',
+                ISSHAPEBASED: 'FALSE'
+            },
+            addPropertyTerminator: true,
+            points: [
+                [10, 20],
+                [30, 20],
+                [30, 40]
+            ],
+            holes: []
+        })
+        const dataBytes = new Uint8Array(
+            firstRecord.byteLength + secondRecord.byteLength
+        )
+
+        headerView.setUint32(0, 2, true)
+        dataBytes.set(firstRecord, 0)
+        dataBytes.set(secondRecord, firstRecord.byteLength)
+
+        return { headerBytes, dataBytes }
+    }
+
+    /**
      * Creates one object-id/length-prefixed region record.
      * @param {{ layerId: number, flags2: number, netIndex: number | null, polygonIndex: number | null, componentIndex: number | null, holeCount: number, properties: Record<string, string>, addPropertyTerminator: boolean, points: number[][], holes: number[][][] }} options
      * @returns {Uint8Array}
@@ -252,6 +309,55 @@ test('PcbRegionPrimitiveParser decodes mixed-boundary region streams', () => {
                 properties: {
                     KIND: '3',
                     ISSHAPEBASED: 'FALSE'
+                }
+            }
+        ]
+    )
+})
+
+/**
+ * Verifies legacy region KIND values are classified as cutouts even when the
+ * explicit board-cutout boolean is absent.
+ */
+test('PcbRegionPrimitiveParser classifies legacy region cutouts', () => {
+    const { headerBytes, dataBytes } =
+        PcbRegionPrimitiveTestFactory.createLegacyCutoutRegionStream()
+    const regions = PcbRegionPrimitiveParser.parseRegionStream(
+        headerBytes,
+        dataBytes
+    )
+
+    assert.deepEqual(
+        regions.map((region) => ({
+            kind: region.kind,
+            rawKind: region.rawKind,
+            isBoardCutout: region.isBoardCutout,
+            isPolygonPourCutout: region.isPolygonPourCutout,
+            cutoutClassification: region.cutoutClassification
+        })),
+        [
+            {
+                kind: null,
+                rawKind: 'BoardCutout',
+                isBoardCutout: true,
+                isPolygonPourCutout: false,
+                cutoutClassification: {
+                    isBoardCutout: true,
+                    isPolygonPourCutout: false,
+                    source: 'legacy-kind',
+                    rawKind: 'BoardCutout'
+                }
+            },
+            {
+                kind: null,
+                rawKind: 'PolygonPourCutout',
+                isBoardCutout: false,
+                isPolygonPourCutout: true,
+                cutoutClassification: {
+                    isBoardCutout: false,
+                    isPolygonPourCutout: true,
+                    source: 'legacy-kind',
+                    rawKind: 'PolygonPourCutout'
                 }
             }
         ]

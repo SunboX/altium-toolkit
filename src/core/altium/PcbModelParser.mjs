@@ -16,6 +16,7 @@ import { PcbMaskPasteResolver } from './PcbMaskPasteResolver.mjs'
 import { PcbOutlineRecovery } from './PcbOutlineRecovery.mjs'
 import { PcbOwnershipGraphBuilder } from './PcbOwnershipGraphBuilder.mjs'
 import { PcbPickPlacePositionResolver } from './PcbPickPlacePositionResolver.mjs'
+import { PcbRouteAnalysisBuilder } from './PcbRouteAnalysisBuilder.mjs'
 import { PcbRuleParser } from './PcbRuleParser.mjs'
 import { PcbSpecialStringResolver } from './PcbSpecialStringResolver.mjs'
 import { PcbStatisticsBuilder } from './PcbStatisticsBuilder.mjs'
@@ -281,6 +282,16 @@ export class PcbModelParser {
             componentPrimitiveGroups,
             { sourceComponents: componentRecords }
         )
+        const routeAnalysis = PcbRouteAnalysisBuilder.build({
+            ...normalizedPcb,
+            layers,
+            primitiveLayers,
+            nets,
+            classes,
+            differentialPairs: differentialPairData.differentialPairs,
+            differentialPairClasses:
+                differentialPairData.differentialPairClasses
+        })
         const statistics = PcbStatisticsBuilder.build({
             ...normalizedPcb,
             layers,
@@ -556,6 +567,8 @@ export class PcbModelParser {
                 customPadShapeCount: customPadShapes.entries?.length || 0,
                 userUnionCount: unions.userUnions?.length || 0,
                 smartUnionCount: unions.smartUnions?.length || 0,
+                routedNetCount: routeAnalysis.summary.routedNetCount,
+                routedLengthMil: routeAnalysis.summary.totalLengthMil,
                 boardRegionCount: boardRegionSummary.boardRegionCount,
                 flexRegionCount: boardRegionSummary.flexRegionCount,
                 bendingLineCount: boardRegionSummary.bendingLineCount,
@@ -588,6 +601,7 @@ export class PcbModelParser {
                 dimensions,
                 components: normalizedPcb.components,
                 pickPlace: pnp,
+                routeAnalysis,
                 polygons: normalizedPcb.polygons,
                 fills: normalizedPcb.fills,
                 tracks: normalizedPcb.tracks,
@@ -1193,23 +1207,34 @@ export class PcbModelParser {
                 key === 'MEMBERCOUNT' ||
                 key === 'ENABLED' ||
                 key === 'UNIQUEID' ||
-                /^M\d+$/.test(key)
+                /^(?:M|MEMBER)\d+$/.test(key)
         )
     }
 
     /**
-     * Extracts ordered class members from M0, M1, ... fields.
+     * Extracts ordered class members from M0/MEMBER0-style fields.
      * @param {Record<string, string | string[]>} fields
      * @returns {string[]}
      */
     static #parseClassMembers(fields) {
         return Object.keys(fields || {})
-            .filter((key) => /^M\d+$/.test(key))
+            .filter((key) => /^(?:M|MEMBER)\d+$/.test(key))
             .sort(
-                (left, right) => Number(left.slice(1)) - Number(right.slice(1))
+                (left, right) =>
+                    PcbModelParser.#classMemberIndex(left) -
+                    PcbModelParser.#classMemberIndex(right)
             )
             .map((key) => getField(fields, key))
             .filter(Boolean)
+    }
+
+    /**
+     * Extracts the numeric index from a class member field name.
+     * @param {string} key Field key.
+     * @returns {number}
+     */
+    static #classMemberIndex(key) {
+        return Number(String(key).replace(/^(?:M|MEMBER)/u, ''))
     }
 
     /**

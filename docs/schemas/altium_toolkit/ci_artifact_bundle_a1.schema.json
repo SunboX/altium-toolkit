@@ -1,0 +1,76 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.ci.artifact-bundle.a1",
+    "title": "Altium Toolkit CI Artifact Bundle A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "summary",
+        "designBundle",
+        "documentGraph",
+        "normalizedModels",
+        "netlist",
+        "bom",
+        "pnp",
+        "schematicSvgs",
+        "pcbLayerSvgs",
+        "statistics",
+        "diagnostics"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.ci.artifact-bundle.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "units": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
+        "designBundle": {
+            "type": "object"
+        },
+        "documentGraph": {
+            "type": "object"
+        },
+        "normalizedModels": {
+            "type": "array"
+        },
+        "netlist": {
+            "type": "object",
+            "required": ["json", "wirelist"],
+            "properties": {
+                "json": {
+                    "type": "object"
+                },
+                "wirelist": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true
+        },
+        "bom": {
+            "type": "object"
+        },
+        "pnp": {
+            "type": "object"
+        },
+        "schematicSvgs": {
+            "type": "array"
+        },
+        "pcbLayerSvgs": {
+            "type": "array"
+        },
+        "statistics": {
+            "type": "object"
+        },
+        "diagnostics": {
+            "type": "array"
+        }
+    }
+}

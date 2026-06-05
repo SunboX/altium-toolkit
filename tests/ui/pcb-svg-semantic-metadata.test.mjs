@@ -145,6 +145,40 @@ test('PcbSvgRenderer emits semantic data attributes and metadata sidecar', () =>
     assert.match(markup, /data-hole-owner="pad"/)
     assert.match(markup, /data-hole-owner="via"/)
     assert.match(markup, /data-text-role="free"/)
+
+    const metadata = readMetadata(markup, 'pcb-semantic-metadata')
+
+    assert.deepEqual(metadata.lookups, {
+        netsByIndex: { 5: 'SIG_A' },
+        netIndexByName: { SIG_A: 5 },
+        netClassesByName: { SIG_A: ['Fast Nets'] },
+        componentsByIndex: {
+            0: {
+                designator: 'U1',
+                uniqueId: 'COMP-1',
+                pattern: 'QFN-FAKE'
+            }
+        },
+        componentIndexByDesignator: { U1: 0 },
+        layersByKey: {
+            L1: {
+                layerId: 1,
+                layerKey: 'L1',
+                displayName: 'Top Layer',
+                role: 'copper'
+            },
+            L33: {
+                layerId: 33,
+                layerKey: 'L33',
+                displayName: 'Top Overlay',
+                role: 'overlay'
+            }
+        },
+        layerKeyByDisplayName: {
+            'Top Layer': 'L1',
+            'Top Overlay': 'L33'
+        }
+    })
 })
 
 /**

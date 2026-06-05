@@ -27,6 +27,33 @@
         "boardOutline": {
             "type": "object"
         },
+        "lookups": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+                "netsByIndex": {
+                    "type": "object"
+                },
+                "netIndexByName": {
+                    "type": "object"
+                },
+                "netClassesByName": {
+                    "type": "object"
+                },
+                "componentsByIndex": {
+                    "type": "object"
+                },
+                "componentIndexByDesignator": {
+                    "type": "object"
+                },
+                "layersByKey": {
+                    "type": "object"
+                },
+                "layerKeyByDisplayName": {
+                    "type": "object"
+                }
+            }
+        },
         "layers": {
             "type": "array"
         },

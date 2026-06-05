@@ -12,6 +12,7 @@ import { IntLibModelParser } from '../../src/core/altium/IntLibModelParser.mjs'
 import { NormalizedModelSchema } from '../../src/core/altium/NormalizedModelSchema.mjs'
 import { PcbLibModelParser } from '../../src/core/altium/PcbLibModelParser.mjs'
 import { PcbModelParser } from '../../src/core/altium/PcbModelParser.mjs'
+import { DraftsmanDigestParser } from '../../src/core/altium/DraftsmanDigestParser.mjs'
 import { ProjectAnnotationParser } from '../../src/core/altium/ProjectAnnotationParser.mjs'
 import { ProjectDesignBundleBuilder } from '../../src/core/altium/ProjectDesignBundleBuilder.mjs'
 import { PrjPcbModelParser } from '../../src/core/altium/PrjPcbModelParser.mjs'
@@ -52,6 +53,10 @@ test('normalized parser roots expose the current schema id', () => {
             sources: []
         }
     )
+    const draftsmanModel = DraftsmanDigestParser.parse(
+        'schema-check.PCBDwf',
+        encodeText('<DraftsmanDocument><Page Id="P1" /></DraftsmanDocument>')
+    )
     const designBundleModel = ProjectDesignBundleBuilder.build({
         projectModel,
         documentModels: []
@@ -65,9 +70,10 @@ test('normalized parser roots expose the current schema id', () => {
             projectModel,
             annotationModel,
             integratedLibraryModel,
+            draftsmanModel,
             designBundleModel
         ].map((model) => model.schema),
-        Array(7).fill(NormalizedModelSchema.CURRENT_SCHEMA_ID)
+        Array(8).fill(NormalizedModelSchema.CURRENT_SCHEMA_ID)
     )
     assert.equal(
         ExportedNormalizedModelSchema.CURRENT_SCHEMA_ID,
@@ -101,6 +107,7 @@ test('machine-readable normalized model schema declares the emitted contract id'
         'project',
         'project-annotation',
         'integrated-library',
+        'draftsman',
         'design-bundle'
     ])
     assert.deepEqual(schema.properties.fileType.enum, [
@@ -110,6 +117,7 @@ test('machine-readable normalized model schema declares the emitted contract id'
         'PrjPcb',
         'Annotation',
         'IntLib',
+        'PCBDwf',
         'ProjectDesignBundle'
     ])
 })
@@ -169,6 +177,7 @@ test('machine-readable normalized model schema declares parser detail contracts'
         schema.properties.integratedLibrary.$ref,
         '#/$defs/integratedLibrary'
     )
+    assert.equal(schema.properties.draftsman.$ref, '#/$defs/draftsmanDigest')
     assert.equal(
         schema.properties.pcb.properties.dimensions.items.$ref,
         '#/$defs/pcbDimension'
@@ -188,6 +197,10 @@ test('machine-readable normalized model schema declares parser detail contracts'
     assert.equal(
         schema.properties.sheets.items.$ref,
         '#/$defs/designBundleSheet'
+    )
+    assert.equal(
+        schema.properties.project.properties.documentGraph.$ref,
+        '#/$defs/projectDocumentGraph'
     )
     assert.equal(schema.properties.annotations.type, 'object')
     assert.equal(
@@ -229,6 +242,31 @@ test('machine-readable contract schemas are split for downstream consumers', () 
             '../../docs/schemas/altium_toolkit/pcb_svg_semantics_a1.schema.json',
             'altium-toolkit.pcb.svg.semantics.a1',
             'altium-toolkit.pcb.svg.semantics.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/ci_artifact_bundle_a1.schema.json',
+            'altium-toolkit.ci.artifact-bundle.a1',
+            'altium-toolkit.ci.artifact-bundle.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/project_document_graph_a1.schema.json',
+            'altium-toolkit.project.document-graph.a1',
+            'altium-toolkit.project.document-graph.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/draftsman_digest_a1.schema.json',
+            'altium-toolkit.draftsman.digest.a1',
+            'altium-toolkit.draftsman.digest.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/svg_model_cross_link_a1.schema.json',
+            'altium-toolkit.svg-model-cross-link.a1',
+            'altium-toolkit.svg-model-cross-link.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/parser_compatibility_fuzz_a1.schema.json',
+            'altium-toolkit.parser-compatibility-fuzz.a1',
+            'altium-toolkit.parser-compatibility-fuzz.a1'
         ]
     ]
 

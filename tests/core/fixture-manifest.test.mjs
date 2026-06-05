@@ -60,4 +60,19 @@ test('fixture manifest catalogs only repo-owned synthetic coverage targets', asy
             fixture.contracts.svg.includes('schematic.svg.semantics')
         )
     )
+    assert.ok(
+        manifest.fixtures.some((fixture) =>
+            fixture.coverage.includes('ci.artifact-bundle')
+        )
+    )
+    assert.ok(
+        manifest.fixtures.some((fixture) =>
+            fixture.contracts.parser.includes('draftsman.digest')
+        )
+    )
+    assert.ok(
+        manifest.fixtures.some((fixture) =>
+            fixture.contracts.diagnostics.includes('parser.compatibility-fuzz')
+        )
+    )
 })

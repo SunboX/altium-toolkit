@@ -48,15 +48,25 @@
                 "pcb.layer-stack-statistics",
                 "pcb.drill-statistics",
                 "pcb.width-histograms",
-                "pcb.planning-statistics"
+                "pcb.planning-statistics",
+                "pcb.route-analysis",
+                "pcb.local-pad-stack",
+                "pcb.legacy-cutouts"
             ],
             "contracts": {
                 "parser": [
                     "pcb.layer-stack",
                     "pcb.drills",
-                    "pcb.board-regions"
+                    "pcb.board-regions",
+                    "pcb.route-analysis",
+                    "pcb.pad-local-stack",
+                    "pcb.region-cutout-classification"
                 ],
-                "svg": ["pcb.svg.semantics", "pcb.svg.layer-views"],
+                "svg": [
+                    "pcb.svg.semantics",
+                    "pcb.svg.lookup-maps",
+                    "pcb.svg.layer-views"
+                ],
                 "schemas": [
                     "altium-toolkit.normalized-model.a1",
                     "altium-toolkit.pcb.svg.semantics.a1"
@@ -92,6 +102,80 @@
                     "library.asset.fallback",
                     "intlib.cross-reference.parse-error"
                 ]
+            }
+        },
+        {
+            "key": "project-a1",
+            "kind": "project",
+            "assetPolicy": "repo-owned-synthetic-only",
+            "nativeAsset": false,
+            "source": "inline-synthetic-records",
+            "coverage": [
+                "project.document-graph",
+                "project.generated-outputs",
+                "project.harness-files",
+                "ci.artifact-bundle",
+                "units.contract"
+            ],
+            "contracts": {
+                "parser": [
+                    "project.document-graph",
+                    "project.output-references",
+                    "project.units"
+                ],
+                "svg": ["schematic.svg.semantics", "pcb.svg.layer-views"],
+                "schemas": [
+                    "altium-toolkit.project.document-graph.a1",
+                    "altium-toolkit.ci.artifact-bundle.a1"
+                ],
+                "diagnostics": [
+                    "project.document.missing-path",
+                    "svg-model-cross-link.missing-element"
+                ]
+            }
+        },
+        {
+            "key": "draft-a1",
+            "kind": "draftsman",
+            "assetPolicy": "repo-owned-synthetic-only",
+            "nativeAsset": false,
+            "source": "inline-synthetic-records",
+            "coverage": [
+                "draftsman.digest",
+                "draftsman.unsupported-items",
+                "draftsman.legacy-compression"
+            ],
+            "contracts": {
+                "parser": [
+                    "draftsman.digest",
+                    "draftsman.lz4",
+                    "draftsman.unsupported-raw-xml"
+                ],
+                "svg": [],
+                "schemas": ["altium-toolkit.draftsman.digest.a1"],
+                "diagnostics": [
+                    "draftsman.digest.unsupported-container",
+                    "draftsman.digest.unsupported-item",
+                    "draftsman.digest.lz4-container"
+                ]
+            }
+        },
+        {
+            "key": "fuzz-a1",
+            "kind": "parser-compatibility",
+            "assetPolicy": "repo-owned-synthetic-only",
+            "nativeAsset": false,
+            "source": "inline-synthetic-records",
+            "coverage": [
+                "parser.fuzz-record-ordering",
+                "parser.fuzz-malformed-sidecars",
+                "parser.fuzz-odd-encodings"
+            ],
+            "contracts": {
+                "parser": ["parser.compatibility-fuzz"],
+                "svg": [],
+                "schemas": ["altium-toolkit.parser-compatibility-fuzz.a1"],
+                "diagnostics": ["parser.compatibility-fuzz"]
             }
         }
     ]

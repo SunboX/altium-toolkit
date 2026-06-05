@@ -12,6 +12,12 @@
         "project": {
             "type": "string"
         },
+        "units": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
         "nets": {
             "type": "array",
             "items": {

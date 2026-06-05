@@ -4,6 +4,7 @@
 
 import { NormalizedModelSchema } from './NormalizedModelSchema.mjs'
 import { ProjectOutJobDigestBuilder } from './ProjectOutJobDigestBuilder.mjs'
+import { ProjectDocumentGraphBuilder } from './ProjectDocumentGraphBuilder.mjs'
 
 /**
  * Parses Altium PrjPcb INI-style project files into a normalized project
@@ -58,6 +59,11 @@ export class PrjPcbModelParser {
             documents,
             outputGroups
         })
+        const documentGraph = ProjectDocumentGraphBuilder.build({
+            documents,
+            documentGroups,
+            outputGroups
+        })
         const summary = PrjPcbModelParser.#buildSummary(
             fileName,
             documents,
@@ -87,6 +93,7 @@ export class PrjPcbModelParser {
                 configurations,
                 outputGroups,
                 outJobDigest,
+                documentGraph,
                 classGeneration,
                 sections: PrjPcbModelParser.#serializeSections(sections)
             },
@@ -228,6 +235,9 @@ export class PrjPcbModelParser {
             ),
             integratedLibraries: documents.filter(
                 (document) => document.kind === 'integrated-library'
+            ),
+            harnessFiles: documents.filter(
+                (document) => document.kind === 'harness'
             ),
             outJobs: documents.filter(
                 (document) => document.kind === 'output-job'
@@ -699,7 +709,14 @@ export class PrjPcbModelParser {
                 PrjPcbModelParser.#stringField(fields, 'OutputType' + index) ||
                 ''
             if (!type) continue
-            rows.push({
+            const targetPath =
+                PrjPcbModelParser.#stringField(
+                    fields,
+                    'OutputTargetPath' + index
+                ) ||
+                PrjPcbModelParser.#stringField(fields, 'OutputPath' + index) ||
+                ''
+            const row = {
                 index,
                 type,
                 name:
@@ -721,7 +738,9 @@ export class PrjPcbModelParser {
                     fields,
                     'OutputDefault' + index
                 )
-            })
+            }
+            if (targetPath) row.targetPath = targetPath
+            rows.push(row)
         }
 
         return rows
@@ -986,6 +1005,9 @@ export class PrjPcbModelParser {
                 return 'pcb-library'
             case '.intlib':
                 return 'integrated-library'
+            case '.harness':
+            case '.harnessdoc':
+                return 'harness'
             case '.outjob':
                 return 'output-job'
             default:

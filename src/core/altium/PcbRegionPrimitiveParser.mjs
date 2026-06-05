@@ -165,17 +165,26 @@ export class PcbRegionPrimitiveParser {
                 net: 3,
                 polygon: 5
             })
+        const kind = PcbRegionPrimitiveParser.#numericKind(properties.KIND)
+        const legacyCutout =
+            PcbRegionPrimitiveParser.#legacyCutoutClassification(
+                properties,
+                kind
+            )
 
         return {
             region: {
                 layerId,
                 layerCode: layerId,
                 ...ownershipIndexes,
-                kind: Number(properties.KIND || 0),
+                kind,
+                ...legacyCutout.fields,
                 isKeepout: flags2 === 2,
                 isBoardCutout:
+                    legacyCutout.isBoardCutout ||
                     String(properties.ISBOARDCUTOUT || '').toUpperCase() ===
-                    'TRUE',
+                        'TRUE',
+                ...legacyCutout.cutoutFlags,
                 isShapeBased:
                     shapeBased ||
                     String(properties.ISSHAPEBASED || '').toUpperCase() ===
@@ -185,6 +194,66 @@ export class PcbRegionPrimitiveParser {
                 properties
             },
             byteLength: 5 + payloadLength
+        }
+    }
+
+    /**
+     * Parses a region kind while avoiding NaN for legacy symbolic labels.
+     * @param {string | undefined} rawKind Raw KIND value.
+     * @returns {number | null}
+     */
+    static #numericKind(rawKind) {
+        if (rawKind === undefined || rawKind === null || rawKind === '') {
+            return 0
+        }
+
+        const kind = Number(rawKind)
+        return Number.isFinite(kind) ? kind : null
+    }
+
+    /**
+     * Builds cutout fields from legacy string KIND labels.
+     * @param {Record<string, string>} properties Native property map.
+     * @param {number | null} numericKind Parsed numeric kind.
+     * @returns {{ isBoardCutout: boolean, fields: object, cutoutFlags: object }}
+     */
+    static #legacyCutoutClassification(properties, numericKind) {
+        const rawKind = String(properties.KIND || '').trim()
+        if (numericKind !== null || !rawKind) {
+            return {
+                isBoardCutout: false,
+                fields: {},
+                cutoutFlags: {}
+            }
+        }
+
+        const normalized = rawKind.replace(/[^a-z0-9]/giu, '').toLowerCase()
+        const isBoardCutout = normalized === 'boardcutout'
+        const isPolygonPourCutout =
+            normalized === 'polygonpourcutout' ||
+            normalized === 'polygoncutout' ||
+            normalized === 'pourcutout'
+        const classification =
+            isBoardCutout || isPolygonPourCutout
+                ? {
+                      isBoardCutout,
+                      isPolygonPourCutout,
+                      source: 'legacy-kind',
+                      rawKind
+                  }
+                : null
+
+        return {
+            isBoardCutout,
+            fields: {
+                rawKind
+            },
+            cutoutFlags: classification
+                ? {
+                      isPolygonPourCutout,
+                      cutoutClassification: classification
+                  }
+                : {}
         }
     }
 

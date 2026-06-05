@@ -26,6 +26,7 @@
                 "project",
                 "project-annotation",
                 "integrated-library",
+                "draftsman",
                 "design-bundle"
             ]
         },
@@ -37,6 +38,7 @@
                 "PrjPcb",
                 "Annotation",
                 "IntLib",
+                "PCBDwf",
                 "ProjectDesignBundle"
             ]
         },
@@ -187,6 +189,9 @@
                 "pickPlace": {
                     "$ref": "#/$defs/pickPlaceModel"
                 },
+                "routeAnalysis": {
+                    "$ref": "#/$defs/pcbRouteAnalysis"
+                },
                 "embeddedFonts": {
                     "$ref": "#/$defs/embeddedFonts"
                 },
@@ -286,7 +291,16 @@
             "additionalProperties": true
         },
         "project": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "documentGraph": {
+                    "$ref": "#/$defs/projectDocumentGraph"
+                }
+            },
+            "additionalProperties": true
+        },
+        "units": {
+            "$ref": "#/$defs/units"
         },
         "variants": {
             "type": "array",
@@ -328,6 +342,9 @@
         },
         "integratedLibrary": {
             "$ref": "#/$defs/integratedLibrary"
+        },
+        "draftsman": {
+            "$ref": "#/$defs/draftsmanDigest"
         },
         "bom": {
             "type": "array",
@@ -407,6 +424,17 @@
             }
         },
         {
+            "required": ["draftsman"],
+            "properties": {
+                "kind": {
+                    "const": "draftsman"
+                },
+                "fileType": {
+                    "const": "PCBDwf"
+                }
+            }
+        },
+        {
             "required": ["project", "sheets", "schematic_hierarchy", "indexes"],
             "properties": {
                 "kind": {
@@ -447,6 +475,59 @@
             "properties": {
                 "schema": {
                     "type": "string"
+                }
+            },
+            "additionalProperties": true
+        },
+        "projectDocumentGraph": {
+            "type": "object",
+            "required": ["schema", "summary", "documents", "groups", "indexes"],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.project.document-graph.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "groups": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "indexes": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true
+        },
+        "draftsmanDigest": {
+            "type": "object",
+            "required": ["schema", "pages"],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.draftsman.digest.a1"
+                },
+                "sourceDocumentName": {
+                    "type": "string"
+                },
+                "pages": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "indexes": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             },
             "additionalProperties": true
@@ -617,6 +698,39 @@
                 },
                 "extendedPrimitiveInformation": {
                     "$ref": "#/$defs/pcbExtendedPrimitiveInformationEntry"
+                },
+                "localStack": {
+                    "$ref": "#/$defs/pcbPadLocalStack"
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbPadLocalStack": {
+            "type": "object",
+            "required": ["schema", "mode", "modeName", "source", "layers"],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.pcb.pad-local-stack.a1"
+                },
+                "mode": {
+                    "type": "number"
+                },
+                "modeName": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "layers": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "hole": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             },
             "additionalProperties": true
@@ -1446,6 +1560,9 @@
             "type": "object",
             "required": ["positionMode", "entries", "modes"],
             "properties": {
+                "units": {
+                    "$ref": "#/$defs/units"
+                },
                 "positionMode": {
                     "enum": ["altium-pick-place", "component-origin"]
                 },
@@ -1462,6 +1579,9 @@
                             "type": "object",
                             "required": ["positionMode", "entries"],
                             "properties": {
+                                "units": {
+                                    "$ref": "#/$defs/units"
+                                },
                                 "positionMode": {
                                     "const": "component-origin"
                                 },
@@ -1934,6 +2054,9 @@
                 "schema": {
                     "const": "altium-toolkit.pcb.statistics.a1"
                 },
+                "units": {
+                    "$ref": "#/$defs/units"
+                },
                 "board": {
                     "type": "object",
                     "additionalProperties": true
@@ -1956,6 +2079,42 @@
                 }
             },
             "additionalProperties": true
+        },
+        "pcbRouteAnalysis": {
+            "type": "object",
+            "required": ["schema", "units", "summary", "byNet"],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.pcb.route-analysis.a1"
+                },
+                "units": {
+                    "$ref": "#/$defs/units"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "byNet": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "classes": {
+                    "type": "array"
+                },
+                "differentialPairs": {
+                    "type": "array"
+                }
+            },
+            "additionalProperties": true
+        },
+        "units": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
         },
         "libraryRenderManifest": {
             "type": "object",

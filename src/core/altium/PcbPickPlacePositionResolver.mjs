@@ -15,10 +15,16 @@ export class PcbPickPlacePositionResolver {
      * @param {{ componentIndex: number, designator: string, pattern: string, layer: string, rotation: number, x: number, y: number }[]} components
      * @param {{ componentIndex: number, pads?: { x?: number, y?: number }[] }[]} componentPrimitiveGroups
      * @param {{ sourceComponents?: { componentIndex: number, rotation?: number }[] }} [options] Resolver options.
-     * @returns {{ positionMode: string, entries: object[], modes: { componentOrigin: { positionMode: string, entries: object[] } } }}
+     * @returns {{ units: object, positionMode: string, entries: object[], modes: { componentOrigin: { units: object, positionMode: string, entries: object[] } } }}
      */
     static buildModel(components, componentPrimitiveGroups, options = {}) {
+        const units = {
+            coordinate: 'mil',
+            angle: 'deg'
+        }
+
         return {
+            units,
             positionMode: DEFAULT_POSITION_MODE,
             entries: PcbPickPlacePositionResolver.buildEntries(
                 components,
@@ -28,6 +34,7 @@ export class PcbPickPlacePositionResolver {
             ),
             modes: {
                 componentOrigin: {
+                    units,
                     positionMode: COMPONENT_ORIGIN_MODE,
                     entries: PcbPickPlacePositionResolver.buildEntries(
                         components,

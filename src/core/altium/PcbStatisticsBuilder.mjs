@@ -14,6 +14,15 @@ export class PcbStatisticsBuilder {
     static build(pcb) {
         return {
             schema: 'altium-toolkit.pcb.statistics.a1',
+            units: {
+                coordinate: 'mil',
+                length: 'mil',
+                board: 'mil',
+                drill: 'mil',
+                thickness: 'mil',
+                copperWeight: 'oz',
+                angle: 'deg'
+            },
             board: PcbStatisticsBuilder.#boardStats(pcb?.boardOutline || {}),
             drills: PcbStatisticsBuilder.#drillStats(
                 pcb?.pads || [],

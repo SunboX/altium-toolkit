@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.draftsman.digest.a1",
+    "title": "Altium Toolkit Draftsman Digest A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "pages"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.draftsman.digest.a1"
+        },
+        "sourceDocumentName": {
+            "type": "string"
+        },
+        "pages": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": [
+                    "index",
+                    "title",
+                    "titleBlocks",
+                    "notes",
+                    "images",
+                    "unsupportedRawItems"
+                ]
+            }
+        },
+        "indexes": {
+            "type": "object",
+            "additionalProperties": true
+        }
+    }
+}

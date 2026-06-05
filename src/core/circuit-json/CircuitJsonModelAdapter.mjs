@@ -4,8 +4,10 @@
 
 import { CircuitJsonModelSchema } from './CircuitJsonModelSchema.mjs'
 import { CircuitJsonModelAdapterPrimitives } from './CircuitJsonModelAdapterPrimitives.mjs'
+import { CircuitJsonModelAdapterPcbElements } from './CircuitJsonModelAdapterPcbElements.mjs'
 
 const Primitives = CircuitJsonModelAdapterPrimitives
+const PcbElements = CircuitJsonModelAdapterPcbElements
 
 /**
  * Converts between legacy renderer models and Circuit JSON element arrays.
@@ -175,7 +177,8 @@ export class CircuitJsonModelAdapter {
                     width: Primitives.number(component.width, 0),
                     height: Primitives.number(component.height, 0)
                 },
-                rotation: Primitives.number(component.rotation, 0)
+                rotation: Primitives.number(component.rotation, 0),
+                is_box_with_pins: true
             })
         }
 
@@ -204,9 +207,8 @@ export class CircuitJsonModelAdapter {
                     pin.name || pin.designator || pinIndex,
                     String(pinIndex + 1)
                 ),
-                pin_number: Primitives.string(
-                    pin.pinNumber || pin.designator || pin.name,
-                    String(pinIndex + 1)
+                ...CircuitJsonModelAdapter.#pinNumberField(
+                    pin.pinNumber || pin.designator || pin.name
                 )
             })
             circuitJson.push({
@@ -232,7 +234,8 @@ export class CircuitJsonModelAdapter {
             circuitJson.push({
                 type: 'source_net',
                 source_net_id: sourceNetId,
-                name: Primitives.string(net.name, `NET_${netIndex + 1}`)
+                name: Primitives.string(net.name, `NET_${netIndex + 1}`),
+                member_source_group_ids: []
             })
         }
 
@@ -269,7 +272,7 @@ export class CircuitJsonModelAdapter {
      */
     static #appendPcb(circuitJson, model, idScope) {
         const pcb = model.pcb || {}
-        const componentIds = new Map()
+        const componentRefs = new Map()
         const sourceNetIds = new Map()
         const boardId = Primitives.id(idScope, ['pcb_board'])
 
@@ -295,7 +298,8 @@ export class CircuitJsonModelAdapter {
                 name: Primitives.string(
                     net.name || net.netName,
                     `NET_${netIndex + 1}`
-                )
+                ),
+                member_source_group_ids: []
             })
         }
 
@@ -310,9 +314,12 @@ export class CircuitJsonModelAdapter {
                 'pcb_component',
                 component.designator || component.name || componentIndex
             ])
-            componentIds.set(
+            componentRefs.set(
                 Primitives.componentKey(component, componentIndex),
-                sourceComponentId
+                {
+                    pcbComponentId,
+                    sourceComponentId
+                }
             )
             circuitJson.push(
                 CircuitJsonModelAdapter.#sourceComponent(
@@ -345,7 +352,7 @@ export class CircuitJsonModelAdapter {
                 idScope,
                 pad,
                 padIndex,
-                componentIds,
+                componentRefs,
                 sourceNetIds
             )
         }
@@ -367,8 +374,7 @@ export class CircuitJsonModelAdapter {
                 circuitJson,
                 idScope,
                 via,
-                viaIndex,
-                sourceNetIds
+                viaIndex
             )
         }
     }
@@ -415,7 +421,7 @@ export class CircuitJsonModelAdapter {
      * @param {string} idScope
      * @param {Record<string, unknown>} pad
      * @param {number} padIndex
-     * @param {Map<string, string>} componentIds
+     * @param {Map<string, { pcbComponentId: string, sourceComponentId: string }>} componentRefs
      * @param {Map<string, string>} sourceNetIds
      * @returns {void}
      */
@@ -424,12 +430,14 @@ export class CircuitJsonModelAdapter {
         idScope,
         pad,
         padIndex,
-        componentIds,
+        componentRefs,
         sourceNetIds
     ) {
+        const componentRef =
+            componentRefs.get(String(pad.componentIndex)) ||
+            componentRefs.get('0')
         const sourceComponentId =
-            componentIds.get(String(pad.componentIndex)) ||
-            componentIds.get('0') ||
+            componentRef?.sourceComponentId ||
             Primitives.id(idScope, ['source_component', 'unassigned'])
         const sourcePortId = Primitives.sourcePortId(
             idScope,
@@ -438,69 +446,74 @@ export class CircuitJsonModelAdapter {
             sourceComponentId
         )
         const pcbPortId = Primitives.id(idScope, ['pcb_port', sourcePortId])
-        const common = {
-            source_port_id: sourcePortId,
-            pcb_port_id: pcbPortId,
-            pcb_component_id: Primitives.id(idScope, [
-                'pcb_component',
-                pad.componentIndex ?? 'unassigned'
-            ]),
-            center: Primitives.milPoint(pad.x, pad.y),
-            layer: Primitives.side(pad.layer),
-            port_hints: [
-                Primitives.string(
-                    pad.name || pad.pinName || pad.designator,
-                    String(padIndex + 1)
-                )
-            ]
-        }
-        const sourceNetId = Primitives.netIdForPrimitive(
-            idScope,
-            pad,
-            sourceNetIds
-        )
+        const pcbComponentId =
+            componentRef?.pcbComponentId ||
+            Primitives.id(idScope, ['pcb_component', 'unassigned'])
+        const center = Primitives.milPoint(pad.x, pad.y)
+        const layer = Primitives.side(pad.layer)
+        const portHints = [
+            Primitives.string(
+                pad.name || pad.pinName || pad.designator,
+                String(padIndex + 1)
+            )
+        ]
+        Primitives.netIdForPrimitive(idScope, pad, sourceNetIds)
 
         circuitJson.push({
             type: 'source_port',
             source_port_id: sourcePortId,
             source_component_id: sourceComponentId,
-            name: common.port_hints[0],
-            pin_number: common.port_hints[0]
+            name: portHints[0],
+            port_hints: portHints,
+            ...CircuitJsonModelAdapter.#pinNumberField(portHints[0])
         })
         circuitJson.push({
             type: 'pcb_port',
-            ...common,
-            source_net_id: sourceNetId
+            pcb_port_id: pcbPortId,
+            source_port_id: sourcePortId,
+            pcb_component_id: pcbComponentId,
+            x: center.x,
+            y: center.y,
+            layers: Primitives.isThroughHolePad(pad)
+                ? ['top', 'bottom']
+                : [layer]
         })
 
         if (Primitives.isThroughHolePad(pad)) {
-            circuitJson.push({
-                type: pad.isPlated === false ? 'pcb_hole' : 'pcb_plated_hole',
-                ...common,
-                outer_diameter: Primitives.milNumber(
-                    pad.sizeTopX || pad.sizeX || pad.diameter,
-                    0
-                ),
-                hole_diameter: Primitives.milNumber(pad.holeDiameter, 0),
-                shape: Primitives.padShape(pad)
-            })
+            circuitJson.push(
+                pad.isPlated === false
+                    ? PcbElements.hole(
+                          idScope,
+                          pad,
+                          padIndex,
+                          pcbComponentId,
+                          center
+                      )
+                    : PcbElements.platedHole(
+                          idScope,
+                          pad,
+                          padIndex,
+                          pcbComponentId,
+                          pcbPortId,
+                          center,
+                          portHints
+                      )
+            )
             return
         }
 
-        circuitJson.push({
-            type: 'pcb_smtpad',
-            ...common,
-            shape: Primitives.padShape(pad),
-            width: Primitives.milNumber(
-                pad.sizeTopX || pad.sizeX || pad.width,
-                0
-            ),
-            height: Primitives.milNumber(
-                pad.sizeTopY || pad.sizeY || pad.height,
-                0
-            ),
-            rotation: Primitives.number(pad.rotation || pad.holeRotation, 0)
-        })
+        circuitJson.push(
+            PcbElements.smtPad(
+                idScope,
+                pad,
+                padIndex,
+                pcbComponentId,
+                pcbPortId,
+                center,
+                layer,
+                portHints
+            )
+        )
     }
 
     /**
@@ -523,14 +536,16 @@ export class CircuitJsonModelAdapter {
             'source_trace',
             track.netName || track.netIndex || trackIndex
         ])
+        const sourceNetId = Primitives.netIdForPrimitive(
+            idScope,
+            track,
+            sourceNetIds
+        )
         circuitJson.push({
             type: 'source_trace',
             source_trace_id: sourceTraceId,
-            source_net_id: Primitives.netIdForPrimitive(
-                idScope,
-                track,
-                sourceNetIds
-            )
+            connected_source_port_ids: [],
+            connected_source_net_ids: sourceNetId ? [sourceNetId] : []
         })
         circuitJson.push({
             type: 'pcb_trace',
@@ -561,18 +576,12 @@ export class CircuitJsonModelAdapter {
      * @param {string} idScope
      * @param {Record<string, unknown>} via
      * @param {number} viaIndex
-     * @param {Map<string, string>} sourceNetIds
      * @returns {void}
      */
-    static #appendPcbVia(circuitJson, idScope, via, viaIndex, sourceNetIds) {
+    static #appendPcbVia(circuitJson, idScope, via, viaIndex) {
         circuitJson.push({
             type: 'pcb_via',
             pcb_via_id: Primitives.id(idScope, ['pcb_via', viaIndex]),
-            source_net_id: Primitives.netIdForPrimitive(
-                idScope,
-                via,
-                sourceNetIds
-            ),
             x: Primitives.milNumber(via.x, 0),
             y: Primitives.milNumber(via.y, 0),
             outer_diameter: Primitives.milNumber(via.diameter, 0),
@@ -664,33 +673,47 @@ export class CircuitJsonModelAdapter {
             x2: Primitives.number(line.x2, 0),
             y2: Primitives.number(line.y2, 0),
             stroke_width: Primitives.number(line.width, 1),
-            is_dashed: line.dashed === true
+            is_dashed: line.dashed === true,
+            color: '#000000'
         }
         circuitJson.push(lineElement)
 
         if (line.kind === 'wire' || line.netName || line.netIndex) {
+            const sourceNetId =
+                netIds.get(String(line.netName)) ||
+                Primitives.sourceNetId(
+                    idScope,
+                    line.netName || line.netIndex || lineIndex
+                )
+            const sourceTraceId = Primitives.id(idScope, [
+                'source_trace',
+                line.netName || line.netIndex || lineIndex,
+                lineIndex
+            ])
+            circuitJson.push({
+                type: 'source_trace',
+                source_trace_id: sourceTraceId,
+                connected_source_port_ids: [],
+                connected_source_net_ids: sourceNetId ? [sourceNetId] : []
+            })
             circuitJson.push({
                 type: 'schematic_trace',
                 schematic_trace_id: Primitives.id(idScope, [
                     'schematic_trace',
                     lineIndex
                 ]),
-                source_trace_id: Primitives.id(idScope, [
-                    'source_trace',
-                    line.netName || line.netIndex || lineIndex
-                ]),
-                source_net_id:
-                    netIds.get(String(line.netName)) ||
-                    Primitives.sourceNetId(
-                        idScope,
-                        line.netName || line.netIndex || lineIndex
-                    ),
+                source_trace_id: sourceTraceId,
+                junctions: [],
                 edges: [
                     {
-                        x1: lineElement.x1,
-                        y1: lineElement.y1,
-                        x2: lineElement.x2,
-                        y2: lineElement.y2
+                        from: {
+                            x: lineElement.x1,
+                            y: lineElement.y1
+                        },
+                        to: {
+                            x: lineElement.x2,
+                            y: lineElement.y2
+                        }
                     }
                 ]
             })
@@ -712,11 +735,11 @@ export class CircuitJsonModelAdapter {
         )
         const base = {
             text: textValue,
-            anchor_position: Primitives.point(text.x, text.y),
-            anchor_alignment: 'center'
+            position: Primitives.point(text.x, text.y)
         }
 
         if (Primitives.isNetLabel(text)) {
+            const center = Primitives.point(text.x, text.y)
             circuitJson.push({
                 type: 'schematic_net_label',
                 schematic_net_label_id: Primitives.id(idScope, [
@@ -727,7 +750,10 @@ export class CircuitJsonModelAdapter {
                     idScope,
                     textValue || textIndex
                 ),
-                ...base
+                text: textValue,
+                center,
+                anchor_position: center,
+                anchor_side: 'top'
             })
             return
         }
@@ -738,8 +764,22 @@ export class CircuitJsonModelAdapter {
                 'schematic_text',
                 textIndex
             ]),
-            ...base
+            ...base,
+            font_size: Primitives.number(text.fontSize || text.size, 0.18),
+            rotation: Primitives.number(text.rotation, 0),
+            anchor: 'center',
+            color: '#000000'
         })
+    }
+
+    /**
+     * Returns an optional numeric pin number field.
+     * @param {unknown} value
+     * @returns {{ pin_number?: number }}
+     */
+    static #pinNumberField(value) {
+        const pinNumber = Primitives.number(value, null)
+        return pinNumber === null ? {} : { pin_number: pinNumber }
     }
 
     /**

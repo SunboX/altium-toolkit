@@ -15,6 +15,7 @@ import { AltiumLayoutParser } from './AltiumLayoutParser.mjs'
 import { NormalizedModelSchema } from './NormalizedModelSchema.mjs'
 import { IntLibModelParser } from './IntLibModelParser.mjs'
 import { IntLibStreamExtractor } from './IntLibStreamExtractor.mjs'
+import { DraftsmanDigestParser } from './DraftsmanDigestParser.mjs'
 import { PcbModelParser } from './PcbModelParser.mjs'
 import { PcbLibModelParser } from './PcbLibModelParser.mjs'
 import { PcbLibStreamExtractor } from './PcbLibStreamExtractor.mjs'
@@ -89,7 +90,7 @@ export class AltiumParser {
      * Parses a native Altium buffer into the renderer compatibility model.
      * @param {string} fileName
      * @param {ArrayBuffer} arrayBuffer
-     * @returns {{ schema: string, kind: 'schematic' | 'pcb' | 'pcb-library' | 'project' | 'integrated-library', fileType: 'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb' | 'IntLib', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], schematic?: Record<string, unknown>, pcb?: Record<string, unknown>, pcbLibrary?: Record<string, unknown>, project?: Record<string, unknown>, integratedLibrary?: Record<string, unknown>, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
+     * @returns {{ schema: string, kind: 'schematic' | 'pcb' | 'pcb-library' | 'project' | 'integrated-library' | 'draftsman', fileType: 'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb' | 'IntLib' | 'PCBDwf', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], schematic?: Record<string, unknown>, pcb?: Record<string, unknown>, pcbLibrary?: Record<string, unknown>, project?: Record<string, unknown>, integratedLibrary?: Record<string, unknown>, draftsman?: Record<string, unknown>, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
      */
     static parseArrayBufferToRendererModel(fileName, arrayBuffer) {
         const records = AsciiRecordParser.parse(arrayBuffer)
@@ -128,6 +129,9 @@ export class AltiumParser {
                 IntLibStreamExtractor.extractFromArrayBuffer(arrayBuffer)
             )
         }
+        if (fileType === 'PCBDwf') {
+            return DraftsmanDigestParser.parse(fileName, arrayBuffer)
+        }
         throw new Error('Unsupported file type: ' + fileName)
     }
 
@@ -135,7 +139,7 @@ export class AltiumParser {
      * Chooses the format based on extension and content.
      * @param {string} fileName
      * @param {{ fields: Record<string, string | string[]> }[]} records
-     * @returns {'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb' | 'IntLib'}
+     * @returns {'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb' | 'IntLib' | 'PCBDwf'}
      */
     static #sniffFileType(fileName, records) {
         const normalized = String(fileName || '').toLowerCase()
@@ -144,6 +148,7 @@ export class AltiumParser {
         if (normalized.endsWith('.pcblib')) return 'PcbLib'
         if (normalized.endsWith('.prjpcb')) return 'PrjPcb'
         if (normalized.endsWith('.intlib')) return 'IntLib'
+        if (normalized.endsWith('.pcbdwf')) return 'PCBDwf'
 
         const hasSchematicHeader = records.some((record) =>
             getField(record.fields, 'HEADER').includes('Schematic')

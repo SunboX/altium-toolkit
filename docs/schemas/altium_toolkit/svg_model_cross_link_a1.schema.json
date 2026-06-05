@@ -1,0 +1,39 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.svg-model-cross-link.a1",
+    "title": "Altium Toolkit SVG Model Cross-Link A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "documentKind",
+        "summary",
+        "missingElements",
+        "orphanElements",
+        "unresolvedReferences"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.svg-model-cross-link.a1"
+        },
+        "documentKind": {
+            "enum": ["schematic", "pcb", "unknown"]
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "missingElements": {
+            "type": "array"
+        },
+        "orphanElements": {
+            "type": "array"
+        },
+        "unresolvedReferences": {
+            "type": "array"
+        },
+        "metadata": {
+            "type": "object"
+        }
+    }
+}

@@ -1,0 +1,33 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.project.document-graph.a1",
+    "title": "Altium Toolkit Project Document Graph A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "summary", "documents", "groups", "indexes"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.project.document-graph.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "documents": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["normalizedPath", "kind"]
+            }
+        },
+        "groups": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "indexes": {
+            "type": "object",
+            "additionalProperties": true
+        }
+    }
+}

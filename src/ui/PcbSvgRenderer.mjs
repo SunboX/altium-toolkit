@@ -829,6 +829,7 @@ export class PcbSvgRenderer {
         return {
             schema: PcbSvgRenderer.#SEMANTIC_SCHEMA,
             view: PcbSvgRenderer.#buildViewMetadata(pcb, semanticContext),
+            lookups: PcbSvgRenderer.#buildSemanticLookups(pcb, semanticContext),
             boardOutline: {
                 feature: 'board-outline',
                 elementKeys: ['pcb-board-outline', 'pcb-board-outline-stroke']
@@ -884,6 +885,70 @@ export class PcbSvgRenderer {
                     semanticContext
                 )
             ]
+        }
+    }
+
+    /**
+     * Builds stable lookup maps for semantic SVG consumers.
+     * @param {object} pcb Normalized PCB model.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {object}
+     */
+    static #buildSemanticLookups(pcb, semanticContext) {
+        const netsByIndex = {}
+        const netIndexByName = {}
+        const netClassesByName = {}
+        const componentsByIndex = {}
+        const componentIndexByDesignator = {}
+        const layersByKey = {}
+        const layerKeyByDisplayName = {}
+
+        for (const net of pcb?.nets || []) {
+            const netIndex = Number(net?.netIndex)
+            if (Number.isInteger(netIndex) && net?.name) {
+                netsByIndex[netIndex] = net.name
+                netIndexByName[net.name] = netIndex
+            }
+        }
+
+        for (const [
+            netName,
+            classNames
+        ] of semanticContext.netClassNamesByNetName) {
+            netClassesByName[netName] = [...classNames].sort((left, right) =>
+                left.localeCompare(right, undefined, { numeric: true })
+            )
+        }
+
+        for (const [
+            componentIndex,
+            component
+        ] of semanticContext.componentsByIndex) {
+            componentsByIndex[componentIndex] =
+                PcbSvgRenderer.#stripEmptySemanticObject({
+                    designator: component.designator,
+                    uniqueId: component.uniqueId,
+                    pattern: component.pattern
+                })
+            if (component.designator) {
+                componentIndexByDesignator[component.designator] =
+                    componentIndex
+            }
+        }
+
+        for (const layer of semanticContext.layerDescriptors) {
+            layersByKey[layer.layerKey] = layer
+            layerKeyByDisplayName[layer.displayName] = layer.layerKey
+        }
+
+        return {
+            netsByIndex,
+            netIndexByName,
+            netClassesByName,
+            componentsByIndex,
+            componentIndexByDesignator,
+            layersByKey,
+            layerKeyByDisplayName
         }
     }
 
