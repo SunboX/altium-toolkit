@@ -1,0 +1,50 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.project-script.a1",
+    "title": "Altium Toolkit Project Script A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "kind", "fileType", "projectScript"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.project-script.a1"
+        },
+        "kind": {
+            "const": "project-script"
+        },
+        "fileType": {
+            "const": "PrjScr"
+        },
+        "projectScript": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["name", "documents", "scripts", "sections"],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "scripts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "sections": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            }
+        }
+    }
+}

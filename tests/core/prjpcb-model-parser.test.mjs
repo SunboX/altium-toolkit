@@ -108,6 +108,31 @@ OutputType1=Gerber
 OutputName1=Gerber Files
 OutputDocumentPath1=Boards\\MainBoard.PcbDoc
 OutputVariantName1=Assembly B
+Configuration1_Item1=Record=GerberView|GerberUnit=Metric|NumberOfDecimals=5|Plot.Set=1~1,32~1|DocumentPath=Boards\\MainBoard.PcbDoc
+OutputType2=NCDrill
+OutputName2=NC Drill Files
+Configuration2_Item1=Record=DrillView|Units=Imperial|SeparatePlated=True|DocumentPath=Boards\\MainBoard.PcbDoc
+OutputType3=PickPlace
+OutputName3=Pick Place
+Configuration3_Item1=Record=PickPlaceView|Units=Metric|GenerateCSVFormat=True|IncludeStandardNoBOM=False|DocumentPath=Boards\\MainBoard.PcbDoc
+OutputType4=WireListNetlist
+OutputName4=Wirelist
+Configuration4_Item1=|Units=Imperial|GenerateTextFormat=True|IncludeVariations=False|DocumentPath=Main.SchDoc
+OutputType5=BOM_PartType
+OutputName5=BOM
+Configuration5_Item1=General=OpenExported=False|IncludePcbData=True|IncludeAlternatives=False|BatchMode=4|ViewType=1
+Configuration5_Item2=VisibleOrder=Comment=120|Description=120|Quantity=80
+OutputType6=ExportSTEP
+OutputName6=STEP
+Configuration6_Item1=Record=ExportSTEPView|ExportModelsOption=2|ExportHolesOption=0|DocumentPath=Boards\\MainBoard.PcbDoc
+OutputType7=SchematicPrint
+OutputName7=Schematic PDF
+Configuration7_Item1=Record=PageOptions|PaperKind=A3|PrintScale=1.00|DocumentPath=Main.SchDoc
+OutputType8=PcbDrawing
+OutputName8=PCB Drawing
+Configuration8_Item1=Record=PCBDrawingView|VariantName=Assembly B|DocumentPath=Boards\\MainBoard.PcbDoc
+OutputType9=UnknownMaker
+OutputName9=Future Output
 `
 }
 
@@ -206,63 +231,211 @@ test('PrjPcbModelParser normalizes project documents, parameters, and variants',
     })
 
     assert.equal(model.project.outputGroups[0].name, 'Fabrication')
-    assert.deepEqual(model.project.outputGroups[0].outputs, [
-        {
-            index: 1,
-            type: 'Gerber',
-            name: 'Gerber Files',
-            documentPath: 'Boards\\MainBoard.PcbDoc',
-            variantName: 'Assembly B',
-            isDefault: false
-        }
-    ])
-    assert.deepEqual(model.project.outJobDigest, {
-        schema: 'altium-toolkit.project.outjob-digest.a1',
-        summary: {
-            outJobDocumentCount: 1,
-            outputGroupCount: 1,
-            outputCount: 1
-        },
-        documents: [
+    assert.deepEqual(model.project.outputGroups[0].outputs[0], {
+        index: 1,
+        type: 'Gerber',
+        name: 'Gerber Files',
+        documentPath: 'Boards\\MainBoard.PcbDoc',
+        variantName: 'Assembly B',
+        isDefault: false,
+        configRows: [
             {
-                documentIndex: 5,
-                path: 'Manufacturing.OutJob',
-                normalizedPath: 'Manufacturing.OutJob',
-                fileName: 'Manufacturing.OutJob'
+                key: 'Configuration1_Item1',
+                record: 'GerberView',
+                fields: {
+                    GerberUnit: 'Metric',
+                    NumberOfDecimals: '5',
+                    'Plot.Set': '1~1,32~1',
+                    DocumentPath: 'Boards\\MainBoard.PcbDoc'
+                }
             }
-        ],
-        outputGroups: [
+        ]
+    })
+    assert.equal(model.project.outputGroups[0].outputs.length, 9)
+    assert.deepEqual(model.project.outJobDigest.summary, {
+        outJobDocumentCount: 1,
+        outputGroupCount: 1,
+        outputCount: 9,
+        typedOutputCount: 8,
+        unsupportedOutputCount: 1,
+        expectedArtifactCount: 9
+    })
+    assert.deepEqual(
+        model.project.outJobDigest.outputGroups[0].outputs.slice(0, 3),
+        [
             {
                 index: 1,
-                name: 'Fabrication',
-                outputCount: 1,
-                outputs: [
-                    {
-                        index: 1,
-                        type: 'Gerber',
-                        name: 'Gerber Files',
-                        documentPath: 'Boards\\MainBoard.PcbDoc',
-                        normalizedDocumentPath: 'Boards/MainBoard.PcbDoc',
-                        variantName: 'Assembly B',
-                        isDefault: false
-                    }
-                ]
-            }
-        ],
-        outputsByDocumentPath: {
-            'Boards/MainBoard.PcbDoc': [
-                {
+                type: 'Gerber',
+                normalizedType: 'gerber',
+                name: 'Gerber Files',
+                documentPath: 'Boards\\MainBoard.PcbDoc',
+                normalizedDocumentPath: 'Boards/MainBoard.PcbDoc',
+                variantName: 'Assembly B',
+                isDefault: false,
+                category: 'fabrication',
+                settings: {
+                    record: 'GerberView',
+                    units: 'Metric',
+                    decimals: 5,
+                    plotLayers: ['1', '32'],
+                    documentPath: 'Boards\\MainBoard.PcbDoc'
+                },
+                expectedArtifact: {
+                    key: 'fabrication/01-gerber-files',
                     outputGroupName: 'Fabrication',
-                    outputGroupIndex: 1,
-                    outputIndex: 1,
-                    type: 'Gerber',
-                    name: 'Gerber Files',
+                    outputName: 'Gerber Files',
+                    outputType: 'gerber',
+                    category: 'fabrication',
+                    documentPath: 'Boards\\MainBoard.PcbDoc',
+                    normalizedDocumentPath: 'Boards/MainBoard.PcbDoc',
                     variantName: 'Assembly B',
-                    isDefault: false
+                    format: 'gerber',
+                    units: 'Metric'
                 }
-            ]
+            },
+            {
+                index: 2,
+                type: 'NCDrill',
+                normalizedType: 'nc-drill',
+                name: 'NC Drill Files',
+                documentPath: '',
+                normalizedDocumentPath: 'Boards/MainBoard.PcbDoc',
+                variantName: '',
+                isDefault: false,
+                category: 'fabrication',
+                settings: {
+                    record: 'DrillView',
+                    units: 'Imperial',
+                    separatePlated: true,
+                    documentPath: 'Boards\\MainBoard.PcbDoc'
+                },
+                expectedArtifact: {
+                    key: 'fabrication/02-nc-drill-files',
+                    outputGroupName: 'Fabrication',
+                    outputName: 'NC Drill Files',
+                    outputType: 'nc-drill',
+                    category: 'fabrication',
+                    documentPath: 'Boards\\MainBoard.PcbDoc',
+                    normalizedDocumentPath: 'Boards/MainBoard.PcbDoc',
+                    variantName: '',
+                    format: 'nc-drill',
+                    units: 'Imperial'
+                }
+            },
+            {
+                index: 3,
+                type: 'PickPlace',
+                normalizedType: 'pick-place',
+                name: 'Pick Place',
+                documentPath: '',
+                normalizedDocumentPath: 'Boards/MainBoard.PcbDoc',
+                variantName: '',
+                isDefault: false,
+                category: 'assembly',
+                settings: {
+                    record: 'PickPlaceView',
+                    units: 'Metric',
+                    generateCsv: true,
+                    includeStandardNoBom: false,
+                    documentPath: 'Boards\\MainBoard.PcbDoc'
+                },
+                expectedArtifact: {
+                    key: 'fabrication/03-pick-place',
+                    outputGroupName: 'Fabrication',
+                    outputName: 'Pick Place',
+                    outputType: 'pick-place',
+                    category: 'assembly',
+                    documentPath: 'Boards\\MainBoard.PcbDoc',
+                    normalizedDocumentPath: 'Boards/MainBoard.PcbDoc',
+                    variantName: '',
+                    format: 'pick-place-csv',
+                    units: 'Metric'
+                }
+            }
+        ]
+    )
+    assert.deepEqual(
+        model.project.outJobDigest.outputGroups[0].outputs
+            .slice(3)
+            .map((output) => ({
+                type: output.normalizedType,
+                category: output.category,
+                format: output.expectedArtifact.format,
+                unsupported: output.expectedArtifact.unsupported || false
+            })),
+        [
+            {
+                type: 'wirelist',
+                category: 'netlist',
+                format: 'wirelist',
+                unsupported: false
+            },
+            {
+                type: 'bom',
+                category: 'report',
+                format: 'bom',
+                unsupported: false
+            },
+            {
+                type: 'step',
+                category: 'export',
+                format: 'step',
+                unsupported: false
+            },
+            {
+                type: 'schematic-print',
+                category: 'documentation',
+                format: 'pdf',
+                unsupported: false
+            },
+            {
+                type: 'pcb-drawing',
+                category: 'documentation',
+                format: 'pcbdwf',
+                unsupported: false
+            },
+            {
+                type: 'unsupported',
+                category: 'unsupported',
+                format: 'unknown',
+                unsupported: true
+            }
+        ]
+    )
+    assert.deepEqual(
+        model.project.outJobDigest.expectedArtifacts.manifest.outputs.map(
+            (output) => output.key
+        ),
+        [
+            'fabrication/01-gerber-files',
+            'fabrication/02-nc-drill-files',
+            'fabrication/03-pick-place',
+            'fabrication/04-wirelist',
+            'fabrication/05-bom',
+            'fabrication/06-step',
+            'fabrication/07-schematic-pdf',
+            'fabrication/08-pcb-drawing',
+            'fabrication/09-future-output'
+        ]
+    )
+    assert.equal(
+        model.project.outJobDigest.schema,
+        'altium-toolkit.project.outjob-digest.a1'
+    )
+    assert.deepEqual(model.project.outJobDigest.documents, [
+        {
+            documentIndex: 5,
+            path: 'Manufacturing.OutJob',
+            normalizedPath: 'Manufacturing.OutJob',
+            fileName: 'Manufacturing.OutJob'
         }
-    })
+    ])
+    assert.equal(
+        model.project.outJobDigest.outputsByDocumentPath[
+            'Boards/MainBoard.PcbDoc'
+        ].length,
+        6
+    )
     assert.equal(model.bom.length, 0)
 })
 

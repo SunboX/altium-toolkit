@@ -86,10 +86,92 @@ export class LibraryRenderManifestBuilder {
         return {
             schema: 'altium-toolkit.schematic.extraction-manifest.a1',
             sourceDocument: String(documentModel?.fileName || ''),
+            summary: {
+                outputCount: outputs.length,
+                embeddedAssetCount:
+                    LibraryRenderManifestBuilder.#dedupeEmbeddedAssets(
+                        outputs.flatMap((output) => output.embeddedAssets || [])
+                    ).length,
+                readyOutputCount: outputs.filter(
+                    (output) =>
+                        output.databaseLibrary?.readiness === 'ready' ||
+                        !output.databaseLibrary
+                ).length,
+                strippedParameterCount: outputs.reduce(
+                    (count, output) =>
+                        count +
+                        (output.databaseLibrary?.strippedParameterNames
+                            ?.length || 0),
+                    0
+                ),
+                strippedImplementationCount: outputs.reduce(
+                    (count, output) =>
+                        count +
+                        (output.databaseLibrary?.strippedImplementationKeys
+                            ?.length || 0),
+                    0
+                )
+            },
             outputs,
             embeddedAssets: LibraryRenderManifestBuilder.#dedupeEmbeddedAssets(
                 outputs.flatMap((output) => output.embeddedAssets || [])
             )
+        }
+    }
+
+    /**
+     * Builds a read-only manifest for extracting a schematic template.
+     * @param {{ fileName?: string, schematic?: { template?: object } } | { template?: object }} documentModel Parsed schematic document model.
+     * @returns {object}
+     */
+    static buildSchematicTemplateExtractionManifest(documentModel) {
+        const template =
+            documentModel?.schematic?.template ||
+            documentModel?.template ||
+            null
+        const identity = template?.identity || {}
+        const outputKey =
+            'schematic-template/' +
+            LibraryRenderManifestBuilder.#slug(
+                LibraryRenderManifestBuilder.#withoutExtension(
+                    identity.fileName || identity.name || 'template'
+                )
+            ) +
+            '.schdot'
+        const diagnostics = (template?.missingParameters || []).map(
+            (parameterName) => ({
+                code: 'schematic.template-extraction.missing-parameter',
+                severity: 'warning',
+                parameterName
+            })
+        )
+
+        return {
+            schema: 'altium-toolkit.schematic.template-extraction.a1',
+            sourceDocument: String(documentModel?.fileName || ''),
+            template: template
+                ? {
+                      identity,
+                      outputTemplateKey: outputKey,
+                      renderManifestKey: outputKey.replace(
+                          /\.schdot$/u,
+                          '.render.json'
+                      ),
+                      ownedRecordKeys: template.ownedRecordKeys || [],
+                      ownedGraphics: template.ownedGraphics || {},
+                      fonts: template.fonts || {},
+                      missingParameters: template.missingParameters || [],
+                      titleBlock: template.titleBlock || {}
+                  }
+                : null,
+            summary: {
+                templatePresent: Boolean(template),
+                ownedRecordCount: (template?.ownedRecordKeys || []).length,
+                missingParameterCount: (template?.missingParameters || [])
+                    .length,
+                fontCount: Object.keys(template?.fonts || {}).length
+            },
+            diagnostics
         }
     }
 
@@ -202,8 +284,14 @@ export class LibraryRenderManifestBuilder {
                     )
                 )
             )
+        const databaseLibrary =
+            LibraryRenderManifestBuilder.#databaseLibraryExtractionPlan(
+                symbolKey,
+                component,
+                schematic
+            )
 
-        return {
+        return LibraryRenderManifestBuilder.#stripUndefined({
             kind: 'symbol-extraction',
             symbolKey,
             sourceComponent: LibraryRenderManifestBuilder.#stripUndefined({
@@ -222,8 +310,81 @@ export class LibraryRenderManifestBuilder {
                 texts: children.texts.length,
                 images: children.images.length
             },
-            embeddedAssets
+            embeddedAssets,
+            databaseLibrary
+        })
+    }
+
+    /**
+     * Builds a database-library audit plan for one extracted symbol.
+     * @param {string} symbolKey Symbol extraction key.
+     * @param {object} component Source component row.
+     * @param {object} schematic Schematic model.
+     * @returns {object | undefined}
+     */
+    static #databaseLibraryExtractionPlan(symbolKey, component, schematic) {
+        const parameters = component?.parameters || {}
+        const parameterNames = Object.keys(parameters)
+        const strippedParameterNames = parameterNames.filter((name) =>
+            LibraryRenderManifestBuilder.#isPlacementParameterName(name)
+        )
+        const preservedParameterNames = parameterNames.filter(
+            (name) =>
+                !LibraryRenderManifestBuilder.#isPlacementParameterName(name)
+        )
+        const strippedImplementationKeys =
+            LibraryRenderManifestBuilder.#componentImplementationKeys(
+                schematic,
+                component
+            )
+
+        if (
+            strippedParameterNames.length === 0 &&
+            preservedParameterNames.length === 0 &&
+            strippedImplementationKeys.length === 0
+        ) {
+            return undefined
         }
+
+        return {
+            readiness: 'ready',
+            preservedParameterNames,
+            strippedParameterNames,
+            stripImplementationLinks: strippedImplementationKeys.length > 0,
+            strippedImplementationKeys,
+            auditKey: 'schematic-extract/' + symbolKey + '.dblib.json'
+        }
+    }
+
+    /**
+     * Returns true for component-placement parameter names not suitable for
+     * extracted library symbols.
+     * @param {string} name Parameter name.
+     * @returns {boolean}
+     */
+    static #isPlacementParameterName(name) {
+        return ['designator', 'comment'].includes(
+            String(name || '').toLowerCase()
+        )
+    }
+
+    /**
+     * Finds implementation keys associated with one placed component.
+     * @param {object} schematic Schematic model.
+     * @param {object} component Component row.
+     * @returns {string[]}
+     */
+    static #componentImplementationKeys(schematic, component) {
+        const ownerIndex = String(component?.ownerIndex || '').trim()
+        const componentKey = ownerIndex
+            ? 'schematic-component-' + ownerIndex
+            : ''
+
+        return (
+            schematic?.implementations?.components?.find(
+                (entry) => entry.componentKey === componentKey
+            )?.implementationKeys || []
+        )
     }
 
     /**
@@ -413,5 +574,14 @@ export class LibraryRenderManifestBuilder {
                 .replace(/[^a-z0-9]+/gu, '-')
                 .replace(/^-+|-+$/gu, '') || 'item'
         )
+    }
+
+    /**
+     * Removes a final filename extension from a display name.
+     * @param {unknown} value Source value.
+     * @returns {string}
+     */
+    static #withoutExtension(value) {
+        return String(value || '').replace(/\.[A-Za-z0-9]+$/u, '')
     }
 }

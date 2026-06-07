@@ -19,6 +19,7 @@ import { SchematicRegionRenderer } from './SchematicRegionRenderer.mjs'
 import { SchematicSheetSymbolRenderer } from './SchematicSheetSymbolRenderer.mjs'
 import { SchematicImageRenderer } from './SchematicImageRenderer.mjs'
 import { TextGeometrySidecarBuilder } from './TextGeometrySidecarBuilder.mjs'
+import { SchematicRenderOpsSidecarBuilder } from './SchematicRenderOpsSidecarBuilder.mjs'
 import { SchematicProjectParameterResolver } from '../core/altium/SchematicProjectParameterResolver.mjs'
 
 const { createSvgText, escapeHtml, formatNumber, projectSchematicY } =
@@ -102,6 +103,15 @@ export class SchematicSvgRenderer {
                   semanticContext
               )
             : ''
+        const renderOperationsMarkup =
+            renderOptions.includeRenderOperationsSidecar
+                ? SchematicSvgRenderer.#buildRenderOperationsMetadataMarkup(
+                      renderedSchematic,
+                      contentHeight,
+                      semanticMetadata,
+                      renderOptions
+                  )
+                : ''
         const drawableComponents = components.filter(
             (component) =>
                 SchematicSvgRenderer.#isDrawableSchematicComponent(component) &&
@@ -544,6 +554,7 @@ export class SchematicSvgRenderer {
             escapeHtml(JSON.stringify(semanticMetadata)) +
             '</metadata>' +
             textGeometryMarkup +
+            renderOperationsMarkup +
             markerDefsMarkup +
             '<g class="schematic-content"' +
             ' clip-path="url(#' +
@@ -625,7 +636,7 @@ export class SchematicSvgRenderer {
     /**
      * Normalizes schematic SVG export options.
      * @param {Record<string, unknown>} options Raw render options.
-     * @returns {{ includeViewBox: boolean, documentId: string, documentVersion: string, includeTextGeometrySidecar: boolean }}
+     * @returns {{ includeViewBox: boolean, documentId: string, documentVersion: string, includeTextGeometrySidecar: boolean, includeRenderOperationsSidecar: boolean, renderOperationProfile: string }}
      */
     static #normalizeRenderOptions(options) {
         const includeViewBox =
@@ -639,7 +650,13 @@ export class SchematicSvgRenderer {
             ),
             includeTextGeometrySidecar:
                 options?.includeTextGeometrySidecar === true ||
-                options?.textGeometry === 'sidecar'
+                options?.textGeometry === 'sidecar',
+            includeRenderOperationsSidecar:
+                options?.includeRenderOperationsSidecar === true ||
+                options?.renderOperations === 'sidecar',
+            renderOperationProfile: String(
+                options?.renderOperationProfile || 'default'
+            )
         }
     }
 
@@ -670,6 +687,35 @@ export class SchematicSvgRenderer {
         return (
             '<metadata id="schematic-text-geometry" data-schema="' +
             TextGeometrySidecarBuilder.SCHEMA_ID +
+            '">' +
+            escapeHtml(JSON.stringify(metadata)) +
+            '</metadata>'
+        )
+    }
+
+    /**
+     * Builds optional render-operation metadata markup.
+     * @param {object} schematic Rendered schematic model.
+     * @param {number} contentHeight Render content height.
+     * @param {object} semanticMetadata Semantic metadata.
+     * @param {object} renderOptions Normalized render options.
+     * @returns {string}
+     */
+    static #buildRenderOperationsMetadataMarkup(
+        schematic,
+        contentHeight,
+        semanticMetadata,
+        renderOptions
+    ) {
+        const metadata = SchematicRenderOpsSidecarBuilder.build(schematic, {
+            contentHeight,
+            semanticMetadata,
+            profile: renderOptions.renderOperationProfile
+        })
+
+        return (
+            '<metadata id="schematic-render-operations" data-schema="' +
+            SchematicRenderOpsSidecarBuilder.SCHEMA_ID +
             '">' +
             escapeHtml(JSON.stringify(metadata)) +
             '</metadata>'

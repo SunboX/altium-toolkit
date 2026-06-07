@@ -1,0 +1,62 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.pcb.review-metadata.a1",
+    "title": "Altium Toolkit PCB Review Metadata A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "summary",
+        "routeGroups",
+        "routeHighlightProfiles",
+        "polygonRealizations",
+        "drillReview",
+        "boardAssemblyViews",
+        "indexes"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.pcb.review-metadata.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "routeGroups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "routeHighlightProfiles": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "polygonRealizations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "drillReview": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "boardAssemblyViews": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "indexes": {
+            "type": "object",
+            "additionalProperties": true
+        }
+    }
+}

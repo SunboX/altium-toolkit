@@ -1,0 +1,56 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.library.merge-plan.a1",
+    "title": "Altium Toolkit Library Merge Plan A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "strategy",
+        "summary",
+        "duplicateSymbols",
+        "embeddedAssets",
+        "fontDependencies",
+        "diagnostics"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.library.merge-plan.a1"
+        },
+        "strategy": {
+            "type": "string"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "duplicateSymbols": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "embeddedAssets": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "fontDependencies": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "diagnostics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    }
+}

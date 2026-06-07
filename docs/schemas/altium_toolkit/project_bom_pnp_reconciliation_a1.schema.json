@@ -1,0 +1,63 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.project.bom-pnp-reconciliation.a1",
+    "title": "Altium Toolkit Project BOM/PnP Reconciliation A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "summary",
+        "schematicBomDesignators",
+        "pcbBomDesignators",
+        "pnpDesignators",
+        "effectiveBomDesignators",
+        "noBomDesignators",
+        "issues"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.project.bom-pnp-reconciliation.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "schematicBomDesignators": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "pcbBomDesignators": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "pnpDesignators": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "effectiveBomDesignators": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "noBomDesignators": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "issues": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    }
+}

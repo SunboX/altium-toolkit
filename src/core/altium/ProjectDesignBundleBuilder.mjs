@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { NormalizedModelSchema } from './NormalizedModelSchema.mjs'
+import { ProjectBomPnpReconciliationBuilder } from './ProjectBomPnpReconciliationBuilder.mjs'
 import { ProjectVariantViewBuilder } from './ProjectVariantViewBuilder.mjs'
 
 /**
@@ -113,6 +114,12 @@ export class ProjectDesignBundleBuilder {
                 variantName: options.variantName
             })
         }
+
+        bundle.reconciliation = ProjectBomPnpReconciliationBuilder.build({
+            bundle,
+            documentModels,
+            effectiveVariant: bundle.effectiveVariant
+        })
 
         return bundle
     }
@@ -309,15 +316,67 @@ export class ProjectDesignBundleBuilder {
      * @returns {object[]}
      */
     static #buildBom(documentModels) {
+        const noBomDesignators =
+            ProjectDesignBundleBuilder.#noBomDesignators(documentModels)
         const pcbBom = documentModels
             .filter((model) => model?.kind === 'pcb')
             .flatMap((model) => model.bom || [])
 
         if (pcbBom.length) {
-            return pcbBom
+            return ProjectDesignBundleBuilder.#filterBomRows(
+                pcbBom,
+                noBomDesignators
+            )
         }
 
-        return documentModels.flatMap((model) => model.bom || [])
+        return ProjectDesignBundleBuilder.#filterBomRows(
+            documentModels.flatMap((model) => model.bom || []),
+            noBomDesignators
+        )
+    }
+
+    /**
+     * Removes component-kind no-BOM designators from normalized BOM rows.
+     * @param {object[]} rows BOM rows.
+     * @param {Set<string>} noBomDesignators Designators excluded from BOMs.
+     * @returns {object[]}
+     */
+    static #filterBomRows(rows, noBomDesignators) {
+        if (!noBomDesignators.size) return rows
+
+        return (rows || [])
+            .map((row) => {
+                const designators = (row.designators || []).filter(
+                    (designator) => !noBomDesignators.has(designator)
+                )
+                return {
+                    ...row,
+                    designators,
+                    quantity: designators.length || row.quantity
+                }
+            })
+            .filter((row) => row.designators.length > 0)
+    }
+
+    /**
+     * Collects PCB components whose native kind excludes BOM output.
+     * @param {object[]} documentModels Parsed document models.
+     * @returns {Set<string>}
+     */
+    static #noBomDesignators(documentModels) {
+        const designators = new Set()
+
+        for (const model of documentModels.filter(
+            (item) => item?.kind === 'pcb'
+        )) {
+            for (const component of model.pcb?.components || []) {
+                if (component.componentKind?.includeInBom !== false) continue
+                const designator = String(component.designator || '').trim()
+                if (designator) designators.add(designator)
+            }
+        }
+
+        return designators
     }
 
     /**

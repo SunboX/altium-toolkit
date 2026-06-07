@@ -65,8 +65,8 @@ Specialized parser helpers are exported for lower-level integrations, including
 `PcbDimensionParser`, `PcbEmbeddedFontExtractor`,
 `PcbExtendedPrimitiveInformationParser`, `PcbFontMetricsParser`,
 `LibraryRenderManifestBuilder`, `LibrarySearchIndex`,
-`PcbOwnershipGraphBuilder`, `PcbPadStackParser`,
-`PcbPickPlacePositionResolver`,
+`PcbBomProfileBuilder`, `PcbLayerStackFidelityReportBuilder`,
+`PcbOwnershipGraphBuilder`, `PcbPadStackParser`, `PcbPickPlacePositionResolver`,
 `ProjectAnnotationParser`, `ProjectDesignBundleBuilder`,
 `ProjectNetlistExporter`, `ProjectVariantViewBuilder`,
 `PcbMechanicalLayerPairParser`, `PcbSpecialStringResolver`, `PcbUnionParser`,
@@ -101,6 +101,10 @@ embedded font payload and metric shape that `.PcbDoc` and `.PcbLib` parsing adds
 to normalized models. `PcbRawRecordRegistry` exposes immutable primitive stream
 descriptors and the raw-record preservation helpers used by the PcbDoc/PcbLib
 extractors.
+`PcbBomProfileBuilder` exposes PCB-only BOM grouping and parameter alias
+normalization. `PcbLayerStackFidelityReportBuilder` classifies layer-stack
+source evidence and unsupported native-regeneration limits for deterministic
+QA/reporting.
 `LibraryRenderManifestBuilder` and `LibrarySearchIndex` expose deterministic
 SchLib/PcbLib render/export manifests plus exact, keyword, and fuzzy lookup
 helpers. `PcbStatisticsBuilder` emits board QA summaries used by `.PcbDoc`

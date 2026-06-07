@@ -24,6 +24,7 @@
                 "pcb",
                 "pcb-library",
                 "project",
+                "project-script",
                 "project-annotation",
                 "integrated-library",
                 "draftsman",
@@ -36,6 +37,7 @@
                 "PcbDoc",
                 "PcbLib",
                 "PrjPcb",
+                "PrjScr",
                 "Annotation",
                 "IntLib",
                 "PCBDwf",
@@ -159,7 +161,16 @@
                 "components": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/pcbComponent"
+                        "allOf": [
+                            {
+                                "$ref": "#/$defs/pcbComponent"
+                            }
+                        ],
+                        "properties": {
+                            "componentKind": {
+                                "$ref": "#/$defs/componentKindPolicy"
+                            }
+                        }
                     }
                 },
                 "rules": {
@@ -167,6 +178,9 @@
                     "items": {
                         "$ref": "#/$defs/pcbRule"
                     }
+                },
+                "bomProfile": {
+                    "$ref": "#/$defs/pcbBomProfile"
                 },
                 "dimensions": {
                     "type": "array",
@@ -192,6 +206,12 @@
                 "routeAnalysis": {
                     "$ref": "#/$defs/pcbRouteAnalysis"
                 },
+                "reviewMetadata": {
+                    "$ref": "#/$defs/pcbReviewMetadata"
+                },
+                "footprintExtractionManifest": {
+                    "$ref": "#/$defs/pcbPlacedFootprintExtraction"
+                },
                 "embeddedFonts": {
                     "$ref": "#/$defs/embeddedFonts"
                 },
@@ -200,6 +220,12 @@
                 },
                 "layerSubstacks": {
                     "$ref": "#/$defs/layerSubstacks"
+                },
+                "layerStackReadModel": {
+                    "$ref": "#/$defs/pcbLayerStackReadModel"
+                },
+                "rigidFlexTopology": {
+                    "$ref": "#/$defs/pcbRigidFlexTopology"
                 },
                 "boardRegionContexts": {
                     "$ref": "#/$defs/boardRegionContexts"
@@ -286,6 +312,9 @@
                 },
                 "renderManifest": {
                     "$ref": "#/$defs/libraryRenderManifest"
+                },
+                "parityReport": {
+                    "$ref": "#/$defs/pcbLibraryParityReport"
                 }
             },
             "additionalProperties": true
@@ -295,6 +324,39 @@
             "properties": {
                 "documentGraph": {
                     "$ref": "#/$defs/projectDocumentGraph"
+                },
+                "outJobDigest": {
+                    "$ref": "#/$defs/projectOutJobDigest"
+                }
+            },
+            "additionalProperties": true
+        },
+        "projectScript": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "scripts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "sections": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
                 }
             },
             "additionalProperties": true
@@ -344,7 +406,12 @@
             "$ref": "#/$defs/integratedLibrary"
         },
         "draftsman": {
-            "$ref": "#/$defs/draftsmanDigest"
+            "$ref": "#/$defs/draftsmanDigest",
+            "properties": {
+                "boardViewMetadata": {
+                    "$ref": "#/$defs/draftsmanBoardViewCache"
+                }
+            }
         },
         "bom": {
             "type": "array",
@@ -354,6 +421,9 @@
         },
         "pnp": {
             "$ref": "#/$defs/pickPlaceModel"
+        },
+        "reconciliation": {
+            "$ref": "#/$defs/projectBomPnpReconciliation"
         }
     },
     "oneOf": [
@@ -508,6 +578,49 @@
             },
             "additionalProperties": true
         },
+        "projectOutJobDigest": {
+            "type": "object",
+            "required": [
+                "schema",
+                "summary",
+                "documents",
+                "outputGroups",
+                "expectedArtifacts",
+                "outputsByDocumentPath"
+            ],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.project.outjob-digest.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "outputGroups": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "expectedArtifacts": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "outputsByDocumentPath": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true
+        },
         "draftsmanDigest": {
             "type": "object",
             "required": ["schema", "pages"],
@@ -525,9 +638,128 @@
                         "additionalProperties": true
                     }
                 },
+                "styles": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "boardViewMetadata": {
+                    "$ref": "#/$defs/draftsmanBoardViewCache"
+                },
                 "indexes": {
                     "type": "object",
                     "additionalProperties": true
+                }
+            },
+            "additionalProperties": true
+        },
+        "draftsmanBoardViewCache": {
+            "type": "object",
+            "required": [
+                "schema",
+                "summary",
+                "layerColors",
+                "pcbParameters",
+                "boardAssemblyViews",
+                "boardFabricationViews",
+                "boardProjections",
+                "generatedGeometry",
+                "cacheLayers",
+                "displayLayers",
+                "cachePrimitives",
+                "highlightGroups",
+                "layerTiles",
+                "diagnostics"
+            ],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.draftsman.board-view-cache.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "layerColors": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "pcbParameters": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "boardAssemblyViews": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "boardFabricationViews": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "boardProjections": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "generatedGeometry": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "cacheLayers": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "displayLayers": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "cachePrimitives": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "highlightGroups": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "layerTiles": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "diagnostics": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
                 }
             },
             "additionalProperties": true
@@ -1299,8 +1531,43 @@
                 "height": {
                     "type": ["number", "null"]
                 },
+                "componentKind": {
+                    "$ref": "#/$defs/componentKindPolicy"
+                },
                 "provenance": {
                     "$ref": "#/$defs/pcbComponentProvenance"
+                }
+            },
+            "additionalProperties": true
+        },
+        "componentKindPolicy": {
+            "type": "object",
+            "required": [
+                "value",
+                "name",
+                "displayName",
+                "includeInBom",
+                "includeInNetlist",
+                "includeInPnp"
+            ],
+            "properties": {
+                "value": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "displayName": {
+                    "type": "string"
+                },
+                "includeInBom": {
+                    "type": "boolean"
+                },
+                "includeInNetlist": {
+                    "type": "boolean"
+                },
+                "includeInPnp": {
+                    "type": "boolean"
                 }
             },
             "additionalProperties": true
@@ -1644,6 +1911,9 @@
                 },
                 "positionSource": {
                     "type": "string"
+                },
+                "componentKind": {
+                    "$ref": "#/$defs/componentKindPolicy"
                 }
             },
             "additionalProperties": true
@@ -1776,6 +2046,252 @@
                 },
                 "additionalProperties": true
             }
+        },
+        "pcbBomProfile": {
+            "type": "object",
+            "required": [
+                "schema",
+                "source",
+                "summary",
+                "groups",
+                "components",
+                "exclusions"
+            ],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.pcb.bom-profile.a1"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "components": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "exclusions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbLayerStackReadModel": {
+            "type": "object",
+            "required": [
+                "schema",
+                "summary",
+                "source",
+                "layers",
+                "substacks",
+                "branches",
+                "impedanceProfiles",
+                "transmissionLines",
+                "viaSpans",
+                "backdrillSpans",
+                "diagnostics"
+            ],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.pcb.layer-stack.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "source": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "layers": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "substacks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "branches": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "impedanceProfiles": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "transmissionLines": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "viaSpans": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "backdrillSpans": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "fidelityReport": {
+                    "$ref": "#/$defs/pcbLayerStackFidelityReport"
+                },
+                "diagnostics": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbLayerStackFidelityReport": {
+            "type": "object",
+            "required": [
+                "schema",
+                "sourceDocument",
+                "summary",
+                "capabilities",
+                "semanticSections",
+                "nativeCacheSections",
+                "interchangeOnlySections",
+                "unsupportedRegeneration",
+                "diagnostics"
+            ],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.pcb.layer-stack-fidelity.a1"
+                },
+                "sourceDocument": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "capabilities": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "semanticSections": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "nativeCacheSections": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "interchangeOnlySections": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "unsupportedRegeneration": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "diagnostics": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbRigidFlexTopology": {
+            "type": "object",
+            "required": [
+                "schema",
+                "summary",
+                "substackRegionJoins",
+                "branchGraph",
+                "bendLines",
+                "diagnostics"
+            ],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.pcb.rigid-flex-topology.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "substackRegionJoins": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "branchGraph": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "bendLines": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "diagnostics": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
         },
         "embeddedFonts": {
             "type": "array",
@@ -2110,6 +2626,159 @@
             },
             "additionalProperties": true
         },
+        "pcbReviewMetadata": {
+            "type": "object",
+            "required": [
+                "schema",
+                "summary",
+                "routeGroups",
+                "routeHighlightProfiles",
+                "polygonRealizations",
+                "drillReview",
+                "boardAssemblyViews",
+                "indexes"
+            ],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.pcb.review-metadata.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "routeGroups": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "routeHighlightProfiles": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "polygonRealizations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "drillReview": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "boardAssemblyViews": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "indexes": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbPlacedFootprintExtraction": {
+            "type": "object",
+            "required": [
+                "schema",
+                "sourceDocument",
+                "summary",
+                "outputs",
+                "indexes"
+            ],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.pcb.placed-footprint-extraction.a1"
+                },
+                "sourceDocument": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "outputs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "indexes": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": true
+        },
+        "projectBomPnpReconciliation": {
+            "type": "object",
+            "required": [
+                "schema",
+                "summary",
+                "schematicBomDesignators",
+                "pcbBomDesignators",
+                "pnpDesignators",
+                "effectiveBomDesignators",
+                "noBomDesignators",
+                "issues"
+            ],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.project.bom-pnp-reconciliation.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "schematicBomDesignators": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "pcbBomDesignators": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "pnpDesignators": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "effectiveBomDesignators": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "noBomDesignators": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
         "units": {
             "type": "object",
             "additionalProperties": {
@@ -2133,6 +2802,27 @@
                     }
                 },
                 "embeddedAssets": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "pcbLibraryParityReport": {
+            "type": "object",
+            "required": ["schema", "summary", "footprints"],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.pcblib.parity.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "footprints": {
                     "type": "array",
                     "items": {
                         "type": "object",

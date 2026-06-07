@@ -1,0 +1,24 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.pcblib.parity.a1",
+    "title": "Altium Toolkit PcbLib Parity A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "summary", "footprints"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.pcblib.parity.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "footprints": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    }
+}

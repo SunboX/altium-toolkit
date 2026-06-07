@@ -1,0 +1,115 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.draftsman.board-view-cache.a1",
+    "title": "Altium Toolkit Draftsman Board View Cache A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "summary",
+        "layerColors",
+        "pcbParameters",
+        "boardAssemblyViews",
+        "boardFabricationViews",
+        "boardProjections",
+        "generatedGeometry",
+        "cacheLayers",
+        "displayLayers",
+        "cachePrimitives",
+        "highlightGroups",
+        "layerTiles",
+        "diagnostics"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.draftsman.board-view-cache.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "layerColors": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "pcbParameters": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
+        "boardAssemblyViews": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "boardFabricationViews": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "boardProjections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "generatedGeometry": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "cacheLayers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "displayLayers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "cachePrimitives": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "highlightGroups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "layerTiles": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "diagnostics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    }
+}

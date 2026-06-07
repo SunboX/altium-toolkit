@@ -4,6 +4,7 @@
 
 import { PcbSvgRenderer } from '../../ui/PcbSvgRenderer.mjs'
 import { SchematicSvgRenderer } from '../../ui/SchematicSvgRenderer.mjs'
+import { ContractGateReportBuilder } from './ContractGateReportBuilder.mjs'
 import { PcbStatisticsBuilder } from './PcbStatisticsBuilder.mjs'
 import { ProjectDesignBundleBuilder } from './ProjectDesignBundleBuilder.mjs'
 import { ProjectDocumentGraphBuilder } from './ProjectDocumentGraphBuilder.mjs'
@@ -64,6 +65,17 @@ export class CiArtifactBundleBuilder {
         )
         const netlistJson =
             ProjectNetlistExporter.buildNetlistJson(activeBundle)
+        const netlist = {
+            json: netlistJson,
+            wirelist: ProjectNetlistExporter.buildWirelist(activeBundle)
+        }
+        const contractGate = ContractGateReportBuilder.build({
+            documentModels,
+            netlist,
+            schematicSvgs,
+            pcbLayerSvgs,
+            diagnostics
+        })
         const documentGraph =
             designBundle.project?.documentGraph ||
             ProjectDocumentGraphBuilder.build(
@@ -83,16 +95,14 @@ export class CiArtifactBundleBuilder {
                 bomRowCount: (activeBundle.bom || designBundle.bom || [])
                     .length,
                 pnpCount: (activeBundle.pnp?.entries || []).length,
-                diagnosticCount: diagnostics.length
+                diagnosticCount: diagnostics.length,
+                contractGateStatus: contractGate.status
             },
             units: designBundle.units || CiArtifactBundleBuilder.#UNITS,
             designBundle,
             documentGraph,
             normalizedModels: documentModels,
-            netlist: {
-                json: netlistJson,
-                wirelist: ProjectNetlistExporter.buildWirelist(activeBundle)
-            },
+            netlist,
             bom: {
                 rows: activeBundle.bom || designBundle.bom || []
             },
@@ -100,6 +110,7 @@ export class CiArtifactBundleBuilder {
             schematicSvgs,
             pcbLayerSvgs,
             statistics,
+            contractGate,
             diagnostics
         }
     }

@@ -8,6 +8,7 @@ import { LibraryRenderManifestBuilder } from './LibraryRenderManifestBuilder.mjs
 import { PcbCustomPadShapeParser } from './PcbCustomPadShapeParser.mjs'
 import { PcbDefaultsParser } from './PcbDefaultsParser.mjs'
 import { PcbExtendedPrimitiveInformationParser } from './PcbExtendedPrimitiveInformationParser.mjs'
+import { PcbLibParityReportBuilder } from './PcbLibParityReportBuilder.mjs'
 import { PcbMaskPasteResolver } from './PcbMaskPasteResolver.mjs'
 
 const { stripExtension } = ParserUtils
@@ -74,6 +75,7 @@ export class PcbLibModelParser {
         }
         pcbLibrary.renderManifest =
             LibraryRenderManifestBuilder.buildPcbLibraryManifest(pcbLibrary)
+        pcbLibrary.parityReport = PcbLibParityReportBuilder.build(pcbLibrary)
 
         return NormalizedModelSchema.attach({
             kind: 'pcb-library',

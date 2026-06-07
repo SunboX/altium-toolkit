@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { IntLibModelParser } from '../../src/core/altium/IntLibModelParser.mjs'
+import { LibraryQaReportBuilder } from '../../src/core/altium/LibraryQaReportBuilder.mjs'
 import { LibraryRenderManifestBuilder } from '../../src/core/altium/LibraryRenderManifestBuilder.mjs'
 import { LibrarySearchIndex } from '../../src/core/altium/LibrarySearchIndex.mjs'
 import { PcbLibModelParser } from '../../src/core/altium/PcbLibModelParser.mjs'
@@ -263,6 +264,159 @@ test('LibraryRenderManifestBuilder and LibrarySearchIndex expose schematic libra
     )
 })
 
+test('LibraryRenderManifestBuilder reports database-library-ready schematic extraction plans', () => {
+    const manifest =
+        LibraryRenderManifestBuilder.buildSchematicExtractionManifest({
+            fileName: 'audit-sheet.SchDoc',
+            schematic: {
+                components: [
+                    {
+                        designator: 'U1',
+                        libReference: 'CTRL_CORE',
+                        uniqueId: 'CMP-1',
+                        ownerIndex: '20',
+                        parameters: {
+                            Designator: 'U1',
+                            Comment: 'Controller',
+                            Lifecycle: 'Released',
+                            Manufacturer: 'Acme'
+                        }
+                    },
+                    {
+                        designator: 'R1',
+                        libReference: 'RES_CORE',
+                        uniqueId: 'CMP-2',
+                        ownerIndex: '30',
+                        parameters: {
+                            Comment: '10k'
+                        }
+                    }
+                ],
+                pins: [{ ownerIndex: '20' }, { ownerIndex: '20' }],
+                lines: [{ ownerIndex: '20' }],
+                texts: [{ ownerIndex: '20' }, { ownerIndex: '30' }],
+                images: [
+                    {
+                        ownerIndex: '20',
+                        key: 'img-1',
+                        nativeFormat: 'PNG',
+                        byteSize: 42,
+                        checksum: {
+                            algorithm: 'fnv1a32',
+                            value: 'abcd1234'
+                        }
+                    }
+                ],
+                implementations: {
+                    components: [
+                        {
+                            componentKey: 'schematic-component-20',
+                            implementationKeys: ['impl-1']
+                        }
+                    ]
+                }
+            }
+        })
+
+    assert.deepEqual(manifest.summary, {
+        outputCount: 2,
+        embeddedAssetCount: 1,
+        readyOutputCount: 2,
+        strippedParameterCount: 3,
+        strippedImplementationCount: 1
+    })
+    assert.deepEqual(manifest.outputs[0].databaseLibrary, {
+        readiness: 'ready',
+        preservedParameterNames: ['Lifecycle', 'Manufacturer'],
+        strippedParameterNames: ['Designator', 'Comment'],
+        stripImplementationLinks: true,
+        strippedImplementationKeys: ['impl-1'],
+        auditKey: 'schematic-extract/symbol-extract-0-ctrl-core.dblib.json'
+    })
+    assert.deepEqual(manifest.outputs[1].databaseLibrary, {
+        readiness: 'ready',
+        preservedParameterNames: [],
+        strippedParameterNames: ['Comment'],
+        stripImplementationLinks: false,
+        strippedImplementationKeys: [],
+        auditKey: 'schematic-extract/symbol-extract-1-res-core.dblib.json'
+    })
+})
+
+test('LibraryRenderManifestBuilder exposes schematic template extraction manifests', () => {
+    const manifest =
+        LibraryRenderManifestBuilder.buildSchematicTemplateExtractionManifest({
+            fileName: 'template-source.SchDoc',
+            schematic: {
+                template: {
+                    identity: {
+                        fileName: 'base-template.SchDot',
+                        name: 'Base Template',
+                        recordId: 'record-40'
+                    },
+                    ownedRecordKeys: [
+                        'schematic-record-41',
+                        'schematic-record-42'
+                    ],
+                    ownedGraphics: {
+                        lines: ['schematic-record-41'],
+                        texts: ['schematic-record-42'],
+                        images: ['schematic-record-43']
+                    },
+                    fonts: {
+                        1: { name: 'Arial', size: 10 }
+                    },
+                    missingParameters: ['CheckedBy'],
+                    titleBlock: {
+                        title: 'Template Title',
+                        documentNumber: '=DocumentNumber'
+                    }
+                }
+            }
+        })
+
+    assert.deepEqual(manifest, {
+        schema: 'altium-toolkit.schematic.template-extraction.a1',
+        sourceDocument: 'template-source.SchDoc',
+        template: {
+            identity: {
+                fileName: 'base-template.SchDot',
+                name: 'Base Template',
+                recordId: 'record-40'
+            },
+            outputTemplateKey: 'schematic-template/base-template.schdot',
+            renderManifestKey: 'schematic-template/base-template.render.json',
+            ownedRecordKeys: ['schematic-record-41', 'schematic-record-42'],
+            ownedGraphics: {
+                lines: ['schematic-record-41'],
+                texts: ['schematic-record-42'],
+                images: ['schematic-record-43']
+            },
+            fonts: {
+                1: { name: 'Arial', size: 10 }
+            },
+            missingParameters: ['CheckedBy'],
+            titleBlock: {
+                title: 'Template Title',
+                documentNumber: '=DocumentNumber'
+            }
+        },
+        summary: {
+            templatePresent: true,
+            ownedRecordCount: 2,
+            missingParameterCount: 1,
+            fontCount: 1
+        },
+        diagnostics: [
+            {
+                code: 'schematic.template-extraction.missing-parameter',
+                severity: 'warning',
+                parameterName: 'CheckedBy'
+            }
+        ]
+    })
+})
+
 test('LibraryRenderManifestBuilder exposes SchDoc symbol extraction manifests', () => {
     const manifest =
         LibraryRenderManifestBuilder.buildSchematicExtractionManifest({
@@ -307,6 +461,13 @@ test('LibraryRenderManifestBuilder exposes SchDoc symbol extraction manifests', 
     assert.deepEqual(manifest, {
         schema: 'altium-toolkit.schematic.extraction-manifest.a1',
         sourceDocument: 'placed-symbols.SchDoc',
+        summary: {
+            outputCount: 1,
+            embeddedAssetCount: 1,
+            readyOutputCount: 1,
+            strippedParameterCount: 0,
+            strippedImplementationCount: 0
+        },
         outputs: [
             {
                 kind: 'symbol-extraction',
@@ -406,6 +567,144 @@ test('LibraryRenderManifestBuilder preserves extraction asset audit metadata', (
             ]
         }
     ])
+})
+
+test('LibraryQaReportBuilder emits schematic library merge-plan diagnostics', () => {
+    const report = LibraryQaReportBuilder.build({
+        schematicLibraries: [
+            {
+                fileName: 'first.SchLib',
+                schematicLibrary: {
+                    fonts: [{ id: 1, name: 'Arial' }],
+                    symbols: [
+                        {
+                            name: 'CTRL_CORE',
+                            parts: [{ partId: 'A' }],
+                            pins: [{ designator: '1' }, { designator: '2' }],
+                            displayModes: [{ mode: 0 }],
+                            embeddedAssets: [
+                                {
+                                    key: 'logo-a',
+                                    format: 'png',
+                                    sourceStream: 'Images/0'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            {
+                fileName: 'second.SchLib',
+                schematicLibrary: {
+                    fonts: [{ id: 2, name: 'Courier New' }],
+                    symbols: [
+                        {
+                            name: 'CTRL_CORE',
+                            parts: [{ partId: 'A' }, { partId: 'B' }],
+                            pins: [{ designator: '1' }],
+                            displayModes: [{ mode: 0 }, { mode: 1 }],
+                            embeddedAssets: [
+                                {
+                                    key: 'logo-b',
+                                    format: 'jpg',
+                                    sourceStream: 'Images/1'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    })
+
+    assert.equal(report.summary.mergePlanConflictCount, 1)
+    assert.deepEqual(report.mergePlan, {
+        schema: 'altium-toolkit.library.merge-plan.a1',
+        strategy: 'read-only-analysis',
+        summary: {
+            duplicateNameCount: 1,
+            conflictCount: 1,
+            renameSuggestionCount: 1,
+            embeddedAssetCount: 2,
+            fontDependencyCount: 2
+        },
+        duplicateSymbols: [
+            {
+                name: 'CTRL_CORE',
+                conflictKind: 'conflicting-symbol',
+                suggestedNames: [
+                    {
+                        libraryFileName: 'first.SchLib',
+                        index: 0,
+                        currentName: 'CTRL_CORE',
+                        suggestedName: 'CTRL_CORE'
+                    },
+                    {
+                        libraryFileName: 'second.SchLib',
+                        index: 0,
+                        currentName: 'CTRL_CORE',
+                        suggestedName: 'CTRL_CORE_2'
+                    }
+                ],
+                differences: {
+                    pinCounts: [2, 1],
+                    partCounts: [1, 2],
+                    displayModeCounts: [1, 2]
+                },
+                occurrences: [
+                    {
+                        libraryFileName: 'first.SchLib',
+                        index: 0,
+                        pinCount: 2,
+                        partCount: 1,
+                        displayModeCount: 1
+                    },
+                    {
+                        libraryFileName: 'second.SchLib',
+                        index: 0,
+                        pinCount: 1,
+                        partCount: 2,
+                        displayModeCount: 2
+                    }
+                ]
+            }
+        ],
+        embeddedAssets: [
+            {
+                libraryFileName: 'first.SchLib',
+                symbolName: 'CTRL_CORE',
+                key: 'logo-a',
+                format: 'png',
+                sourceStream: 'Images/0'
+            },
+            {
+                libraryFileName: 'second.SchLib',
+                symbolName: 'CTRL_CORE',
+                key: 'logo-b',
+                format: 'jpg',
+                sourceStream: 'Images/1'
+            }
+        ],
+        fontDependencies: [
+            {
+                libraryFileName: 'first.SchLib',
+                id: 1,
+                name: 'Arial'
+            },
+            {
+                libraryFileName: 'second.SchLib',
+                id: 2,
+                name: 'Courier New'
+            }
+        ],
+        diagnostics: [
+            {
+                code: 'library.merge-plan.conflicting-symbol',
+                severity: 'warning',
+                symbolName: 'CTRL_CORE'
+            }
+        ]
+    })
 })
 
 test('PcbLibModelParser carries advanced footprint fields and projection diagnostics', () => {
@@ -544,6 +843,257 @@ test('PcbLibModelParser carries advanced footprint fields and projection diagnos
         footprint.componentBodies[0].projectionDiagnostics.reason,
         'matched embedded model payload'
     )
+})
+
+test('PcbLibModelParser emits advanced-field parity reports', () => {
+    const model = PcbLibModelParser.parse('parity-footprints.PcbLib', {
+        footprints: [
+            {
+                name: 'PARITY_A',
+                pads: [
+                    {
+                        primitiveIndex: 0,
+                        designator: '1',
+                        layerId: 1,
+                        holeDiameter: 10,
+                        localStack: {
+                            schema: 'altium-toolkit.pcb.pad-local-stack.a1',
+                            mode: 'full-stack',
+                            layers: [{ layerId: 1, shape: 1 }]
+                        }
+                    }
+                ],
+                vias: [
+                    {
+                        primitiveIndex: 1,
+                        layerId: 1,
+                        topTenting: true,
+                        bottomTenting: false,
+                        solderMaskExpansionMode: 2,
+                        solderMaskExpansion: 4
+                    }
+                ],
+                texts: [
+                    {
+                        text: 'ABC123',
+                        barcode: {
+                            kindName: 'code128',
+                            renderModeName: 'bars',
+                            showText: true
+                        }
+                    }
+                ],
+                customPadShapes: {
+                    entries: [
+                        {
+                            primitiveIndex: 0,
+                            layerId: 1,
+                            regionIndexes: [0]
+                        }
+                    ],
+                    byPrimitiveIndex: {
+                        0: [
+                            {
+                                primitiveIndex: 0,
+                                layerId: 1,
+                                regionIndexes: [0],
+                                shapeRegionIndexes: [],
+                                arcIndexes: [],
+                                trackIndexes: [],
+                                fillIndexes: []
+                            }
+                        ]
+                    }
+                },
+                regions: [{ primitiveIndex: 0, layerId: 1 }],
+                componentBodies: [{ modelId: 'model-a', name: 'body.step' }],
+                embeddedModels: [
+                    {
+                        id: 'model-a',
+                        name: 'body.step',
+                        format: 'step',
+                        sourceStream: 'Models/0'
+                    }
+                ]
+            }
+        ]
+    })
+
+    assert.deepEqual(model.pcbLibrary.parityReport, {
+        schema: 'altium-toolkit.pcblib.parity.a1',
+        summary: {
+            footprintCount: 1,
+            footprintWithAdvancedFieldsCount: 1,
+            localStackPadCount: 1,
+            customPadFootprintCount: 1,
+            maskPastePrimitiveCount: 1,
+            viaTentingCount: 1,
+            barcodeTextCount: 1,
+            embeddedModelFootprintCount: 1,
+            projectionDiagnosticCount: 1
+        },
+        footprints: [
+            {
+                name: 'PARITY_A',
+                advancedFields: {
+                    localStackPads: 1,
+                    customPadShapes: 1,
+                    maskPastePrimitives: 1,
+                    viaTenting: 1,
+                    barcodeTexts: 1,
+                    embeddedModels: 1,
+                    projectionDiagnostics: 1
+                },
+                layers: [
+                    {
+                        layerKey: 'L1',
+                        layerId: 1,
+                        displayName: 'L1'
+                    }
+                ],
+                diagnostics: []
+            }
+        ]
+    })
+})
+
+test('LibraryQaReportBuilder reports collection-level collisions and stale links', () => {
+    const report = LibraryQaReportBuilder.build({
+        schematicLibraries: [
+            {
+                fileName: 'logic-a.SchLib',
+                schematicLibrary: {
+                    symbols: [
+                        {
+                            name: 'CTRL_FAKE',
+                            parts: [{ partId: 'A' }],
+                            implementations: [
+                                {
+                                    modelName: 'PKG_FAKE',
+                                    targetLibraries: [
+                                        'missing-footprints.PcbLib'
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            name: 'MULTI_FAKE',
+                            parts: [{ partId: 'A' }, { partId: 'C' }]
+                        }
+                    ]
+                }
+            },
+            {
+                fileName: 'logic-b.SchLib',
+                schematicLibrary: {
+                    symbols: [
+                        {
+                            name: 'CTRL_FAKE',
+                            parts: [{ partId: 'A' }, { partId: 'B' }]
+                        }
+                    ]
+                }
+            }
+        ],
+        pcbLibraries: [
+            {
+                fileName: 'footprints-a.PcbLib',
+                pcbLibrary: {
+                    footprints: [
+                        {
+                            name: 'PKG_FAKE',
+                            pads: [{ designator: '1' }],
+                            embeddedModels: [{ id: 'model-a' }]
+                        },
+                        {
+                            name: 'DUP_FAKE',
+                            pads: [{ designator: '1' }]
+                        }
+                    ]
+                }
+            },
+            {
+                fileName: 'footprints-b.PcbLib',
+                pcbLibrary: {
+                    footprints: [
+                        {
+                            name: 'DUP_FAKE',
+                            pads: [{ designator: '1' }, { designator: '2' }]
+                        },
+                        {
+                            name: 'NO_MODEL_FAKE',
+                            componentBodies: [{ modelId: 'missing-model' }]
+                        }
+                    ]
+                }
+            }
+        ]
+    })
+
+    assert.equal(report.schema, 'altium-toolkit.library.qa.a1')
+    assert.deepEqual(report.summary, {
+        schematicLibraryCount: 2,
+        pcbLibraryCount: 2,
+        duplicateSymbolCount: 1,
+        duplicateFootprintCount: 1,
+        staleImplementationCount: 1,
+        missingModelCount: 1,
+        multipartMismatchCount: 1,
+        mergePlanConflictCount: 1,
+        issueCount: 6
+    })
+    assert.deepEqual(report.duplicates.symbols, [
+        {
+            name: 'CTRL_FAKE',
+            occurrences: [
+                { libraryFileName: 'logic-a.SchLib', index: 0 },
+                { libraryFileName: 'logic-b.SchLib', index: 0 }
+            ]
+        }
+    ])
+    assert.deepEqual(report.duplicates.footprints, [
+        {
+            name: 'DUP_FAKE',
+            occurrences: [
+                {
+                    libraryFileName: 'footprints-a.PcbLib',
+                    index: 1,
+                    padCount: 1
+                },
+                {
+                    libraryFileName: 'footprints-b.PcbLib',
+                    index: 0,
+                    padCount: 2
+                }
+            ],
+            collisionKind: 'conflicting-footprint'
+        }
+    ])
+    assert.deepEqual(report.staleImplementations, [
+        {
+            libraryFileName: 'logic-a.SchLib',
+            symbolName: 'CTRL_FAKE',
+            modelName: 'PKG_FAKE',
+            targetLibraries: ['missing-footprints.PcbLib'],
+            reason: 'target library was not present in the scanned collection'
+        }
+    ])
+    assert.deepEqual(report.missingModels, [
+        {
+            libraryFileName: 'footprints-b.PcbLib',
+            footprintName: 'NO_MODEL_FAKE',
+            modelId: 'missing-model',
+            reason: 'component body references an embedded model that is absent'
+        }
+    ])
+    assert.deepEqual(report.multipartMismatches, [
+        {
+            libraryFileName: 'logic-a.SchLib',
+            symbolName: 'MULTI_FAKE',
+            partIds: ['A', 'C'],
+            expectedPartIds: ['A', 'B']
+        }
+    ])
 })
 
 test('IntLibModelParser exposes source and cross-reference indexes', () => {

@@ -88,6 +88,7 @@ function createDocumentModels() {
 
     return [
         {
+            schema: 'altium-toolkit.normalized-model.a1',
             kind: 'schematic',
             fileType: 'SchDoc',
             fileName: 'Main.SchDoc',
@@ -134,6 +135,7 @@ function createDocumentModels() {
             ]
         },
         {
+            schema: 'altium-toolkit.normalized-model.a1',
             kind: 'pcb',
             fileType: 'PcbDoc',
             fileName: 'Board.PcbDoc',
@@ -234,6 +236,7 @@ test('CiArtifactBundleBuilder packages deterministic project review outputs', ()
     assert.equal(bundle.summary.netCount, 1)
     assert.equal(bundle.summary.bomRowCount, 1)
     assert.equal(bundle.summary.pnpCount, 1)
+    assert.equal(bundle.summary.contractGateStatus, 'pass')
     assert.equal(bundle.designBundle.kind, 'design-bundle')
     assert.deepEqual(bundle.units, {
         coordinate: 'mil',
@@ -268,6 +271,54 @@ test('CiArtifactBundleBuilder packages deterministic project review outputs', ()
     assert.equal(
         bundle.statistics.pcb[0].statistics.schema,
         'altium-toolkit.pcb.statistics.a1'
+    )
+    assert.deepEqual(bundle.contractGate.summary, {
+        gateCount: 5,
+        failingGateCount: 0,
+        documentCount: 2,
+        svgLinkReportCount: 2,
+        diagnosticCount: 1
+    })
+    assert.deepEqual(
+        bundle.contractGate.gates.map((gate) => ({
+            key: gate.key,
+            status: gate.status
+        })),
+        [
+            { key: 'normalized-models', status: 'pass' },
+            { key: 'netlist-json', status: 'pass' },
+            { key: 'wirelist', status: 'pass' },
+            { key: 'svg-linkage', status: 'pass' },
+            { key: 'diagnostics', status: 'pass' }
+        ]
+    )
+    assert.deepEqual(
+        bundle.contractGate.svgLinkReports.map((report) => ({
+            fileName: report.fileName,
+            documentKind: report.documentKind,
+            status: report.status,
+            missingElementCount: report.summary.missingElementCount,
+            orphanElementCount: report.summary.orphanElementCount,
+            unresolvedReferenceCount: report.summary.unresolvedReferenceCount
+        })),
+        [
+            {
+                fileName: 'Main.SchDoc',
+                documentKind: 'schematic',
+                status: 'pass',
+                missingElementCount: 0,
+                orphanElementCount: 0,
+                unresolvedReferenceCount: 0
+            },
+            {
+                fileName: 'Board.PcbDoc',
+                documentKind: 'pcb',
+                status: 'pass',
+                missingElementCount: 0,
+                orphanElementCount: 0,
+                unresolvedReferenceCount: 0
+            }
+        ]
     )
     assert.deepEqual(bundle.statistics.pcb[0].statistics.units, {
         coordinate: 'mil',

@@ -1,0 +1,39 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.host-capabilities.a1",
+    "title": "Altium Toolkit Host Capabilities A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "host", "summary", "capabilities", "diagnostics"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.host-capabilities.a1"
+        },
+        "host": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "capabilities": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "readiness": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "diagnostics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    }
+}

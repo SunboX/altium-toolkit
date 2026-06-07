@@ -716,6 +716,10 @@ export class PrjPcbModelParser {
                 ) ||
                 PrjPcbModelParser.#stringField(fields, 'OutputPath' + index) ||
                 ''
+            const configRows = PrjPcbModelParser.#extractOutputConfigRows(
+                fields,
+                index
+            )
             const row = {
                 index,
                 type,
@@ -740,7 +744,48 @@ export class PrjPcbModelParser {
                 )
             }
             if (targetPath) row.targetPath = targetPath
+            if (configRows.length) row.configRows = configRows
             rows.push(row)
+        }
+
+        return rows
+    }
+
+    /**
+     * Extracts output configuration rows associated with one output index.
+     * @param {Record<string, string | string[]>} fields Output group fields.
+     * @param {number} outputIndex Output row index.
+     * @returns {{ key: string, record: string, fields: Record<string, string> }[]}
+     */
+    static #extractOutputConfigRows(fields, outputIndex) {
+        const rows = []
+        const patterns = [
+            new RegExp('^Configuration' + outputIndex + '_Item\\d+$', 'i'),
+            new RegExp(
+                '^OutputConfiguration(?:Parameter)?' +
+                    outputIndex +
+                    '(?:_Item\\d+)?$',
+                'i'
+            )
+        ]
+
+        for (const key of Object.keys(fields || {}).sort((left, right) =>
+            left.localeCompare(right, undefined, { numeric: true })
+        )) {
+            if (!patterns.some((pattern) => pattern.test(key))) continue
+            const values = Array.isArray(fields[key])
+                ? fields[key]
+                : [fields[key]]
+            for (const value of values) {
+                const parsed = PrjPcbModelParser.#parsePipeFields(value)
+                const record = parsed.Record || ''
+                delete parsed.Record
+                rows.push({
+                    key,
+                    record,
+                    fields: parsed
+                })
+            }
         }
 
         return rows

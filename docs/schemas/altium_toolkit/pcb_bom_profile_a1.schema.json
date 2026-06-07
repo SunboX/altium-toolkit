@@ -1,0 +1,48 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.pcb.bom-profile.a1",
+    "title": "Altium Toolkit PCB BOM Profile A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "source",
+        "summary",
+        "groups",
+        "components",
+        "exclusions"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.pcb.bom-profile.a1"
+        },
+        "source": {
+            "type": "string"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "groups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "components": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "exclusions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    }
+}

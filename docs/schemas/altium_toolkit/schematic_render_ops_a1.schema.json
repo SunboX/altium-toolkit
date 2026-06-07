@@ -1,0 +1,55 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.schematic.render-ops.a1",
+    "title": "Altium Toolkit Schematic Render Operations A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "profile", "coordinateSpace", "summary", "records"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.schematic.render-ops.a1"
+        },
+        "profile": {
+            "type": "string"
+        },
+        "coordinateSpace": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "records": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": [
+                    "elementKey",
+                    "recordId",
+                    "primitive",
+                    "operations"
+                ],
+                "properties": {
+                    "elementKey": {
+                        "type": "string"
+                    },
+                    "recordId": {
+                        "type": "string"
+                    },
+                    "primitive": {
+                        "type": "string"
+                    },
+                    "operations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

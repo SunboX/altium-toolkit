@@ -5,17 +5,24 @@
 import { AltiumLayoutParser } from './AltiumLayoutParser.mjs'
 import { NormalizedModelSchema } from './NormalizedModelSchema.mjs'
 import { PcbBoardRegionSemanticsParser } from './PcbBoardRegionSemanticsParser.mjs'
+import { PcbBomProfileBuilder } from './PcbBomProfileBuilder.mjs'
 import { PcbComponentAnnotationNormalizer } from './PcbComponentAnnotationNormalizer.mjs'
 import { PcbComponentBodyPlacementNormalizer } from './PcbComponentBodyPlacementNormalizer.mjs'
+import { PcbComponentKindPolicy } from './PcbComponentKindPolicy.mjs'
 import { PcbComponentPrimitiveIndexer } from './PcbComponentPrimitiveIndexer.mjs'
 import { PcbCustomPadShapeParser } from './PcbCustomPadShapeParser.mjs'
 import { PcbDimensionParser } from './PcbDimensionParser.mjs'
+import { PcbLayerStackReadModelBuilder } from './PcbLayerStackReadModelBuilder.mjs'
 import { PcbMechanicalLayerPairParser } from './PcbMechanicalLayerPairParser.mjs'
 import { PcbDefaultsParser } from './PcbDefaultsParser.mjs'
 import { PcbMaskPasteResolver } from './PcbMaskPasteResolver.mjs'
 import { PcbOutlineRecovery } from './PcbOutlineRecovery.mjs'
 import { PcbOwnershipGraphBuilder } from './PcbOwnershipGraphBuilder.mjs'
+import { PcbPlacedFootprintManifestBuilder } from './PcbPlacedFootprintManifestBuilder.mjs'
 import { PcbPickPlacePositionResolver } from './PcbPickPlacePositionResolver.mjs'
+import { PcbPolygonRecordParser } from './PcbPolygonRecordParser.mjs'
+import { PcbReviewMetadataBuilder } from './PcbReviewMetadataBuilder.mjs'
+import { PcbRigidFlexTopologyBuilder } from './PcbRigidFlexTopologyBuilder.mjs'
 import { PcbRouteAnalysisBuilder } from './PcbRouteAnalysisBuilder.mjs'
 import { PcbRuleParser } from './PcbRuleParser.mjs'
 import { PcbSpecialStringResolver } from './PcbSpecialStringResolver.mjs'
@@ -85,11 +92,6 @@ export class PcbModelParser {
                 PcbModelParser.#publicComponentRecord(component)
             )
         )
-        const polygonRecords = records.filter(
-            (record) =>
-                record.sourceStream === 'Polygons6/Data' &&
-                getField(record.fields, 'KIND0')
-        )
         const fallbackBoardOutline = AltiumLayoutParser.parseBoardOutline(
             boardRecord?.fields || {}
         )
@@ -124,13 +126,7 @@ export class PcbModelParser {
             'pcb-document'
         )
         const dimensions = PcbDimensionParser.parse(records)
-        const polygons = polygonRecords
-            .map((record) => ({
-                layer: getField(record.fields, 'LAYER') || 'UNKNOWN',
-                segments: AltiumLayoutParser.parseBoardOutline(record.fields)
-                    .segments
-            }))
-            .filter((polygon) => polygon.segments.length > 0)
+        const polygons = PcbPolygonRecordParser.parse(records)
         const tracks = PcbModelParser.#annotatePrimitiveNetNames(
             pcbExtraction?.binaryPrimitives?.tracks || [],
             netNameByIndex
@@ -259,6 +255,17 @@ export class PcbModelParser {
             PcbBoardRegionSemanticsParser.summarizeBoardRegions(
                 normalizedPcb.boardRegions
             )
+        const layerStackReadModel = PcbLayerStackReadModelBuilder.build({
+            fileName,
+            boardRecords,
+            streamNames: pcbExtraction?.streamNames || [],
+            layers,
+            primitiveLayers,
+            layerSubstacks,
+            boardRegions: normalizedPcb.boardRegions
+        })
+        const rigidFlexTopology =
+            PcbRigidFlexTopologyBuilder.build(layerStackReadModel)
         const componentBodies =
             PcbComponentBodyPlacementNormalizer.normalizeComponentBodies(
                 extractedComponentBodies,
@@ -292,6 +299,28 @@ export class PcbModelParser {
             differentialPairClasses:
                 differentialPairData.differentialPairClasses
         })
+        const reviewMetadata = PcbReviewMetadataBuilder.build({
+            routeAnalysis,
+            embeddedModels: extractedEmbeddedModels,
+            componentBodies,
+            layers,
+            primitiveLayers,
+            polygons: normalizedPcb.polygons,
+            tracks: normalizedPcb.tracks,
+            arcs: normalizedPcb.arcs,
+            fills: normalizedPcb.fills,
+            vias: normalizedPcb.vias,
+            pads: normalizedPcb.pads,
+            regions: normalizedPcb.regions,
+            shapeBasedRegions: normalizedPcb.shapeBasedRegions
+        })
+        const footprintExtractionManifest =
+            PcbPlacedFootprintManifestBuilder.build({
+                fileName,
+                components: normalizedPcb.components,
+                componentPrimitiveGroups,
+                embeddedModels: extractedEmbeddedModels
+            })
         const statistics = PcbStatisticsBuilder.build({
             ...normalizedPcb,
             layers,
@@ -305,13 +334,21 @@ export class PcbModelParser {
             defaults
         })
         const bom = PcbModelParser.#groupBomRows(
-            componentRecords.map((component) => ({
-                designator: component.designator,
-                pattern: component.pattern,
-                source: component.source,
-                value: component.description || component.pattern
-            }))
+            componentRecords
+                .filter(
+                    (component) =>
+                        component.componentKind?.includeInBom !== false
+                )
+                .map((component) => ({
+                    designator: component.designator,
+                    pattern: component.pattern,
+                    source: component.source,
+                    value: component.description || component.pattern
+                }))
         )
+        const bomProfile = PcbBomProfileBuilder.build(componentRecords, {
+            source: 'pcb-document'
+        })
 
         const diagnostics = [
             {
@@ -366,6 +403,22 @@ export class PcbModelParser {
                         'lines'
                     ) +
                     '.'
+            })
+        }
+
+        for (const issue of layerStackReadModel?.diagnostics || []) {
+            diagnostics.push({
+                severity: issue.severity || 'warning',
+                code: issue.code,
+                message: issue.message
+            })
+        }
+
+        for (const issue of rigidFlexTopology?.diagnostics || []) {
+            diagnostics.push({
+                severity: issue.severity || 'warning',
+                code: issue.code,
+                message: issue.message
             })
         }
 
@@ -555,6 +608,13 @@ export class PcbModelParser {
                 differentialPairClassCount:
                     differentialPairData.differentialPairClasses.length,
                 ruleCount: rules.length,
+                routeReviewGroupCount:
+                    reviewMetadata.summary.routeGroupCount || 0,
+                boardAssemblyViewCount:
+                    reviewMetadata.summary.boardAssemblyViewCount || 0,
+                extractableFootprintCount:
+                    footprintExtractionManifest.summary
+                        .extractableFootprintCount || 0,
                 dimensionCount: dimensions.length,
                 mechanicalLayerPairCount: mechanicalLayerPairs.length,
                 polygonCount: polygons.length,
@@ -572,6 +632,18 @@ export class PcbModelParser {
                 boardRegionCount: boardRegionSummary.boardRegionCount,
                 flexRegionCount: boardRegionSummary.flexRegionCount,
                 bendingLineCount: boardRegionSummary.bendingLineCount,
+                layerStackSubstackCount:
+                    layerStackReadModel?.summary.substackCount || 0,
+                layerStackBranchCount:
+                    layerStackReadModel?.summary.branchCount || 0,
+                impedanceProfileCount:
+                    layerStackReadModel?.summary.impedanceProfileCount || 0,
+                backdrillSpanCount:
+                    layerStackReadModel?.summary.backdrillSpanCount || 0,
+                cavityRegionCount:
+                    layerStackReadModel?.summary.cavityRegionCount || 0,
+                stiffenerLayerCount:
+                    layerStackReadModel?.summary.stiffenerLayerCount || 0,
                 embeddedModelIssueCount:
                     embeddedModelIntegrity.issues?.length || 0,
                 embeddedFontCount: extractedEmbeddedFonts.length,
@@ -585,6 +657,8 @@ export class PcbModelParser {
                 boardOutline: normalizedPcb.boardOutline,
                 layers,
                 layerSubstacks,
+                ...(layerStackReadModel ? { layerStackReadModel } : {}),
+                ...(rigidFlexTopology ? { rigidFlexTopology } : {}),
                 mechanicalLayerPairs,
                 layerFlipMetadata,
                 boardRegionContexts,
@@ -598,10 +672,13 @@ export class PcbModelParser {
                 rules,
                 ...(defaults ? { defaults } : {}),
                 maskPaste,
+                bomProfile,
                 dimensions,
                 components: normalizedPcb.components,
                 pickPlace: pnp,
                 routeAnalysis,
+                reviewMetadata,
+                footprintExtractionManifest,
                 polygons: normalizedPcb.polygons,
                 fills: normalizedPcb.fills,
                 tracks: normalizedPcb.tracks,
@@ -665,6 +742,12 @@ export class PcbModelParser {
                 const provenance = PcbModelParser.#parseComponentProvenance(
                     record.fields
                 )
+                const componentKind = PcbComponentKindPolicy.parse(
+                    record.fields
+                )
+                const parameters = PcbModelParser.#parseComponentParameters(
+                    record.fields
+                )
 
                 return {
                     componentIndex: index,
@@ -683,6 +766,8 @@ export class PcbModelParser {
                         getField(record.fields, 'SOURCEFOOTPRINTLIBRARY'),
                     description: getField(record.fields, 'SOURCEDESCRIPTION'),
                     height: parseNumericField(record.fields, 'HEIGHT'),
+                    ...(Object.keys(parameters).length ? { parameters } : {}),
+                    ...(componentKind ? { componentKind } : {}),
                     ...(Object.keys(provenance).length ? { provenance } : {}),
                     nameOn: parseBoolean(record.fields.NAMEON),
                     commentOn: parseBoolean(record.fields.COMMENTON)
@@ -755,6 +840,70 @@ export class PcbModelParser {
         )
 
         return nonRedundantKeys.length ? provenance : {}
+    }
+
+    /**
+     * Parses component parameter name/value rows from printable component data.
+     * @param {Record<string, string | string[]>} fields Component fields.
+     * @returns {Record<string, string>}
+     */
+    static #parseComponentParameters(fields) {
+        const parameters = {}
+        const indexes = PcbModelParser.#componentParameterIndexes(fields)
+
+        for (const index of indexes) {
+            const name = PcbModelParser.#firstField(fields, [
+                'PARAMETER' + index + 'NAME',
+                'PARAMETER' + index + '_NAME',
+                'PARAMETERNAME' + index,
+                'PARAMETER_NAME' + index
+            ])
+            const value = PcbModelParser.#firstField(fields, [
+                'PARAMETER' + index + 'VALUE',
+                'PARAMETER' + index + '_VALUE',
+                'PARAMETERVALUE' + index,
+                'PARAMETER_VALUE' + index,
+                'PARAMETER' + index + 'TEXT',
+                'PARAMETERTEXT' + index
+            ])
+            if (!name) continue
+            parameters[name] = value
+        }
+
+        return parameters
+    }
+
+    /**
+     * Collects component parameter indexes from count and field names.
+     * @param {Record<string, string | string[]>} fields Component fields.
+     * @returns {number[]}
+     */
+    static #componentParameterIndexes(fields) {
+        const indexes = new Set()
+        const count =
+            parseNumericField(fields, 'PARAMETERCOUNT') ??
+            parseNumericField(fields, 'PARAMETERSCOUNT')
+
+        if (Number.isInteger(count) && count > 0) {
+            for (let index = 0; index < count; index += 1) {
+                indexes.add(index)
+            }
+        }
+
+        for (const key of Object.keys(fields || {})) {
+            const match = /^PARAMETER_?(\d+)_?(NAME|VALUE|TEXT)$/iu.exec(key)
+            if (match) {
+                indexes.add(Number.parseInt(match[1], 10))
+            }
+            const alternateMatch = /^PARAMETER(NAME|VALUE|TEXT)(\d+)$/iu.exec(
+                key
+            )
+            if (alternateMatch) {
+                indexes.add(Number.parseInt(alternateMatch[2], 10))
+            }
+        }
+
+        return [...indexes].sort((left, right) => left - right)
     }
 
     /**
@@ -1284,6 +1433,21 @@ export class PcbModelParser {
         }
 
         return null
+    }
+
+    /**
+     * Returns the first non-empty printable field value.
+     * @param {Record<string, string | string[]>} fields Source fields.
+     * @param {string[]} keys Candidate keys.
+     * @returns {string}
+     */
+    static #firstField(fields, keys) {
+        for (const key of keys) {
+            const value = getField(fields, key)
+            if (value) return value
+        }
+
+        return ''
     }
 
     /**

@@ -1,0 +1,46 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.project.outjob-digest.a1",
+    "title": "Altium Toolkit Project OutJob Digest A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "summary",
+        "documents",
+        "outputGroups",
+        "expectedArtifacts",
+        "outputsByDocumentPath"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.project.outjob-digest.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "documents": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "outputGroups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "expectedArtifacts": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "outputsByDocumentPath": {
+            "type": "object",
+            "additionalProperties": true
+        }
+    }
+}

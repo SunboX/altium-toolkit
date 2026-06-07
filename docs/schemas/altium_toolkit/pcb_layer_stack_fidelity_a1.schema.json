@@ -1,0 +1,66 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.pcb.layer-stack-fidelity.a1",
+    "title": "Altium Toolkit PCB Layer Stack Fidelity A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "sourceDocument",
+        "summary",
+        "capabilities",
+        "semanticSections",
+        "nativeCacheSections",
+        "interchangeOnlySections",
+        "unsupportedRegeneration",
+        "diagnostics"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.pcb.layer-stack-fidelity.a1"
+        },
+        "sourceDocument": {
+            "type": "string"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "capabilities": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "semanticSections": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "nativeCacheSections": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "interchangeOnlySections": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "unsupportedRegeneration": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "diagnostics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    }
+}

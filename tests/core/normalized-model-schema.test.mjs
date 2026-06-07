@@ -16,6 +16,7 @@ import { DraftsmanDigestParser } from '../../src/core/altium/DraftsmanDigestPars
 import { ProjectAnnotationParser } from '../../src/core/altium/ProjectAnnotationParser.mjs'
 import { ProjectDesignBundleBuilder } from '../../src/core/altium/ProjectDesignBundleBuilder.mjs'
 import { PrjPcbModelParser } from '../../src/core/altium/PrjPcbModelParser.mjs'
+import { PrjScrModelParser } from '../../src/core/altium/PrjScrModelParser.mjs'
 
 /**
  * Encodes text as an ArrayBuffer.
@@ -43,6 +44,10 @@ test('normalized parser roots expose the current schema id', () => {
         'schema-check.PrjPcb',
         '[Design]\nVersion=1.0\n'
     )
+    const scriptProjectModel = PrjScrModelParser.parseText(
+        'schema-check.PrjScr',
+        '[Design]\nVersion=1.0\n'
+    )
     const annotationModel = ProjectAnnotationParser.parseText(
         'schema-check.Annotation',
         '[Annotation1]\nSourceDesignator=U1\nCompiledDesignator=U101\n'
@@ -68,12 +73,13 @@ test('normalized parser roots expose the current schema id', () => {
             pcbModel,
             pcbLibraryModel,
             projectModel,
+            scriptProjectModel,
             annotationModel,
             integratedLibraryModel,
             draftsmanModel,
             designBundleModel
         ].map((model) => model.schema),
-        Array(8).fill(NormalizedModelSchema.CURRENT_SCHEMA_ID)
+        Array(9).fill(NormalizedModelSchema.CURRENT_SCHEMA_ID)
     )
     assert.equal(
         ExportedNormalizedModelSchema.CURRENT_SCHEMA_ID,
@@ -105,6 +111,7 @@ test('machine-readable normalized model schema declares the emitted contract id'
         'pcb',
         'pcb-library',
         'project',
+        'project-script',
         'project-annotation',
         'integrated-library',
         'draftsman',
@@ -115,6 +122,7 @@ test('machine-readable normalized model schema declares the emitted contract id'
         'PcbDoc',
         'PcbLib',
         'PrjPcb',
+        'PrjScr',
         'Annotation',
         'IntLib',
         'PCBDwf',
@@ -195,6 +203,60 @@ test('machine-readable normalized model schema declares parser detail contracts'
         '#/$defs/ownershipSidecar'
     )
     assert.equal(
+        schema.properties.pcb.properties.reviewMetadata.$ref,
+        '#/$defs/pcbReviewMetadata'
+    )
+    assert.equal(
+        schema.properties.pcb.properties.footprintExtractionManifest.$ref,
+        '#/$defs/pcbPlacedFootprintExtraction'
+    )
+    assert.equal(
+        schema.properties.pcb.properties.layerStackReadModel.$ref,
+        '#/$defs/pcbLayerStackReadModel'
+    )
+    assert.equal(
+        schema.properties.pcb.properties.bomProfile.$ref,
+        '#/$defs/pcbBomProfile'
+    )
+    assert.equal(
+        schema.$defs.pcbLayerStackReadModel.properties.fidelityReport.$ref,
+        '#/$defs/pcbLayerStackFidelityReport'
+    )
+    assert.equal(schema.$defs.draftsmanDigest.properties.styles.type, 'object')
+    assert.equal(
+        schema.properties.pcb.properties.rigidFlexTopology.$ref,
+        '#/$defs/pcbRigidFlexTopology'
+    )
+    assert.equal(
+        schema.properties.pcbLibrary.properties.parityReport.$ref,
+        '#/$defs/pcbLibraryParityReport'
+    )
+    assert.equal(
+        schema.properties.pcb.properties.components.items.properties
+            .componentKind.$ref,
+        '#/$defs/componentKindPolicy'
+    )
+    assert.equal(
+        schema.properties.project.properties.outJobDigest.$ref,
+        '#/$defs/projectOutJobDigest'
+    )
+    assert.equal(
+        schema.properties.draftsman.properties.boardViewMetadata.$ref,
+        '#/$defs/draftsmanBoardViewCache'
+    )
+    assert.equal(
+        schema.$defs.draftsmanBoardViewCache.properties.highlightGroups.type,
+        'array'
+    )
+    assert.equal(
+        schema.$defs.draftsmanBoardViewCache.properties.layerTiles.type,
+        'array'
+    )
+    assert.equal(
+        schema.properties.reconciliation.$ref,
+        '#/$defs/projectBomPnpReconciliation'
+    )
+    assert.equal(
         schema.properties.sheets.items.$ref,
         '#/$defs/designBundleSheet'
     )
@@ -202,6 +264,7 @@ test('machine-readable normalized model schema declares parser detail contracts'
         schema.properties.project.properties.documentGraph.$ref,
         '#/$defs/projectDocumentGraph'
     )
+    assert.equal(schema.properties.projectScript.type, 'object')
     assert.equal(schema.properties.annotations.type, 'object')
     assert.equal(
         schema.properties.effectiveVariant.$ref,
@@ -249,6 +312,11 @@ test('machine-readable contract schemas are split for downstream consumers', () 
             'altium-toolkit.ci.artifact-bundle.a1'
         ],
         [
+            '../../docs/schemas/altium_toolkit/contract_gate_a1.schema.json',
+            'altium-toolkit.contract-gate.a1',
+            'altium-toolkit.contract-gate.a1'
+        ],
+        [
             '../../docs/schemas/altium_toolkit/project_document_graph_a1.schema.json',
             'altium-toolkit.project.document-graph.a1',
             'altium-toolkit.project.document-graph.a1'
@@ -267,6 +335,86 @@ test('machine-readable contract schemas are split for downstream consumers', () 
             '../../docs/schemas/altium_toolkit/parser_compatibility_fuzz_a1.schema.json',
             'altium-toolkit.parser-compatibility-fuzz.a1',
             'altium-toolkit.parser-compatibility-fuzz.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/host_capabilities_a1.schema.json',
+            'altium-toolkit.host-capabilities.a1',
+            'altium-toolkit.host-capabilities.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/pcb_review_metadata_a1.schema.json',
+            'altium-toolkit.pcb.review-metadata.a1',
+            'altium-toolkit.pcb.review-metadata.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/pcb_placed_footprint_extraction_a1.schema.json',
+            'altium-toolkit.pcb.placed-footprint-extraction.a1',
+            'altium-toolkit.pcb.placed-footprint-extraction.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/pcblib_parity_a1.schema.json',
+            'altium-toolkit.pcblib.parity.a1',
+            'altium-toolkit.pcblib.parity.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/project_outjob_digest_a1.schema.json',
+            'altium-toolkit.project.outjob-digest.a1',
+            'altium-toolkit.project.outjob-digest.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/library_qa_a1.schema.json',
+            'altium-toolkit.library.qa.a1',
+            'altium-toolkit.library.qa.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/library_merge_plan_a1.schema.json',
+            'altium-toolkit.library.merge-plan.a1',
+            'altium-toolkit.library.merge-plan.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/schematic_render_ops_a1.schema.json',
+            'altium-toolkit.schematic.render-ops.a1',
+            'altium-toolkit.schematic.render-ops.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/project_script_a1.schema.json',
+            'altium-toolkit.project-script.a1',
+            'altium-toolkit.project-script.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/project_bom_pnp_reconciliation_a1.schema.json',
+            'altium-toolkit.project.bom-pnp-reconciliation.a1',
+            'altium-toolkit.project.bom-pnp-reconciliation.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/draftsman_board_view_cache_a1.schema.json',
+            'altium-toolkit.draftsman.board-view-cache.a1',
+            'altium-toolkit.draftsman.board-view-cache.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/pcb_layer_stack_a1.schema.json',
+            'altium-toolkit.pcb.layer-stack.a1',
+            'altium-toolkit.pcb.layer-stack.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/pcb_layer_stack_fidelity_a1.schema.json',
+            'altium-toolkit.pcb.layer-stack-fidelity.a1',
+            'altium-toolkit.pcb.layer-stack-fidelity.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/pcb_bom_profile_a1.schema.json',
+            'altium-toolkit.pcb.bom-profile.a1',
+            'altium-toolkit.pcb.bom-profile.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/schematic_template_extraction_a1.schema.json',
+            'altium-toolkit.schematic.template-extraction.a1',
+            'altium-toolkit.schematic.template-extraction.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/pcb_rigid_flex_topology_a1.schema.json',
+            'altium-toolkit.pcb.rigid-flex-topology.a1',
+            'altium-toolkit.pcb.rigid-flex-topology.a1'
         ]
     ]
 

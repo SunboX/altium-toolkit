@@ -1,0 +1,98 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.pcb.layer-stack.a1",
+    "title": "Altium Toolkit PCB Layer Stack A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "summary",
+        "source",
+        "layers",
+        "substacks",
+        "branches",
+        "impedanceProfiles",
+        "transmissionLines",
+        "viaSpans",
+        "backdrillSpans",
+        "diagnostics"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.pcb.layer-stack.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "source": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "layers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "substacks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "branches": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "impedanceProfiles": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "transmissionLines": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "viaSpans": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "backdrillSpans": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "fidelityReport": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.pcb.layer-stack-fidelity.a1"
+                }
+            }
+        },
+        "diagnostics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    }
+}

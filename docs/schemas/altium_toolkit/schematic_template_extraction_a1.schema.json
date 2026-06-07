@@ -1,0 +1,37 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.schematic.template-extraction.a1",
+    "title": "Altium Toolkit Schematic Template Extraction A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "sourceDocument",
+        "template",
+        "summary",
+        "diagnostics"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.schematic.template-extraction.a1"
+        },
+        "sourceDocument": {
+            "type": "string"
+        },
+        "template": {
+            "type": ["object", "null"],
+            "additionalProperties": true
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "diagnostics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    }
+}

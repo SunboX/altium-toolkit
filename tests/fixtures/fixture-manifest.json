@@ -13,7 +13,8 @@
                 "schematic.rounded-rectangles",
                 "schematic.ieee-symbols",
                 "schematic.polyline-markers",
-                "schematic.text-frames"
+                "schematic.text-frames",
+                "schematic.render-ops"
             ],
             "contracts": {
                 "parser": [
@@ -26,7 +27,8 @@
                 "svg": [
                     "schematic.svg.shapes",
                     "schematic.svg.semantics",
-                    "schematic.svg.text-geometry"
+                    "schematic.svg.text-geometry",
+                    "schematic.render-ops"
                 ],
                 "schemas": [
                     "altium-toolkit.normalized-model.a1",
@@ -51,7 +53,15 @@
                 "pcb.planning-statistics",
                 "pcb.route-analysis",
                 "pcb.local-pad-stack",
-                "pcb.legacy-cutouts"
+                "pcb.legacy-cutouts",
+                "pcb.review-metadata",
+                "pcb.polygon-realization",
+                "pcb.route-highlight-profiles",
+                "pcb.drill-visual-review",
+                "pcb.placed-footprint-extraction",
+                "pcb.component-kind-policy",
+                "pcb.bom-profile",
+                "pcb.layer-stack-fidelity"
             ],
             "contracts": {
                 "parser": [
@@ -59,6 +69,14 @@
                     "pcb.drills",
                     "pcb.board-regions",
                     "pcb.route-analysis",
+                    "pcb.review-metadata",
+                    "pcb.polygon-realization",
+                    "pcb.route-highlight-profiles",
+                    "pcb.drill-visual-review",
+                    "pcb.placed-footprint-extraction",
+                    "pcb.component-kind-policy",
+                    "pcb.bom-profile",
+                    "pcb.layer-stack-fidelity",
                     "pcb.pad-local-stack",
                     "pcb.region-cutout-classification"
                 ],
@@ -69,7 +87,11 @@
                 ],
                 "schemas": [
                     "altium-toolkit.normalized-model.a1",
-                    "altium-toolkit.pcb.svg.semantics.a1"
+                    "altium-toolkit.pcb.svg.semantics.a1",
+                    "altium-toolkit.pcb.review-metadata.a1",
+                    "altium-toolkit.pcb.placed-footprint-extraction.a1",
+                    "altium-toolkit.pcb.bom-profile.a1",
+                    "altium-toolkit.pcb.layer-stack-fidelity.a1"
                 ],
                 "diagnostics": [
                     "pcb.board-region.recovered",
@@ -86,17 +108,31 @@
             "coverage": [
                 "library.asset-manifest",
                 "library.symbol-extraction",
-                "library.search-index"
+                "library.search-index",
+                "library.pcblib-parity",
+                "library.collection-qa",
+                "library.database-audit",
+                "schematic.template-extraction"
             ],
             "contracts": {
-                "parser": ["library.render-manifest", "library.search-index"],
+                "parser": [
+                    "library.render-manifest",
+                    "library.search-index",
+                    "library.pcblib-parity",
+                    "library.collection-qa",
+                    "library.database-audit",
+                    "schematic.template-extraction"
+                ],
                 "svg": [
                     "schematic-library.svg.symbols",
                     "pcb-library.svg.footprints"
                 ],
                 "schemas": [
                     "altium-toolkit.normalized-model.a1",
-                    "altium-toolkit.library.render-manifest.a1"
+                    "altium-toolkit.library.render-manifest.a1",
+                    "altium-toolkit.pcblib.parity.a1",
+                    "altium-toolkit.library.qa.a1",
+                    "altium-toolkit.schematic.template-extraction.a1"
                 ],
                 "diagnostics": [
                     "library.asset.fallback",
@@ -115,18 +151,27 @@
                 "project.generated-outputs",
                 "project.harness-files",
                 "ci.artifact-bundle",
+                "project.outjob-digest",
+                "project.bom-pnp-reconciliation",
+                "ci.contract-gate",
                 "units.contract"
             ],
             "contracts": {
                 "parser": [
                     "project.document-graph",
                     "project.output-references",
+                    "project.outjob-digest",
+                    "project.bom-pnp-reconciliation",
+                    "ci.contract-gate",
                     "project.units"
                 ],
                 "svg": ["schematic.svg.semantics", "pcb.svg.layer-views"],
                 "schemas": [
                     "altium-toolkit.project.document-graph.a1",
-                    "altium-toolkit.ci.artifact-bundle.a1"
+                    "altium-toolkit.ci.artifact-bundle.a1",
+                    "altium-toolkit.contract-gate.a1",
+                    "altium-toolkit.project.outjob-digest.a1",
+                    "altium-toolkit.project.bom-pnp-reconciliation.a1"
                 ],
                 "diagnostics": [
                     "project.document.missing-path",
@@ -143,19 +188,31 @@
             "coverage": [
                 "draftsman.digest",
                 "draftsman.unsupported-items",
-                "draftsman.legacy-compression"
+                "draftsman.legacy-compression",
+                "draftsman.page-options",
+                "draftsman.image-payloads",
+                "draftsman.board-view-cache",
+                "draftsman.typed-styles"
             ],
             "contracts": {
                 "parser": [
                     "draftsman.digest",
+                    "draftsman.page-options",
+                    "draftsman.image-payloads",
+                    "draftsman.board-view-cache",
+                    "draftsman.typed-styles",
                     "draftsman.lz4",
                     "draftsman.unsupported-raw-xml"
                 ],
                 "svg": [],
-                "schemas": ["altium-toolkit.draftsman.digest.a1"],
+                "schemas": [
+                    "altium-toolkit.draftsman.digest.a1",
+                    "altium-toolkit.draftsman.board-view-cache.a1"
+                ],
                 "diagnostics": [
                     "draftsman.digest.unsupported-container",
                     "draftsman.digest.unsupported-item",
+                    "draftsman.image-payload.missing-bytes",
                     "draftsman.digest.lz4-container"
                 ]
             }
@@ -169,13 +226,25 @@
             "coverage": [
                 "parser.fuzz-record-ordering",
                 "parser.fuzz-malformed-sidecars",
-                "parser.fuzz-odd-encodings"
+                "parser.fuzz-odd-encodings",
+                "host.capability-diagnostics",
+                "host.readiness-report"
             ],
             "contracts": {
-                "parser": ["parser.compatibility-fuzz"],
+                "parser": [
+                    "parser.compatibility-fuzz",
+                    "host.capability-diagnostics",
+                    "host.readiness-report"
+                ],
                 "svg": [],
-                "schemas": ["altium-toolkit.parser-compatibility-fuzz.a1"],
-                "diagnostics": ["parser.compatibility-fuzz"]
+                "schemas": [
+                    "altium-toolkit.parser-compatibility-fuzz.a1",
+                    "altium-toolkit.host-capabilities.a1"
+                ],
+                "diagnostics": [
+                    "parser.compatibility-fuzz",
+                    "host.capability.*.unsupported"
+                ]
             }
         }
     ]

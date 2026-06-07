@@ -15,6 +15,18 @@ export class SvgModelCrossLinkValidator {
      * @returns {object}
      */
     static validate(documentModel, svgMarkup) {
+        return SvgModelCrossLinkValidator.validateSet(documentModel, [
+            svgMarkup
+        ])
+    }
+
+    /**
+     * Validates a set of semantic SVG fragments against one normalized model.
+     * @param {object} documentModel Normalized schematic or PCB model.
+     * @param {string[]} svgMarkups SVG markup strings.
+     * @returns {object}
+     */
+    static validateSet(documentModel, svgMarkups) {
         const documentKind =
             SvgModelCrossLinkValidator.#documentKind(documentModel)
         const expectedElements =
@@ -22,7 +34,9 @@ export class SvgModelCrossLinkValidator {
         const expectedByKey = new Map(
             expectedElements.map((element) => [element.elementKey, element])
         )
-        const svgElements = SvgModelCrossLinkValidator.#svgElements(svgMarkup)
+        const svgElements = (svgMarkups || []).flatMap((svgMarkup) =>
+            SvgModelCrossLinkValidator.#svgElements(svgMarkup)
+        )
         const renderedKeys = new Set(
             svgElements.map((element) => element.elementKey).filter(Boolean)
         )
@@ -41,12 +55,13 @@ export class SvgModelCrossLinkValidator {
                 documentModel,
                 svgElements
             )
-        const metadata = SvgModelCrossLinkValidator.#metadata(svgMarkup)
+        const metadata = SvgModelCrossLinkValidator.#metadataSet(svgMarkups)
 
         return {
             schema: SvgModelCrossLinkValidator.SCHEMA,
             documentKind,
             summary: {
+                svgCount: (svgMarkups || []).length,
                 expectedElementCount: expectedElements.length,
                 renderedElementCount: renderedKeys.size,
                 linkedElementCount:
@@ -372,6 +387,24 @@ export class SvgModelCrossLinkValidator {
             }
         } catch {
             return { schema: '', elements: [] }
+        }
+    }
+
+    /**
+     * Extracts semantic metadata from a set of SVG fragments.
+     * @param {string[]} svgMarkups SVG markup strings.
+     * @returns {{ schema: string, elements: object[] }}
+     */
+    static #metadataSet(svgMarkups) {
+        const metadataRows = (svgMarkups || []).map((svgMarkup) =>
+            SvgModelCrossLinkValidator.#metadata(svgMarkup)
+        )
+        const schema =
+            metadataRows.find((metadata) => metadata.schema)?.schema || ''
+
+        return {
+            schema,
+            elements: metadataRows.flatMap((metadata) => metadata.elements)
         }
     }
 

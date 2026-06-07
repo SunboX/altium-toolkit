@@ -17,11 +17,22 @@ Every parser result is an array of elements with a `type` field. The adapter
 emits Circuit JSON elements for source project metadata, source components,
 ports, nets, schematic symbols, schematic lines, schematic text, PCB boards,
 PCB components, PCB pads, PCB traces, and PCB vias where those structures are
-available in the source document.
+available in the source document. Altium Toolkit sidecar contracts that do not
+map to upstream Circuit JSON element families are serialized as custom
+`altium_toolkit_*` elements. Each sidecar element includes a stable
+`altium_toolkit_sidecar_id`, a `source_document` identity block, the sidecar
+`schema`, and the original normalized sidecar object in `payload`.
+
+Current custom sidecar element types include PCB layer stacks, rigid-flex
+topology, PCB review metadata, placed-footprint extraction manifests, PCB
+library parity reports, project OutJob digests, project document graphs,
+BOM/PnP reconciliation reports, Draftsman image payloads, Draftsman board-view
+metadata, contract-gate reports, and host-capability diagnostics.
 
 Use `CircuitJsonModelSchema.isModel(result)` to validate that a value is a
 Circuit JSON array. `JSON.stringify(result)` serializes only the Circuit JSON
-elements; compatibility fields are intentionally omitted from serialized JSON.
+elements, including custom `altium_toolkit_*` sidecar elements; compatibility
+fields are intentionally omitted from serialized JSON.
 
 ## Renderer Compatibility Fields
 
@@ -294,6 +305,12 @@ component bodies. `pcbLibrary.renderManifest` exposes stable footprint SVG keys,
 per-layer SVG keys, layer descriptors, and embedded asset descriptors. Asset
 descriptors may include native format, wrapper type, byte size, checksum, and
 structured diagnostics when extraction supplied that metadata.
+`LibraryRenderManifestBuilder.buildSchematicExtractionManifest()` adds a
+read-only database-library audit plan for placed schematic symbols, including
+preserved versus stripped parameter names and stripped implementation keys.
+`LibraryRenderManifestBuilder.buildSchematicTemplateExtractionManifest()`
+summarizes template identity, owned records, fonts, title-block fields, and
+missing template parameters without generating template files.
 `LibrarySearchIndex` provides exact, keyword, and fuzzy symbol/footprint lookup
 helpers over parsed library read models.
 
@@ -340,6 +357,13 @@ metadata sidecar as the composite SVG, with `view.kind` set to `layer`, a
 single included layer id, and `layerSet.layerView` describing the exported
 layer.
 
+PCB documents expose `pcb.bomProfile` for PCB-only BOM grouping and parameter
+alias normalization. `pcb.layerStackReadModel.fidelityReport` classifies
+semantic layer-stack data, preserved native cache evidence, interchange-only
+fields, and unsupported native-regeneration reasons. Draftsman digests preserve
+typed font-style records, note geometry, note border/fill state, and picture
+geometry when those fields are available in the container.
+
 External model placements in the 3D scene description include a `projection`
 diagnostic object. The `source` explains whether bounds came from an authored
 projection override, resolved model bounds, nearby pad-span fallback,
@@ -367,5 +391,6 @@ Consumers should treat unknown fields as additive within the same schema id.
 Parser fixes may add detail, but existing field names and shapes should stay
 compatible unless a new schema id explicitly documents a model migration.
 Focused machine-readable schemas are available under
-`docs/schemas/altium_toolkit/` for the normalized root, project bundle, netlist
-JSON, schematic SVG semantic metadata, and PCB SVG semantic metadata contracts.
+`docs/schemas/altium_toolkit/` for the normalized root plus focused project,
+netlist, SVG, PCB review, layer-stack, Draftsman, library, and CI/reporting
+contracts.

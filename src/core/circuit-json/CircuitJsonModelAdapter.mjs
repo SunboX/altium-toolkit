@@ -8,6 +8,68 @@ import { CircuitJsonModelAdapterPcbElements } from './CircuitJsonModelAdapterPcb
 
 const Primitives = CircuitJsonModelAdapterPrimitives
 const PcbElements = CircuitJsonModelAdapterPcbElements
+const ALTIUM_TOOLKIT_SIDECARS = [
+    {
+        type: 'altium_toolkit_pcb_layer_stack',
+        paths: [['pcb', 'layerStackReadModel']],
+        schema: 'altium-toolkit.pcb.layer-stack.a1'
+    },
+    {
+        type: 'altium_toolkit_pcb_rigid_flex_topology',
+        paths: [['pcb', 'rigidFlexTopology']],
+        schema: 'altium-toolkit.pcb.rigid-flex-topology.a1'
+    },
+    {
+        type: 'altium_toolkit_pcb_review_metadata',
+        paths: [['pcb', 'reviewMetadata']],
+        schema: 'altium-toolkit.pcb.review-metadata.a1'
+    },
+    {
+        type: 'altium_toolkit_pcb_placed_footprint_extraction',
+        paths: [['pcb', 'footprintExtractionManifest']],
+        schema: 'altium-toolkit.pcb.placed-footprint-extraction.a1'
+    },
+    {
+        type: 'altium_toolkit_pcblib_parity',
+        paths: [['pcbLibrary', 'parityReport']],
+        schema: 'altium-toolkit.pcblib.parity.a1'
+    },
+    {
+        type: 'altium_toolkit_project_outjob_digest',
+        paths: [['project', 'outJobDigest']],
+        schema: 'altium-toolkit.project.outjob-digest.a1'
+    },
+    {
+        type: 'altium_toolkit_project_document_graph',
+        paths: [['project', 'documentGraph'], ['documentGraph']],
+        schema: 'altium-toolkit.project.document-graph.a1'
+    },
+    {
+        type: 'altium_toolkit_project_bom_pnp_reconciliation',
+        paths: [['reconciliation']],
+        schema: 'altium-toolkit.project.bom-pnp-reconciliation.a1'
+    },
+    {
+        type: 'altium_toolkit_draftsman_image_payloads',
+        paths: [['draftsman', 'imagePayloads']],
+        schema: 'altium-toolkit.draftsman.image-payloads.a1'
+    },
+    {
+        type: 'altium_toolkit_draftsman_board_view_metadata',
+        paths: [['draftsman', 'boardViewMetadata']],
+        schema: 'altium-toolkit.draftsman.board-view-cache.a1'
+    },
+    {
+        type: 'altium_toolkit_contract_gate',
+        paths: [['contractGate']],
+        schema: 'altium-toolkit.contract-gate.a1'
+    },
+    {
+        type: 'altium_toolkit_host_capabilities',
+        paths: [['hostCapabilities']],
+        schema: 'altium-toolkit.host-capabilities.a1'
+    }
+]
 
 /**
  * Converts between legacy renderer models and Circuit JSON element arrays.
@@ -55,6 +117,7 @@ export class CircuitJsonModelAdapter {
         }
 
         CircuitJsonModelAdapter.#appendBom(circuitJson, model, idScope)
+        CircuitJsonModelAdapter.#appendSidecars(circuitJson, model, idScope)
         CircuitJsonModelAdapter.#attachCompatibility(circuitJson, model)
 
         return CircuitJsonModelSchema.attach(circuitJson)
@@ -648,6 +711,107 @@ export class CircuitJsonModelAdapter {
                     ftype: 'simple_chip'
                 })
             }
+        }
+    }
+
+    /**
+     * Appends serialized Altium Toolkit sidecar elements.
+     * @param {object[]} circuitJson
+     * @param {Record<string, unknown>} model
+     * @param {string} idScope
+     * @returns {void}
+     */
+    static #appendSidecars(circuitJson, model, idScope) {
+        for (const descriptor of ALTIUM_TOOLKIT_SIDECARS) {
+            const payload = CircuitJsonModelAdapter.#sidecarPayload(
+                model,
+                descriptor.paths
+            )
+            if (!payload) continue
+
+            circuitJson.push(
+                CircuitJsonModelAdapter.#sidecarElement(
+                    descriptor,
+                    payload,
+                    model,
+                    idScope
+                )
+            )
+        }
+    }
+
+    /**
+     * Builds one custom Altium Toolkit Circuit JSON sidecar element.
+     * @param {{ type: string, schema: string }} descriptor
+     * @param {Record<string, unknown>} payload
+     * @param {Record<string, unknown>} model
+     * @param {string} idScope
+     * @returns {object}
+     */
+    static #sidecarElement(descriptor, payload, model, idScope) {
+        return {
+            type: descriptor.type,
+            altium_toolkit_sidecar_id: Primitives.id(idScope, [
+                'altium_toolkit_sidecar',
+                descriptor.type
+            ]),
+            source_document: CircuitJsonModelAdapter.#sourceDocument(model),
+            schema: Primitives.string(payload.schema, descriptor.schema),
+            payload
+        }
+    }
+
+    /**
+     * Returns the first available sidecar payload from candidate model paths.
+     * @param {Record<string, unknown>} model
+     * @param {string[][]} paths
+     * @returns {Record<string, unknown> | null}
+     */
+    static #sidecarPayload(model, paths) {
+        for (const path of paths) {
+            const payload = CircuitJsonModelAdapter.#valueAtPath(model, path)
+            if (CircuitJsonModelAdapter.#isSidecarPayload(payload)) {
+                return payload
+            }
+        }
+        return null
+    }
+
+    /**
+     * Returns a nested object value.
+     * @param {Record<string, unknown>} value
+     * @param {string[]} path
+     * @returns {unknown}
+     */
+    static #valueAtPath(value, path) {
+        return path.reduce(
+            (current, key) =>
+                current && typeof current === 'object'
+                    ? current[key]
+                    : undefined,
+            value
+        )
+    }
+
+    /**
+     * Returns true when a value can be serialized as a sidecar payload.
+     * @param {unknown} value
+     * @returns {value is Record<string, unknown>}
+     */
+    static #isSidecarPayload(value) {
+        return !!value && typeof value === 'object' && !Array.isArray(value)
+    }
+
+    /**
+     * Builds the source document identity for sidecar elements.
+     * @param {Record<string, unknown>} model
+     * @returns {{ kind: string, file_type: string, file_name: string }}
+     */
+    static #sourceDocument(model) {
+        return {
+            kind: Primitives.string(model.kind, 'document'),
+            file_type: Primitives.string(model.fileType, ''),
+            file_name: Primitives.string(model.fileName, '')
         }
     }
 

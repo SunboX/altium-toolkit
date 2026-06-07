@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { NormalizedModelSchema } from './NormalizedModelSchema.mjs'
+import { DraftsmanBoardViewMetadataBuilder } from './DraftsmanBoardViewMetadataBuilder.mjs'
+import { DraftsmanImagePayloadManifestBuilder } from './DraftsmanImagePayloadManifestBuilder.mjs'
 
 /**
  * Builds a read-only digest for Draftsman drawing containers.
@@ -35,9 +37,15 @@ export class DraftsmanDigestParser {
 
         const rootFields = DraftsmanDigestParser.#rootFields(text)
         const pages = DraftsmanDigestParser.#pages(text)
+        const styles = DraftsmanDigestParser.#styleCatalog(text)
         const unsupportedRawItemCount = pages.reduce(
             (total, page) => total + page.unsupportedRawItems.length,
             0
+        )
+        const imagePayloads = DraftsmanImagePayloadManifestBuilder.build(pages)
+        const boardViewMetadata = DraftsmanBoardViewMetadataBuilder.build(
+            text,
+            pages
         )
         const diagnostics =
             unsupportedRawItemCount > 0
@@ -59,7 +67,11 @@ export class DraftsmanDigestParser {
                 rootFields.PcbDoc ||
                 rootFields.DocumentName ||
                 '',
+            documentOptions: DraftsmanDigestParser.#documentOptions(rootFields),
+            styles,
             pages,
+            imagePayloads,
+            boardViewMetadata,
             diagnostics
         })
     }
@@ -81,7 +93,7 @@ export class DraftsmanDigestParser {
     /**
      * Builds the normalized parser root model.
      * @param {string} fileName File name.
-     * @param {{ sourceDocumentName: string, pages: object[], diagnostics: object[] }} digest Digest payload.
+     * @param {{ sourceDocumentName: string, documentOptions?: object, styles?: object, pages: object[], imagePayloads?: object, diagnostics: object[] }} digest Digest payload.
      * @returns {object}
      */
     static #model(fileName, digest) {
@@ -97,6 +109,7 @@ export class DraftsmanDigestParser {
             (total, page) => total + page.unsupportedRawItems.length,
             0
         )
+        const fontStyleCount = (digest.styles?.fontStyles || []).length
 
         return NormalizedModelSchema.attach({
             kind: 'draftsman',
@@ -107,13 +120,20 @@ export class DraftsmanDigestParser {
                 pageCount: digest.pages.length,
                 noteCount,
                 imageCount,
+                fontStyleCount,
                 unsupportedRawItemCount
             },
             diagnostics: digest.diagnostics,
             draftsman: {
                 schema: DraftsmanDigestParser.DIGEST_SCHEMA,
                 sourceDocumentName: digest.sourceDocumentName,
+                documentOptions: digest.documentOptions,
+                styles: digest.styles,
                 pages: digest.pages,
+                imagePayloads: digest.imagePayloads,
+                ...(digest.boardViewMetadata
+                    ? { boardViewMetadata: digest.boardViewMetadata }
+                    : {}),
                 indexes: DraftsmanDigestParser.#indexes(digest.pages)
             },
             bom: []
@@ -128,11 +148,21 @@ export class DraftsmanDigestParser {
     static #indexes(pages) {
         const pagesById = {}
         const pagesByName = {}
+        const itemsById = {}
+        const imagesById = {}
         for (const page of pages) {
             if (page.id) pagesById[page.id] = page.index
             if (page.name) pagesByName[page.name] = page.index
+            for (const [index, item] of (page.items || []).entries()) {
+                if (!item.id) continue
+                itemsById[item.id] = { pageIndex: page.index, index }
+            }
+            for (const [index, image] of (page.images || []).entries()) {
+                if (!image.id) continue
+                imagesById[image.id] = { pageIndex: page.index, index }
+            }
         }
-        return { pagesById, pagesByName }
+        return { pagesById, pagesByName, itemsById, imagesById }
     }
 
     /**
@@ -408,6 +438,30 @@ export class DraftsmanDigestParser {
     }
 
     /**
+     * Normalizes document-level display and sheet options.
+     * @param {Record<string, string>} fields Root element attributes.
+     * @returns {object}
+     */
+    static #documentOptions(fields) {
+        return DraftsmanDigestParser.#stripEmpty({
+            defaultFontName:
+                fields.DefaultFontName ||
+                fields.FontName ||
+                fields.DefaultFont ||
+                undefined,
+            documentId: fields.DocumentId || fields.DocumentID,
+            revision: fields.Revision || fields.DocumentRevision,
+            gridSize: DraftsmanDigestParser.#number(fields.GridSize),
+            showGrid: DraftsmanDigestParser.#boolean(fields.ShowGrid),
+            sheetColor: fields.SheetColor,
+            backgroundColor: fields.BackgroundColor,
+            borderColor: fields.BorderColor,
+            gridColor: fields.GridColor,
+            fields
+        })
+    }
+
+    /**
      * Extracts page digests.
      * @param {string} text Decoded payload.
      * @returns {object[]}
@@ -437,17 +491,51 @@ export class DraftsmanDigestParser {
      */
     static #page(fields, body, index) {
         const name = fields.Name || fields.Title || fields.Id || ''
-        return {
+        return DraftsmanDigestParser.#stripEmpty({
             index,
             id: fields.Id || fields.ID || '',
             name,
             title: fields.Title || name || 'Page ' + (index + 1),
+            pageSetup: DraftsmanDigestParser.#pageSetup(fields),
             titleBlocks: DraftsmanDigestParser.#titleBlocks(body),
             notes: DraftsmanDigestParser.#notes(body),
             images: DraftsmanDigestParser.#images(body),
+            zones: DraftsmanDigestParser.#zones(body),
+            items: DraftsmanDigestParser.#items(body),
             unsupportedRawItems:
                 DraftsmanDigestParser.#unsupportedRawItems(body)
-        }
+        })
+    }
+
+    /**
+     * Normalizes page dimensions and margins.
+     * @param {Record<string, string>} fields Page attributes.
+     * @returns {object}
+     */
+    static #pageSetup(fields) {
+        const margins = DraftsmanDigestParser.#stripEmpty({
+            left: DraftsmanDigestParser.#number(fields.MarginLeft),
+            right: DraftsmanDigestParser.#number(fields.MarginRight),
+            top: DraftsmanDigestParser.#number(fields.MarginTop),
+            bottom: DraftsmanDigestParser.#number(fields.MarginBottom)
+        })
+
+        const setup = DraftsmanDigestParser.#stripEmpty({
+            width: DraftsmanDigestParser.#number(
+                fields.Width || fields.SheetWidth
+            ),
+            height: DraftsmanDigestParser.#number(
+                fields.Height || fields.SheetHeight
+            ),
+            standardSheetSize:
+                fields.StandardSheetSize || fields.SheetSize || undefined,
+            sheetTemplate: fields.SheetTemplate || fields.Template,
+            borderStyle: fields.BorderStyle,
+            orientation: fields.Orientation,
+            margins: Object.keys(margins).length ? margins : undefined
+        })
+
+        return Object.keys(setup).length ? setup : undefined
     }
 
     /**
@@ -474,14 +562,33 @@ export class DraftsmanDigestParser {
      */
     static #notes(body) {
         return DraftsmanDigestParser.#tagFields(body, ['Note', 'Text']).map(
-            (fields) =>
-                DraftsmanDigestParser.#stripEmpty({
+            (fields) => {
+                const border = DraftsmanDigestParser.#stripEmpty({
+                    width: DraftsmanDigestParser.#number(fields.BorderWidth),
+                    style: DraftsmanDigestParser.#lower(fields.BorderStyle),
+                    color: fields.BorderColor,
+                    visible: DraftsmanDigestParser.#boolean(fields.ShowBorder)
+                })
+
+                return DraftsmanDigestParser.#stripEmpty({
                     id: fields.Id || fields.ID,
                     text: fields.Text || fields.Value || fields.Name,
                     x: DraftsmanDigestParser.#number(fields.X),
                     y: DraftsmanDigestParser.#number(fields.Y),
+                    width: DraftsmanDigestParser.#number(fields.Width),
+                    height: DraftsmanDigestParser.#number(fields.Height),
+                    alignment: DraftsmanDigestParser.#lower(
+                        fields.Alignment || fields.HorizontalAlignment
+                    ),
+                    verticalAlignment: DraftsmanDigestParser.#lower(
+                        fields.VerticalAlignment
+                    ),
+                    fontStyleId: fields.FontStyleId || fields.FontStyleID,
+                    border: Object.keys(border).length ? border : undefined,
+                    fillColor: fields.FillColor || fields.AreaColor,
                     fields
                 })
+            }
         )
     }
 
@@ -497,9 +604,103 @@ export class DraftsmanDigestParser {
                     id: fields.Id || fields.ID,
                     name: fields.Name || fields.FileName,
                     nativeFormat: fields.NativeFormat || fields.Format,
+                    wrapperType: fields.WrapperType || fields.Wrapper,
                     byteSize: DraftsmanDigestParser.#integer(fields.ByteSize),
+                    x: DraftsmanDigestParser.#number(fields.X),
+                    y: DraftsmanDigestParser.#number(fields.Y),
+                    width: DraftsmanDigestParser.#number(fields.Width),
+                    height: DraftsmanDigestParser.#number(fields.Height),
+                    rotation: DraftsmanDigestParser.#number(fields.Rotation),
                     fields
                 })
+        )
+    }
+
+    /**
+     * Extracts typed style rows from a Draftsman text container.
+     * @param {string} text Decoded payload.
+     * @returns {{ fontStyles: object[] }}
+     */
+    static #styleCatalog(text) {
+        return {
+            fontStyles: DraftsmanDigestParser.#shallowTagFields(text, [
+                'FontStyle'
+            ]).map((fields) =>
+                DraftsmanDigestParser.#stripEmpty({
+                    id: fields.Id || fields.ID,
+                    fontName:
+                        fields.FontName || fields.Name || fields.FamilyName,
+                    size: DraftsmanDigestParser.#number(
+                        fields.Size || fields.FontSize
+                    ),
+                    bold: DraftsmanDigestParser.#boolean(fields.Bold),
+                    italic: DraftsmanDigestParser.#boolean(fields.Italic),
+                    underline: DraftsmanDigestParser.#boolean(fields.Underline),
+                    color: fields.Color,
+                    fields
+                })
+            )
+        }
+    }
+
+    /**
+     * Extracts selected tags without consuming parent/child subtrees.
+     * @param {string} body Markup body.
+     * @param {string[]} tagNames Tag names.
+     * @returns {Record<string, string>[]}
+     */
+    static #shallowTagFields(body, tagNames) {
+        const selected = new Set(tagNames)
+        const fields = []
+        const tagPattern = /<([A-Za-z][A-Za-z0-9_]*)\b([^>]*?)(?:\/?)>/gu
+        let match = tagPattern.exec(body || '')
+
+        while (match) {
+            if (selected.has(match[1])) {
+                fields.push(DraftsmanDigestParser.#attributes(match[2]))
+            }
+            match = tagPattern.exec(body || '')
+        }
+
+        return fields
+    }
+
+    /**
+     * Extracts page zone rows.
+     * @param {string} body Page body.
+     * @returns {object[]}
+     */
+    static #zones(body) {
+        return DraftsmanDigestParser.#tagFields(body, [
+            'Zone',
+            'SheetZone'
+        ]).map((fields) =>
+            DraftsmanDigestParser.#stripEmpty({
+                id: fields.Id || fields.ID,
+                name: fields.Name || fields.Title,
+                row: fields.Row,
+                column: fields.Column,
+                x1: DraftsmanDigestParser.#number(fields.X1),
+                y1: DraftsmanDigestParser.#number(fields.Y1),
+                x2: DraftsmanDigestParser.#number(fields.X2),
+                y2: DraftsmanDigestParser.#number(fields.Y2),
+                fields
+            })
+        )
+    }
+
+    /**
+     * Extracts a stable item index for review tooling.
+     * @param {string} body Page body.
+     * @returns {object[]}
+     */
+    static #items(body) {
+        return DraftsmanDigestParser.#tags(body).map((tag) =>
+            DraftsmanDigestParser.#stripEmpty({
+                kind: DraftsmanDigestParser.#itemKind(tag.kind),
+                id: tag.fields.Id || tag.fields.ID,
+                name: tag.fields.Name || tag.fields.Title || tag.fields.Text
+            })
         )
     }
 
@@ -514,7 +715,9 @@ export class DraftsmanDigestParser {
             'Note',
             'Text',
             'Image',
-            'Picture'
+            'Picture',
+            'Zone',
+            'SheetZone'
         ])
         return DraftsmanDigestParser.#tags(body)
             .filter((tag) => !supported.has(tag.kind))
@@ -674,6 +877,42 @@ export class DraftsmanDigestParser {
     static #integer(value) {
         const numeric = Number.parseInt(String(value || ''), 10)
         return Number.isFinite(numeric) ? numeric : undefined
+    }
+
+    /**
+     * Parses an optional boolean value.
+     * @param {string | undefined} value Raw value.
+     * @returns {boolean | undefined}
+     */
+    static #boolean(value) {
+        if (value === undefined || value === null || value === '') {
+            return undefined
+        }
+        return /^(?:1|true|yes)$/iu.test(String(value).trim())
+    }
+
+    /**
+     * Lowercases non-empty enum-like text.
+     * @param {string | undefined} value Raw value.
+     * @returns {string | undefined}
+     */
+    static #lower(value) {
+        const text = String(value || '').trim()
+        return text ? text.toLowerCase() : undefined
+    }
+
+    /**
+     * Normalizes one XML tag name into a digest item kind.
+     * @param {string} kind Tag name.
+     * @returns {string}
+     */
+    static #itemKind(kind) {
+        const normalized = String(kind || '')
+        if (normalized === 'TitleBlock') return 'title-block'
+        if (normalized === 'Note' || normalized === 'Text') return 'note'
+        if (normalized === 'Image' || normalized === 'Picture') return 'image'
+        if (normalized === 'Zone' || normalized === 'SheetZone') return 'zone'
+        return normalized.replace(/([a-z])([A-Z])/gu, '$1-$2').toLowerCase()
     }
 
     /**

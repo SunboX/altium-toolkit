@@ -12,6 +12,23 @@
         "sourceDocumentName": {
             "type": "string"
         },
+        "documentOptions": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "styles": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+                "fontStyles": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            }
+        },
         "pages": {
             "type": "array",
             "items": {
@@ -23,9 +40,123 @@
                     "titleBlocks",
                     "notes",
                     "images",
+                    "zones",
+                    "items",
                     "unsupportedRawItems"
-                ]
+                ],
+                "properties": {
+                    "pageSetup": {
+                        "type": "object",
+                        "additionalProperties": true
+                    },
+                    "zones": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
             }
+        },
+        "imagePayloads": {
+            "type": "object",
+            "required": ["schema", "summary", "payloads", "diagnostics"],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.draftsman.image-payloads.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "payloads": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "diagnostics": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "boardViewMetadata": {
+            "type": "object",
+            "required": [
+                "schema",
+                "summary",
+                "layerColors",
+                "pcbParameters",
+                "boardAssemblyViews",
+                "boardFabricationViews",
+                "boardProjections",
+                "generatedGeometry"
+            ],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.draftsman.board-view-cache.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "layerColors": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "pcbParameters": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "boardAssemblyViews": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "boardFabricationViews": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "boardProjections": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "generatedGeometry": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
         },
         "indexes": {
             "type": "object",

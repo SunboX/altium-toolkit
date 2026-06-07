@@ -4,6 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { SchematicRenderOpsSidecarBuilder } from '../../src/ui/SchematicRenderOpsSidecarBuilder.mjs'
 import { SchematicSvgRenderer } from '../../src/ui/SchematicSvgRenderer.mjs'
 
 /**
@@ -431,6 +432,312 @@ test('SchematicSvgRenderer emits element metadata for schematic primitive famili
                 primitive: 'directive',
                 recordId: 'directive-1',
                 component: undefined
+            }
+        ]
+    )
+})
+
+test('SchematicSvgRenderer emits optional schematic render-operation sidecars', () => {
+    const markup = SchematicSvgRenderer.render(
+        {
+            summary: { title: 'Render ops schematic' },
+            schematic: {
+                sheet: { width: 180, height: 120 },
+                lines: [
+                    {
+                        recordId: 'line-1',
+                        x1: 20,
+                        y1: 40,
+                        x2: 80,
+                        y2: 40,
+                        color: '#000080',
+                        width: 2
+                    }
+                ],
+                rectangles: [
+                    {
+                        recordId: 'rect-1',
+                        x: 30,
+                        y: 90,
+                        width: 40,
+                        height: 20,
+                        color: '#008000',
+                        fill: '#ffffff',
+                        isSolid: true,
+                        transparent: false,
+                        lineWidth: 1
+                    }
+                ],
+                texts: [
+                    {
+                        recordId: 'text-1',
+                        x: 30,
+                        y: 30,
+                        text: 'NET_A',
+                        color: '#000080',
+                        fontSize: 10,
+                        fontFamily: 'Arial'
+                    }
+                ],
+                components: [],
+                pins: [],
+                ports: [],
+                crosses: [],
+                nets: []
+            }
+        },
+        { renderOperations: 'sidecar', renderOperationProfile: 'onscreen' }
+    )
+
+    const metadata = readMetadata(markup, 'schematic-render-operations')
+
+    assert.deepEqual(metadata, {
+        schema: 'altium-toolkit.schematic.render-ops.a1',
+        profile: 'onscreen',
+        coordinateSpace: {
+            x: 'svg',
+            y: 'svg',
+            units: 'schematic-display-units'
+        },
+        summary: {
+            recordCount: 3,
+            operationCount: 3,
+            failedRecordCount: 0
+        },
+        records: [
+            {
+                elementKey: 'schematic-line-0',
+                recordId: 'line-1',
+                primitive: 'line',
+                operations: [
+                    {
+                        type: 'line',
+                        x1: 20,
+                        y1: 80,
+                        x2: 80,
+                        y2: 80,
+                        stroke: '#000080',
+                        width: 2
+                    }
+                ]
+            },
+            {
+                elementKey: 'schematic-rectangle-0',
+                recordId: 'rect-1',
+                primitive: 'rectangle',
+                operations: [
+                    {
+                        type: 'rectangle',
+                        x: 30,
+                        y: 10,
+                        width: 40,
+                        height: 20,
+                        stroke: '#008000',
+                        fill: '#ffffff',
+                        widthStroke: 1
+                    }
+                ]
+            },
+            {
+                elementKey: 'schematic-text-0',
+                recordId: 'text-1',
+                primitive: 'text',
+                operations: [
+                    {
+                        type: 'string',
+                        x: 30,
+                        y: 90,
+                        text: 'NET_A',
+                        fill: '#000080',
+                        fontFamily: 'Arial',
+                        fontSize: 10
+                    }
+                ]
+            }
+        ]
+    })
+})
+
+test('SchematicRenderOpsSidecarBuilder covers schematic shape and asset primitives', () => {
+    const metadata = SchematicRenderOpsSidecarBuilder.build(
+        {
+            roundedRectangles: [
+                {
+                    recordId: 'round-1',
+                    x: 10,
+                    y: 30,
+                    width: 40,
+                    height: 20,
+                    radius: 4,
+                    color: '#000080',
+                    fill: '#ffffff',
+                    lineWidth: 1
+                }
+            ],
+            ellipses: [
+                {
+                    recordId: 'ellipse-1',
+                    x: 80,
+                    y: 30,
+                    radiusX: 12,
+                    radiusY: 8,
+                    color: '#000080',
+                    fill: '#ffff00',
+                    lineWidth: 1
+                }
+            ],
+            arcs: [
+                {
+                    recordId: 'arc-1',
+                    x: 120,
+                    y: 40,
+                    radius: 20,
+                    startAngle: 0,
+                    endAngle: 90,
+                    color: '#000080',
+                    width: 2
+                }
+            ],
+            beziers: [
+                {
+                    recordId: 'bezier-1',
+                    segments: [
+                        {
+                            start: { x: 20, y: 80 },
+                            control1: { x: 30, y: 100 },
+                            control2: { x: 50, y: 100 },
+                            end: { x: 60, y: 80 }
+                        }
+                    ],
+                    color: '#008000',
+                    width: 1
+                }
+            ],
+            pies: [
+                {
+                    recordId: 'pie-1',
+                    x: 100,
+                    y: 90,
+                    radius: 18,
+                    radiusY: 12,
+                    startAngle: 15,
+                    endAngle: 120,
+                    color: '#000080',
+                    fill: '#ffee00',
+                    lineWidth: 1
+                }
+            ],
+            images: [
+                {
+                    recordId: 'image-1',
+                    x: 140,
+                    y: 100,
+                    width: 30,
+                    height: 20,
+                    nativeFormat: 'PNG'
+                }
+            ],
+            texts: []
+        },
+        { contentHeight: 140, profile: 'ops-expanded' }
+    )
+
+    assert.equal(metadata.summary.recordCount, 6)
+    assert.equal(metadata.summary.operationCount, 6)
+    assert.deepEqual(
+        metadata.records.map((record) => ({
+            recordId: record.recordId,
+            primitive: record.primitive,
+            operation: record.operations[0]
+        })),
+        [
+            {
+                recordId: 'round-1',
+                primitive: 'rounded-rectangle',
+                operation: {
+                    type: 'rounded-rectangle',
+                    x: 10,
+                    y: 90,
+                    width: 40,
+                    height: 20,
+                    radius: 4,
+                    stroke: '#000080',
+                    fill: '#ffffff',
+                    widthStroke: 1
+                }
+            },
+            {
+                recordId: 'ellipse-1',
+                primitive: 'ellipse',
+                operation: {
+                    type: 'ellipse',
+                    cx: 80,
+                    cy: 110,
+                    rx: 12,
+                    ry: 8,
+                    stroke: '#000080',
+                    fill: '#ffff00',
+                    widthStroke: 1
+                }
+            },
+            {
+                recordId: 'arc-1',
+                primitive: 'arc',
+                operation: {
+                    type: 'arc',
+                    cx: 120,
+                    cy: 100,
+                    radius: 20,
+                    startAngle: 0,
+                    endAngle: 90,
+                    stroke: '#000080',
+                    width: 2
+                }
+            },
+            {
+                recordId: 'bezier-1',
+                primitive: 'bezier',
+                operation: {
+                    type: 'bezier',
+                    segments: [
+                        {
+                            start: { x: 20, y: 60 },
+                            control1: { x: 30, y: 40 },
+                            control2: { x: 50, y: 40 },
+                            end: { x: 60, y: 60 }
+                        }
+                    ],
+                    stroke: '#008000',
+                    width: 1
+                }
+            },
+            {
+                recordId: 'pie-1',
+                primitive: 'pie',
+                operation: {
+                    type: 'pie',
+                    cx: 100,
+                    cy: 50,
+                    radiusX: 18,
+                    radiusY: 12,
+                    startAngle: 15,
+                    endAngle: 120,
+                    stroke: '#000080',
+                    fill: '#ffee00',
+                    widthStroke: 1
+                }
+            },
+            {
+                recordId: 'image-1',
+                primitive: 'image',
+                operation: {
+                    type: 'image',
+                    x: 140,
+                    y: 20,
+                    width: 30,
+                    height: 20,
+                    nativeFormat: 'PNG'
+                }
             }
         ]
     )

@@ -1,0 +1,31 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.pcb.placed-footprint-extraction.a1",
+    "title": "Altium Toolkit PCB Placed Footprint Extraction A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "sourceDocument", "summary", "outputs", "indexes"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.pcb.placed-footprint-extraction.a1"
+        },
+        "sourceDocument": {
+            "type": "string"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "outputs": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "indexes": {
+            "type": "object",
+            "additionalProperties": true
+        }
+    }
+}

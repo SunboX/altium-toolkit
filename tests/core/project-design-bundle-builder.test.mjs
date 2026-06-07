@@ -338,6 +338,153 @@ test('ProjectVariantViewBuilder applies DNP and parameter overrides', () => {
     ])
 })
 
+test('ProjectDesignBundleBuilder reports BOM and PnP reconciliation gaps', () => {
+    const projectModel = createProjectModel()
+    const documentModels = [
+        {
+            kind: 'schematic',
+            fileName: 'Main.SchDoc',
+            schematic: {
+                components: [
+                    {
+                        designator: 'U1',
+                        uniqueId: 'U1-UID',
+                        libReference: 'LOGIC_FAKE',
+                        value: 'Controller'
+                    },
+                    {
+                        designator: 'R1',
+                        uniqueId: 'R1-UID',
+                        libReference: 'RES_FAKE',
+                        value: '10K'
+                    }
+                ],
+                nets: []
+            },
+            bom: [
+                {
+                    designators: ['U1'],
+                    quantity: 1,
+                    pattern: '',
+                    source: 'LOGIC_FAKE',
+                    value: 'Controller'
+                },
+                {
+                    designators: ['R1'],
+                    quantity: 1,
+                    pattern: '',
+                    source: 'RES_FAKE',
+                    value: '10K'
+                }
+            ]
+        },
+        {
+            kind: 'pcb',
+            fileName: 'Board.PcbDoc',
+            pcb: {
+                components: [
+                    {
+                        designator: 'U1',
+                        componentIndex: 0,
+                        pattern: 'QFN_FAKE'
+                    },
+                    {
+                        designator: 'C1',
+                        componentIndex: 1,
+                        pattern: 'CAP_FAKE',
+                        componentKind: {
+                            name: 'standard-no-bom',
+                            includeInBom: false,
+                            includeInPnp: true
+                        }
+                    }
+                ]
+            },
+            pnp: {
+                entries: [
+                    { designator: 'U1', x: 100, y: 120 },
+                    { designator: 'R2', x: 140, y: 120 }
+                ]
+            },
+            bom: [
+                {
+                    designators: ['U1'],
+                    quantity: 1,
+                    pattern: 'QFN_FAKE',
+                    source: 'LOGIC_FAKE',
+                    value: 'Controller'
+                },
+                {
+                    designators: ['C1'],
+                    quantity: 1,
+                    pattern: 'CAP_FAKE',
+                    source: 'CAP_FAKE',
+                    value: 'Capacitor'
+                }
+            ]
+        }
+    ]
+    const bundle = ProjectDesignBundleBuilder.build({
+        projectModel,
+        documentModels,
+        variantName: 'Assembly B'
+    })
+
+    assert.deepEqual(bundle.reconciliation, {
+        schema: 'altium-toolkit.project.bom-pnp-reconciliation.a1',
+        summary: {
+            schematicBomDesignatorCount: 2,
+            pcbBomDesignatorCount: 2,
+            pnpDesignatorCount: 2,
+            effectiveBomDesignatorCount: 1,
+            noBomComponentCount: 1,
+            issueCount: 5
+        },
+        schematicBomDesignators: ['R1', 'U1'],
+        pcbBomDesignators: ['C1', 'U1'],
+        pnpDesignators: ['R2', 'U1'],
+        effectiveBomDesignators: ['U1'],
+        noBomDesignators: ['C1'],
+        issues: [
+            {
+                code: 'reconciliation.schematic-bom-without-pcb-bom',
+                severity: 'warning',
+                designator: 'R1',
+                message:
+                    'Schematic BOM designator was not present in the PCB-backed BOM.'
+            },
+            {
+                code: 'reconciliation.pcb-bom-without-schematic-bom',
+                severity: 'warning',
+                designator: 'C1',
+                message:
+                    'PCB-backed BOM designator was not present in the schematic BOM.'
+            },
+            {
+                code: 'reconciliation.bom-without-pnp',
+                severity: 'warning',
+                designator: 'C1',
+                message:
+                    'PCB-backed BOM designator did not have a PnP placement.'
+            },
+            {
+                code: 'reconciliation.pnp-without-bom',
+                severity: 'warning',
+                designator: 'R2',
+                message:
+                    'PnP placement designator was not present in the PCB-backed BOM.'
+            },
+            {
+                code: 'reconciliation.no-bom-component-in-pcb-bom',
+                severity: 'warning',
+                designator: 'C1',
+                message:
+                    'Component marked as no-BOM appeared in the PCB-backed BOM.'
+            }
+        ]
+    })
+})
+
 /**
  * Verifies annotation mapping and alternate fitted component rows are applied
  * to effective variant BOM, PnP, component, and net outputs.

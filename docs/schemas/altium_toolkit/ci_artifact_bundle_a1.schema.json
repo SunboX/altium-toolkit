@@ -16,6 +16,7 @@
         "schematicSvgs",
         "pcbLayerSvgs",
         "statistics",
+        "contractGate",
         "diagnostics"
     ],
     "properties": {
@@ -68,6 +69,9 @@
         },
         "statistics": {
             "type": "object"
+        },
+        "contractGate": {
+            "$ref": "contract_gate_a1.schema.json"
         },
         "diagnostics": {
             "type": "array"

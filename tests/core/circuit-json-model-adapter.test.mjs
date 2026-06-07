@@ -337,3 +337,136 @@ test('CircuitJsonModelAdapter emits upstream-compatible schematic element fields
     assertPoint(schematicNetLabel.center)
     assert.equal(schematicNetLabel.anchor_side, 'top')
 })
+
+/**
+ * Verifies Altium-specific sidecars are emitted as serialized custom elements.
+ */
+test('CircuitJsonModelAdapter serializes Altium Toolkit sidecars as custom elements', () => {
+    const rendererModel = {
+        sourceFormat: 'altium',
+        kind: 'pcb',
+        fileType: 'PcbDoc',
+        fileName: 'neutral-board.PcbDoc',
+        summary: {
+            title: 'Neutral Board',
+            boardWidthMil: 1000,
+            boardHeightMil: 500,
+            layerCount: 2
+        },
+        diagnostics: [],
+        pcb: {
+            boardOutline: {
+                widthMil: 1000,
+                heightMil: 500,
+                minX: 0,
+                minY: 0
+            },
+            components: [],
+            pads: [],
+            tracks: [],
+            vias: [],
+            layerStackReadModel: {
+                schema: 'altium-toolkit.pcb.layer-stack.a1',
+                summary: { layerCount: 2 },
+                diagnostics: []
+            },
+            rigidFlexTopology: {
+                schema: 'altium-toolkit.pcb.rigid-flex-topology.a1',
+                summary: { branchCount: 0 },
+                diagnostics: []
+            },
+            reviewMetadata: {
+                schema: 'altium-toolkit.pcb.review-metadata.a1',
+                summary: { routeGroupCount: 1 },
+                indexes: {}
+            },
+            footprintExtractionManifest: {
+                schema: 'altium-toolkit.pcb.placed-footprint-extraction.a1',
+                sourceDocument: 'neutral-board.PcbDoc',
+                summary: { extractableFootprintCount: 0 },
+                outputs: []
+            }
+        },
+        project: {
+            outJobDigest: {
+                schema: 'altium-toolkit.project.outjob-digest.a1',
+                summary: { outputCount: 1 },
+                outputGroups: []
+            },
+            documentGraph: {
+                schema: 'altium-toolkit.project.document-graph.a1',
+                summary: { documentCount: 1 },
+                nodes: []
+            }
+        },
+        pcbLibrary: {
+            footprints: [],
+            parityReport: {
+                schema: 'altium-toolkit.pcblib.parity.a1',
+                summary: { footprintCount: 0 },
+                footprints: []
+            }
+        },
+        draftsman: {
+            imagePayloads: {
+                schema: 'altium-toolkit.draftsman.image-payloads.a1',
+                summary: { payloadCount: 1 },
+                payloads: []
+            },
+            boardViewMetadata: {
+                schema: 'altium-toolkit.draftsman.board-view-cache.a1',
+                summary: { boardViewCount: 1 },
+                layerColors: []
+            }
+        },
+        reconciliation: {
+            schema: 'altium-toolkit.project.bom-pnp-reconciliation.a1',
+            summary: { issueCount: 1 },
+            issues: []
+        },
+        contractGate: {
+            schema: 'altium-toolkit.contract-gate.a1',
+            summary: { failingGateCount: 0 },
+            gates: []
+        },
+        hostCapabilities: {
+            schema: 'altium-toolkit.host-capabilities.a1',
+            summary: { capabilityCount: 1 },
+            capabilities: []
+        },
+        bom: []
+    }
+
+    const circuitJson = CircuitJsonModelAdapter.fromRendererModel(rendererModel)
+    const layerStack = firstElement(
+        circuitJson,
+        'altium_toolkit_pcb_layer_stack'
+    )
+    const serialized = JSON.parse(JSON.stringify(circuitJson))
+    const serializedSidecarTypes = serialized
+        .filter((element) => element.type.startsWith('altium_toolkit_'))
+        .map((element) => element.type)
+
+    assert.deepEqual(serializedSidecarTypes, [
+        'altium_toolkit_pcb_layer_stack',
+        'altium_toolkit_pcb_rigid_flex_topology',
+        'altium_toolkit_pcb_review_metadata',
+        'altium_toolkit_pcb_placed_footprint_extraction',
+        'altium_toolkit_pcblib_parity',
+        'altium_toolkit_project_outjob_digest',
+        'altium_toolkit_project_document_graph',
+        'altium_toolkit_project_bom_pnp_reconciliation',
+        'altium_toolkit_draftsman_image_payloads',
+        'altium_toolkit_draftsman_board_view_metadata',
+        'altium_toolkit_contract_gate',
+        'altium_toolkit_host_capabilities'
+    ])
+    assert.equal(typeof layerStack.altium_toolkit_sidecar_id, 'string')
+    assert.deepEqual(layerStack.source_document, {
+        kind: 'pcb',
+        file_type: 'PcbDoc',
+        file_name: 'neutral-board.PcbDoc'
+    })
+    assert.equal(layerStack.schema, 'altium-toolkit.pcb.layer-stack.a1')
+    assert.deepEqual(layerStack.payload.summary, { layerCount: 2 })
+})

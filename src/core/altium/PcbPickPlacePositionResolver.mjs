@@ -144,6 +144,9 @@ export class PcbPickPlacePositionResolver {
             designator: component.designator || '',
             pattern: component.pattern || '',
             layer: component.layer || '',
+            ...(component.componentKind
+                ? { componentKind: component.componentKind }
+                : {}),
             rotation: PcbPickPlacePositionResolver.#roundCoordinate(rotation),
             x: PcbPickPlacePositionResolver.#roundCoordinate(position.x),
             y: PcbPickPlacePositionResolver.#roundCoordinate(position.y),
