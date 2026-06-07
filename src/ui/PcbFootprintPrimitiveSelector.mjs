@@ -141,9 +141,21 @@ export class PcbFootprintPrimitiveSelector {
      * @returns {boolean}
      */
     static #includesLayerName(layerName, needle) {
+        return PcbFootprintPrimitiveSelector.#compactLayerName(
+            layerName
+        ).includes(PcbFootprintPrimitiveSelector.#compactLayerName(needle))
+    }
+
+    /**
+     * Normalizes layer labels so compact names such as TopOverlay match
+     * spaced Altium labels such as Top Overlay.
+     * @param {string} layerName
+     * @returns {string}
+     */
+    static #compactLayerName(layerName) {
         return String(layerName || '')
             .trim()
             .toUpperCase()
-            .includes(needle)
+            .replace(/[^A-Z0-9]/g, '')
     }
 }

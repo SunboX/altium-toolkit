@@ -986,14 +986,36 @@ export class PcbScene3dBuilder {
         return new Set(
             (Array.isArray(primitiveLayers) ? primitiveLayers : [])
                 .filter((layer) =>
-                    String(layer?.name || '')
-                        .trim()
-                        .toUpperCase()
-                        .includes(needle)
+                    PcbScene3dBuilder.#includesLayerName(layer?.name, needle)
                 )
                 .map((layer) => Number(layer.layerId))
                 .filter((layerId) => Number.isInteger(layerId))
         )
+    }
+
+    /**
+     * Returns true when one layer name matches a spaced or compact target.
+     * @param {string} layerName
+     * @param {string} needle
+     * @returns {boolean}
+     */
+    static #includesLayerName(layerName, needle) {
+        return PcbScene3dBuilder.#compactLayerName(layerName).includes(
+            PcbScene3dBuilder.#compactLayerName(needle)
+        )
+    }
+
+    /**
+     * Normalizes layer labels so compact names such as TopOverlay match
+     * spaced Altium labels such as Top Overlay.
+     * @param {string} layerName
+     * @returns {string}
+     */
+    static #compactLayerName(layerName) {
+        return String(layerName || '')
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '')
     }
 
     /**
