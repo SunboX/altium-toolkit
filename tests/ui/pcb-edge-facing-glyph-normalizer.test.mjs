@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import assert from 'node:assert/strict'
+import { performance } from 'node:perf_hooks'
 import test from 'node:test'
 import { PcbEdgeFacingGlyphNormalizer } from '../../src/ui/PcbEdgeFacingGlyphNormalizer.mjs'
 
@@ -79,6 +80,31 @@ test('PcbEdgeFacingGlyphNormalizer flips right-pointing screw heads onto the tip
             layerId: 33
         }
     ])
+})
+
+test('PcbEdgeFacingGlyphNormalizer indexes disconnected glyph candidates without quadratic scan', () => {
+    const tracks = Array.from({ length: 16000 }, (_value, index) => ({
+        x1: index * 20,
+        y1: 0,
+        x2: index * 20 + 1,
+        y2: 1,
+        width: 1,
+        layerId: 33
+    }))
+    const start = performance.now()
+    const normalized = PcbEdgeFacingGlyphNormalizer.normalize(
+        { fills: [], tracks, arcs: [], regions: [] },
+        {
+            minX: 0,
+            minY: 0,
+            widthMil: tracks.length * 20,
+            heightMil: 20
+        }
+    )
+    const elapsed = performance.now() - start
+
+    assert.equal(normalized.tracks.length, tracks.length)
+    assert.ok(elapsed < 500, `normalization took ${elapsed.toFixed(1)}ms`)
 })
 
 test('PcbEdgeFacingGlyphNormalizer keeps left-pointing screw heads on the tip-facing half', () => {

@@ -14,6 +14,8 @@ export class PcbEdgeFacingGlyphNormalizer {
     static #EDGE_GLYPH_CENTER_TOLERANCE = 1.5
     static #EDGE_GLYPH_PROXIMITY_RATIO = 0.2
     static #MARKER_PROXIMITY_MULTIPLIER = 3
+    static #SPATIAL_INDEX_MIN_CELL_SIZE = 32
+    static #SPATIAL_INDEX_MAX_CELLS_PER_ITEM = 256
 
     /**
      * Normalizes repeated edge-facing documentation glyphs so their opening
@@ -107,6 +109,8 @@ export class PcbEdgeFacingGlyphNormalizer {
                 )
         ]
         const visited = new Array(items.length).fill(false)
+        const spatialIndex =
+            PcbEdgeFacingGlyphNormalizer.#buildSpatialIndex(items)
         const groups = []
 
         for (let index = 0; index < items.length; index += 1) {
@@ -137,11 +141,10 @@ export class PcbEdgeFacingGlyphNormalizer {
                     arcIndexes.push(currentItem.arcIndex)
                 }
 
-                for (
-                    let nextIndex = 0;
-                    nextIndex < items.length;
-                    nextIndex += 1
-                ) {
+                for (const nextIndex of PcbEdgeFacingGlyphNormalizer.#collectCandidateIndexes(
+                    currentItem.bounds,
+                    spatialIndex
+                )) {
                     if (visited[nextIndex]) {
                         continue
                     }
@@ -169,6 +172,153 @@ export class PcbEdgeFacingGlyphNormalizer {
         }
 
         return groups
+    }
+
+    /**
+     * Builds a spatial lookup for candidate bounds intersections.
+     * @param {{ bounds: { minX: number, maxX: number, minY: number, maxY: number } }[]} items
+     * @returns {{ cellSize: number, cells: Map<string, number[]>, overflowIndexes: number[], marks: Uint32Array, mark: number }}
+     */
+    static #buildSpatialIndex(items) {
+        const cellSize =
+            PcbEdgeFacingGlyphNormalizer.#resolveSpatialCellSize(items)
+        const cells = new Map()
+        const overflowIndexes = []
+
+        items.forEach((item, index) => {
+            const range = PcbEdgeFacingGlyphNormalizer.#resolveCellRange(
+                item.bounds,
+                cellSize
+            )
+            const cellCount =
+                (range.maxX - range.minX + 1) * (range.maxY - range.minY + 1)
+
+            if (
+                cellCount >
+                PcbEdgeFacingGlyphNormalizer.#SPATIAL_INDEX_MAX_CELLS_PER_ITEM
+            ) {
+                overflowIndexes.push(index)
+                return
+            }
+
+            for (let cellX = range.minX; cellX <= range.maxX; cellX += 1) {
+                for (let cellY = range.minY; cellY <= range.maxY; cellY += 1) {
+                    const key = PcbEdgeFacingGlyphNormalizer.#cellKey(
+                        cellX,
+                        cellY
+                    )
+                    const bucket = cells.get(key)
+
+                    if (bucket) {
+                        bucket.push(index)
+                    } else {
+                        cells.set(key, [index])
+                    }
+                }
+            }
+        })
+
+        return {
+            cellSize,
+            cells,
+            overflowIndexes,
+            marks: new Uint32Array(items.length),
+            mark: 0
+        }
+    }
+
+    /**
+     * Collects unique candidate item indexes that could intersect one bounds box.
+     * @param {{ minX: number, maxX: number, minY: number, maxY: number }} bounds
+     * @param {{ cellSize: number, cells: Map<string, number[]>, overflowIndexes: number[], marks: Uint32Array, mark: number }} spatialIndex
+     * @returns {number[]}
+     */
+    static #collectCandidateIndexes(bounds, spatialIndex) {
+        const candidates = []
+        const range = PcbEdgeFacingGlyphNormalizer.#resolveCellRange(
+            bounds,
+            spatialIndex.cellSize
+        )
+
+        spatialIndex.mark += 1
+        if (spatialIndex.mark >= 0xffffffff) {
+            spatialIndex.marks.fill(0)
+            spatialIndex.mark = 1
+        }
+
+        const appendCandidate = (index) => {
+            if (spatialIndex.marks[index] === spatialIndex.mark) {
+                return
+            }
+
+            spatialIndex.marks[index] = spatialIndex.mark
+            candidates.push(index)
+        }
+
+        for (let cellX = range.minX; cellX <= range.maxX; cellX += 1) {
+            for (let cellY = range.minY; cellY <= range.maxY; cellY += 1) {
+                const bucket = spatialIndex.cells.get(
+                    PcbEdgeFacingGlyphNormalizer.#cellKey(cellX, cellY)
+                )
+
+                if (bucket) {
+                    bucket.forEach(appendCandidate)
+                }
+            }
+        }
+
+        spatialIndex.overflowIndexes.forEach(appendCandidate)
+        return candidates
+    }
+
+    /**
+     * Resolves a spatial cell size from typical primitive bounds spans.
+     * @param {{ bounds: { minX: number, maxX: number, minY: number, maxY: number } }[]} items
+     * @returns {number}
+     */
+    static #resolveSpatialCellSize(items) {
+        const spans = items
+            .map((item) =>
+                Math.max(
+                    Number(item.bounds.maxX) - Number(item.bounds.minX),
+                    Number(item.bounds.maxY) - Number(item.bounds.minY),
+                    0
+                )
+            )
+            .filter((span) => Number.isFinite(span))
+            .sort((left, right) => left - right)
+        const medianSpan = spans[Math.floor(spans.length / 2)] || 0
+
+        return Math.max(
+            medianSpan * 4,
+            PcbEdgeFacingGlyphNormalizer.#EDGE_GLYPH_CONNECTION_TOLERANCE * 8,
+            PcbEdgeFacingGlyphNormalizer.#SPATIAL_INDEX_MIN_CELL_SIZE
+        )
+    }
+
+    /**
+     * Resolves the inclusive grid-cell range for one bounds box.
+     * @param {{ minX: number, maxX: number, minY: number, maxY: number }} bounds
+     * @param {number} cellSize
+     * @returns {{ minX: number, maxX: number, minY: number, maxY: number }}
+     */
+    static #resolveCellRange(bounds, cellSize) {
+        return {
+            minX: Math.floor(Number(bounds.minX) / cellSize),
+            maxX: Math.floor(Number(bounds.maxX) / cellSize),
+            minY: Math.floor(Number(bounds.minY) / cellSize),
+            maxY: Math.floor(Number(bounds.maxY) / cellSize)
+        }
+    }
+
+    /**
+     * Builds one deterministic spatial index key.
+     * @param {number} cellX
+     * @param {number} cellY
+     * @returns {string}
+     */
+    static #cellKey(cellX, cellY) {
+        return `${cellX}:${cellY}`
     }
 
     /**
