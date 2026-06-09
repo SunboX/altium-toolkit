@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { NaturalStringComparator } from './NaturalStringComparator.mjs'
+
 /**
  * Builds route-highlight profile rows for PCB review metadata.
  */
@@ -12,33 +14,45 @@ export class PcbReviewRouteHighlightProfileBuilder {
      * @returns {object[]}
      */
     static build(routeAnalysis = {}) {
+        const routeRowsByName =
+            PcbReviewRouteHighlightProfileBuilder.#routeRowsByName(
+                routeAnalysis
+            )
         return [
             ...PcbReviewRouteHighlightProfileBuilder.#differentialPairProfiles(
-                routeAnalysis
+                routeAnalysis,
+                routeRowsByName
             ),
             ...PcbReviewRouteHighlightProfileBuilder.#differentialPairClassProfiles(
-                routeAnalysis
+                routeAnalysis,
+                routeRowsByName
             ),
             ...PcbReviewRouteHighlightProfileBuilder.#netClassProfiles(
-                routeAnalysis
+                routeAnalysis,
+                routeRowsByName
             ),
-            ...PcbReviewRouteHighlightProfileBuilder.#netProfiles(routeAnalysis)
+            ...PcbReviewRouteHighlightProfileBuilder.#netProfiles(
+                routeAnalysis,
+                routeRowsByName
+            )
         ]
     }
 
     /**
      * Builds net-class highlight profiles.
      * @param {object} routeAnalysis Route analysis model.
+     * @param {Map<string, object[]>} routeRowsByName Route rows by net name.
      * @returns {object[]}
      */
-    static #netClassProfiles(routeAnalysis) {
+    static #netClassProfiles(routeAnalysis, routeRowsByName) {
         return (routeAnalysis.classes || []).map((classRow) =>
             PcbReviewRouteHighlightProfileBuilder.#highlightProfile({
                 selectorKind: 'net-class',
                 keyPrefix: 'highlight-net-class-',
                 name: classRow.name,
                 netNames: classRow.netNames || [],
-                routeAnalysis
+                routeAnalysis,
+                routeRowsByName
             })
         )
     }
@@ -46,9 +60,10 @@ export class PcbReviewRouteHighlightProfileBuilder {
     /**
      * Builds differential-pair highlight profiles.
      * @param {object} routeAnalysis Route analysis model.
+     * @param {Map<string, object[]>} routeRowsByName Route rows by net name.
      * @returns {object[]}
      */
-    static #differentialPairProfiles(routeAnalysis) {
+    static #differentialPairProfiles(routeAnalysis, routeRowsByName) {
         return (routeAnalysis.differentialPairs || []).map((pair) =>
             PcbReviewRouteHighlightProfileBuilder.#highlightProfile({
                 selectorKind: 'differential-pair',
@@ -57,7 +72,8 @@ export class PcbReviewRouteHighlightProfileBuilder {
                 netNames: [pair.positiveNetName, pair.negativeNetName].filter(
                     Boolean
                 ),
-                routeAnalysis
+                routeAnalysis,
+                routeRowsByName
             })
         )
     }
@@ -65,9 +81,10 @@ export class PcbReviewRouteHighlightProfileBuilder {
     /**
      * Builds differential-pair class highlight profiles.
      * @param {object} routeAnalysis Route analysis model.
+     * @param {Map<string, object[]>} routeRowsByName Route rows by net name.
      * @returns {object[]}
      */
-    static #differentialPairClassProfiles(routeAnalysis) {
+    static #differentialPairClassProfiles(routeAnalysis, routeRowsByName) {
         const classNames = new Map()
         for (const pair of routeAnalysis.differentialPairs || []) {
             for (const className of pair.classes || []) {
@@ -88,7 +105,7 @@ export class PcbReviewRouteHighlightProfileBuilder {
 
         return [...classNames.entries()]
             .sort(([left], [right]) =>
-                left.localeCompare(right, undefined, { numeric: true })
+                NaturalStringComparator.compare(left, right)
             )
             .map(([className, netNames]) =>
                 PcbReviewRouteHighlightProfileBuilder.#highlightProfile({
@@ -96,7 +113,8 @@ export class PcbReviewRouteHighlightProfileBuilder {
                     keyPrefix: 'highlight-diff-pair-class-',
                     name: className,
                     netNames: [...netNames],
-                    routeAnalysis
+                    routeAnalysis,
+                    routeRowsByName
                 })
             )
     }
@@ -104,23 +122,25 @@ export class PcbReviewRouteHighlightProfileBuilder {
     /**
      * Builds scalar net highlight profiles.
      * @param {object} routeAnalysis Route analysis model.
+     * @param {Map<string, object[]>} routeRowsByName Route rows by net name.
      * @returns {object[]}
      */
-    static #netProfiles(routeAnalysis) {
+    static #netProfiles(routeAnalysis, routeRowsByName) {
         return (routeAnalysis.byNet || []).map((net) =>
             PcbReviewRouteHighlightProfileBuilder.#highlightProfile({
                 selectorKind: 'net',
                 keyPrefix: 'highlight-net-',
                 name: net.netName,
                 netNames: [net.netName],
-                routeAnalysis
+                routeAnalysis,
+                routeRowsByName
             })
         )
     }
 
     /**
      * Builds one route-highlight profile.
-     * @param {{ selectorKind: string, keyPrefix: string, name: string, netNames: string[], routeAnalysis: object }} options Profile options.
+     * @param {{ selectorKind: string, keyPrefix: string, name: string, netNames: string[], routeAnalysis: object, routeRowsByName: Map<string, object[]> }} options Profile options.
      * @returns {object}
      */
     static #highlightProfile(options) {
@@ -129,7 +149,8 @@ export class PcbReviewRouteHighlightProfileBuilder {
         )
         const layerGroups = PcbReviewRouteHighlightProfileBuilder.#layerGroups(
             options.routeAnalysis,
-            netNames
+            netNames,
+            options.routeRowsByName
         )
 
         return PcbReviewRouteHighlightProfileBuilder.#stripEmpty({
@@ -158,12 +179,13 @@ export class PcbReviewRouteHighlightProfileBuilder {
      * Builds per-layer route-highlight groups.
      * @param {object} routeAnalysis Route analysis model.
      * @param {string[]} netNames Net names.
+     * @param {Map<string, object[]>} routeRowsByName Route rows by net name.
      * @returns {object[]}
      */
-    static #layerGroups(routeAnalysis, netNames) {
+    static #layerGroups(routeAnalysis, netNames, routeRowsByName) {
         const groupsByLayer = new Map()
         for (const net of PcbReviewRouteHighlightProfileBuilder.#netsByName(
-            routeAnalysis,
+            routeRowsByName,
             netNames
         )) {
             for (const participation of net.layerParticipation || []) {
@@ -205,22 +227,37 @@ export class PcbReviewRouteHighlightProfileBuilder {
                 )
             }))
             .sort((left, right) =>
-                left.layerKey.localeCompare(right.layerKey, undefined, {
-                    numeric: true
-                })
+                NaturalStringComparator.compare(left.layerKey, right.layerKey)
             )
     }
 
     /**
-     * Resolves net route rows by name.
+     * Builds route rows indexed by net name.
      * @param {object} routeAnalysis Route analysis model.
+     * @returns {Map<string, object[]>}
+     */
+    static #routeRowsByName(routeAnalysis) {
+        const rowsByName = new Map()
+        for (const net of routeAnalysis.byNet || []) {
+            const netName = String(net?.netName || '')
+            if (!netName) continue
+            if (!rowsByName.has(netName)) {
+                rowsByName.set(netName, [])
+            }
+            rowsByName.get(netName).push(net)
+        }
+        return rowsByName
+    }
+
+    /**
+     * Resolves net route rows by name.
+     * @param {Map<string, object[]>} routeRowsByName Route rows by net name.
      * @param {string[]} netNames Net names.
      * @returns {object[]}
      */
-    static #netsByName(routeAnalysis, netNames) {
-        const wanted = new Set(netNames || [])
-        return (routeAnalysis.byNet || []).filter((net) =>
-            wanted.has(net.netName)
+    static #netsByName(routeRowsByName, netNames) {
+        return (netNames || []).flatMap(
+            (netName) => routeRowsByName.get(netName) || []
         )
     }
 
@@ -248,10 +285,10 @@ export class PcbReviewRouteHighlightProfileBuilder {
      * @returns {string[]}
      */
     static #sortedStrings(values) {
-        return [...new Set((values || []).filter(Boolean))].sort(
-            (left, right) =>
-                left.localeCompare(right, undefined, { numeric: true })
-        )
+        const sortedValues = [...new Set((values || []).filter(Boolean))]
+        return sortedValues.length < 2
+            ? sortedValues
+            : sortedValues.sort(NaturalStringComparator.compare)
     }
 
     /**

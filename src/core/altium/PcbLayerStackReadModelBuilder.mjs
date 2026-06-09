@@ -14,6 +14,8 @@ const { parseNumericField } = ParserUtils
 export class PcbLayerStackReadModelBuilder {
     static SCHEMA_ID = 'altium-toolkit.pcb.layer-stack.a1'
 
+    static #fieldIndexes = new WeakMap()
+
     /**
      * Builds the layer-stack sidecar.
      * @param {{ fileName: string, boardRecords: { fields: Record<string, string | string[]>, sourceStream?: string }[], streamNames?: string[], layers: object[], primitiveLayers: object[], layerSubstacks: object[], boardRegions: object[] }} input Source model context.
@@ -799,15 +801,35 @@ export class PcbLayerStackReadModelBuilder {
      * @returns {string}
      */
     static #field(fields, key) {
-        if (Object.hasOwn(fields, key)) {
+        if (Object.hasOwn(fields, key) || key in fields) {
             return ParserUtils.getField(fields, key)
         }
-        const upperKey = key.toUpperCase()
-        const realKey = Object.keys(fields).find(
-            (fieldKey) => fieldKey.toUpperCase() === upperKey
+        const realKey = PcbLayerStackReadModelBuilder.#fieldIndex(fields).get(
+            key.toUpperCase()
         )
 
         return realKey ? ParserUtils.getField(fields, realKey) : ''
+    }
+
+    /**
+     * Builds or returns a cached case-insensitive field-key index.
+     * @param {Record<string, string | string[]>} fields Source fields.
+     * @returns {Map<string, string>}
+     */
+    static #fieldIndex(fields) {
+        const cached = PcbLayerStackReadModelBuilder.#fieldIndexes.get(fields)
+        if (cached) return cached
+
+        const fieldIndex = new Map()
+        for (const fieldKey of Object.keys(fields)) {
+            const upperKey = fieldKey.toUpperCase()
+            if (!fieldIndex.has(upperKey)) {
+                fieldIndex.set(upperKey, fieldKey)
+            }
+        }
+
+        PcbLayerStackReadModelBuilder.#fieldIndexes.set(fields, fieldIndex)
+        return fieldIndex
     }
 
     /**

@@ -18,12 +18,14 @@ export class SchematicDisplayModeCatalogParser {
      * @returns {object | null}
      */
     static parse(records) {
+        const childrenByOwner =
+            SchematicDisplayModeCatalogParser.#ownerChildrenByOwner(records)
         const components = (records || [])
             .filter((record) => getField(record.fields, 'RECORD') === '1')
             .map((record) =>
                 SchematicDisplayModeCatalogParser.#componentCatalog(
                     record,
-                    records
+                    childrenByOwner
                 )
             )
             .filter(Boolean)
@@ -41,17 +43,17 @@ export class SchematicDisplayModeCatalogParser {
     /**
      * Builds one component display-mode catalog row.
      * @param {object} componentRecord Component record.
-     * @param {object[]} records All schematic records.
+     * @param {Map<string, object[]>} childrenByOwner Child records by owner index.
      * @returns {object}
      */
-    static #componentCatalog(componentRecord, records) {
+    static #componentCatalog(componentRecord, childrenByOwner) {
         const indexInSheet = parseNumericField(
             componentRecord.fields,
             'IndexInSheet'
         )
         const ownerIndex = String(indexInSheet ?? componentRecord.recordIndex)
         const children = SchematicDisplayModeCatalogParser.#ownerChildren(
-            records,
+            childrenByOwner,
             ownerIndex
         )
         const declaredPartCount =
@@ -95,16 +97,39 @@ export class SchematicDisplayModeCatalogParser {
 
     /**
      * Returns child records with owner part/display metadata.
-     * @param {object[]} records All schematic records.
+     * @param {Map<string, object[]>} childrenByOwner Child records by owner index.
      * @param {string} ownerIndex Component owner index.
      * @returns {object[]}
      */
-    static #ownerChildren(records, ownerIndex) {
-        return (records || []).filter(
-            (record) =>
-                getField(record.fields, 'OwnerIndex') === ownerIndex &&
-                parseNumericField(record.fields, 'OwnerPartID') !== null
-        )
+    static #ownerChildren(childrenByOwner, ownerIndex) {
+        return childrenByOwner.get(ownerIndex) || []
+    }
+
+    /**
+     * Indexes schematic owner child records once for display-mode cataloguing.
+     * @param {object[]} records Schematic records.
+     * @returns {Map<string, object[]>}
+     */
+    static #ownerChildrenByOwner(records) {
+        const childrenByOwner = new Map()
+
+        for (const record of records || []) {
+            if (parseNumericField(record.fields, 'OwnerPartID') === null) {
+                continue
+            }
+
+            const ownerIndex = getField(record.fields, 'OwnerIndex')
+            if (!ownerIndex) {
+                continue
+            }
+
+            if (!childrenByOwner.has(ownerIndex)) {
+                childrenByOwner.set(ownerIndex, [])
+            }
+            childrenByOwner.get(ownerIndex).push(record)
+        }
+
+        return childrenByOwner
     }
 
     /**

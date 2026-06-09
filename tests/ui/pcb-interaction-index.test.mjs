@@ -16,10 +16,19 @@ test('PcbInteractionIndex returns overlapping Altium PCB items by selection prio
         { x: 50, y: 50 },
         { side: 'top' }
     )
+    const candidatesFromItems = PcbInteractionIndex.hitTestItems(
+        PcbInteractionIndex.build(documentModel),
+        { x: 50, y: 50 },
+        { side: 'top' }
+    )
 
     assert.deepEqual(
         candidates.map((item) => item.type),
         ['track', 'pad', 'via', 'component', 'zone']
+    )
+    assert.deepEqual(
+        candidatesFromItems.map((item) => item.type),
+        candidates.map((item) => item.type)
     )
     assert.equal(
         PcbInteractionIndex.pick(documentModel, { x: 50, y: 50 })?.type,

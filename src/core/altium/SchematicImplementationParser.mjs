@@ -21,6 +21,10 @@ export class SchematicImplementationParser {
         const components = SchematicImplementationParser.#componentRows(records)
         const listsByIndex =
             SchematicImplementationParser.#implementationLists(records)
+        const childrenByOwner =
+            SchematicImplementationParser.#implementationChildrenByOwner(
+                records
+            )
         const implementations = (records || [])
             .filter(
                 (record) =>
@@ -32,9 +36,9 @@ export class SchematicImplementationParser {
             .map((record) =>
                 SchematicImplementationParser.#implementation(
                     record,
-                    records,
                     components,
-                    listsByIndex
+                    listsByIndex,
+                    childrenByOwner
                 )
             )
             .filter(Boolean)
@@ -137,12 +141,12 @@ export class SchematicImplementationParser {
     /**
      * Parses one implementation record.
      * @param {object} record Implementation record.
-     * @param {object[]} records All schematic records.
      * @param {object[]} components Component rows.
      * @param {Map<string, object>} listsByIndex Implementation lists.
+     * @param {Map<string, { recordType: string, record: object }[]>} childrenByOwner Implementation child rows by owner index.
      * @returns {object | null}
      */
-    static #implementation(record, records, components, listsByIndex) {
+    static #implementation(record, components, listsByIndex, childrenByOwner) {
         const indexInSheet =
             parseNumericField(record.fields, 'IndexInSheet') ??
             record.recordIndex ??
@@ -184,11 +188,11 @@ export class SchematicImplementationParser {
                 record.fields
             ),
             mapDefiners: SchematicImplementationParser.#mapDefiners(
-                records,
+                childrenByOwner,
                 indexInSheet
             ),
             parameters: SchematicImplementationParser.#parameters(
-                records,
+                childrenByOwner,
                 indexInSheet
             )
         })
@@ -326,23 +330,17 @@ export class SchematicImplementationParser {
 
     /**
      * Parses map-definer child records for one implementation.
-     * @param {object[]} records All schematic records.
+     * @param {Map<string, { recordType: string, record: object }[]>} childrenByOwner Implementation child rows by owner index.
      * @param {number} implementationIndex Implementation index.
      * @returns {object[]}
      */
-    static #mapDefiners(records, implementationIndex) {
-        return (records || [])
-            .filter(
-                (record) =>
-                    SchematicImplementationParser.#field(
-                        record.fields,
-                        'RECORD'
-                    ) === '47' &&
-                    SchematicImplementationParser.#field(
-                        record.fields,
-                        'OwnerIndex'
-                    ) === String(implementationIndex)
-            )
+    static #mapDefiners(childrenByOwner, implementationIndex) {
+        return SchematicImplementationParser.#ownedImplementationChildren(
+            childrenByOwner,
+            implementationIndex
+        )
+            .filter((row) => row.recordType === '47')
+            .map((row) => row.record)
             .map((record) =>
                 SchematicImplementationParser.#stripEmpty({
                     recordKey: SchematicImplementationParser.#recordKey(record),
@@ -360,25 +358,17 @@ export class SchematicImplementationParser {
 
     /**
      * Parses implementation parameter child records.
-     * @param {object[]} records All schematic records.
+     * @param {Map<string, { recordType: string, record: object }[]>} childrenByOwner Implementation child rows by owner index.
      * @param {number} implementationIndex Implementation index.
      * @returns {object[]}
      */
-    static #parameters(records, implementationIndex) {
-        return (records || [])
-            .filter((record) => {
-                const recordType = SchematicImplementationParser.#field(
-                    record.fields,
-                    'RECORD'
-                )
-                return (
-                    (recordType === '48' || recordType === '41') &&
-                    SchematicImplementationParser.#field(
-                        record.fields,
-                        'OwnerIndex'
-                    ) === String(implementationIndex)
-                )
-            })
+    static #parameters(childrenByOwner, implementationIndex) {
+        return SchematicImplementationParser.#ownedImplementationChildren(
+            childrenByOwner,
+            implementationIndex
+        )
+            .filter((row) => row.recordType === '48' || row.recordType === '41')
+            .map((row) => row.record)
             .map((record) =>
                 SchematicImplementationParser.#stripEmpty({
                     recordKey: SchematicImplementationParser.#recordKey(record),
@@ -394,6 +384,55 @@ export class SchematicImplementationParser {
                         )
                 })
             )
+    }
+
+    /**
+     * Indexes implementation child rows by owner index once per parse.
+     * @param {object[]} records Schematic records.
+     * @returns {Map<string, { recordType: string, record: object }[]>}
+     */
+    static #implementationChildrenByOwner(records) {
+        const rowsByOwner = new Map()
+
+        for (const record of records || []) {
+            const recordType = SchematicImplementationParser.#field(
+                record.fields,
+                'RECORD'
+            )
+            if (
+                recordType !== '47' &&
+                recordType !== '48' &&
+                recordType !== '41'
+            ) {
+                continue
+            }
+
+            const ownerIndex = SchematicImplementationParser.#field(
+                record.fields,
+                'OwnerIndex'
+            )
+            if (!ownerIndex) {
+                continue
+            }
+
+            if (!rowsByOwner.has(ownerIndex)) {
+                rowsByOwner.set(ownerIndex, [])
+            }
+
+            rowsByOwner.get(ownerIndex).push({ recordType, record })
+        }
+
+        return rowsByOwner
+    }
+
+    /**
+     * Returns pre-indexed child rows for one implementation.
+     * @param {Map<string, { recordType: string, record: object }[]>} childrenByOwner Implementation child rows by owner index.
+     * @param {number} implementationIndex Implementation index.
+     * @returns {{ recordType: string, record: object }[]}
+     */
+    static #ownedImplementationChildren(childrenByOwner, implementationIndex) {
+        return childrenByOwner.get(String(implementationIndex)) || []
     }
 
     /**

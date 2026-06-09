@@ -6,6 +6,9 @@
  * Shared parsing helpers for normalized Altium records.
  */
 export class ParserUtils {
+    /** @type {WeakMap<object, Map<string, { raw: unknown, rawUtf8: unknown, value: string }>>} */
+    static #fieldValueCache = new WeakMap()
+
     /**
      * Removes duplicate PCB placements by designator.
      * @param {{ designator: string }[]} components
@@ -141,16 +144,69 @@ export class ParserUtils {
      * @returns {string}
      */
     static #getPreferredFieldValue(fields, key, skipAsterisk) {
-        if (!fields) return ''
+        if (!fields || typeof fields !== 'object') return ''
 
         const utf8Key = 'UTF8:' + key
-        const utf8Value = ParserUtils.#pickFieldValue(
-            fields[utf8Key],
-            skipAsterisk
-        )
-        if (utf8Value) return utf8Value
+        const rawUtf8 = fields[utf8Key]
+        const raw = fields[key]
 
-        return ParserUtils.#pickFieldValue(fields[key], skipAsterisk)
+        if (!Array.isArray(rawUtf8) && !Array.isArray(raw)) {
+            const utf8Value = ParserUtils.#pickFieldValue(rawUtf8, skipAsterisk)
+            return utf8Value || ParserUtils.#pickFieldValue(raw, skipAsterisk)
+        }
+
+        const cacheKey = key + ':' + (skipAsterisk ? 'text' : 'field')
+        const cached = ParserUtils.#cachedFieldValue(
+            fields,
+            cacheKey,
+            raw,
+            rawUtf8
+        )
+        if (cached !== null) return cached
+
+        const utf8Value = ParserUtils.#pickFieldValue(rawUtf8, skipAsterisk)
+        const value =
+            utf8Value || ParserUtils.#pickFieldValue(raw, skipAsterisk)
+
+        ParserUtils.#cacheFieldValue(fields, cacheKey, raw, rawUtf8, value)
+        return value
+    }
+
+    /**
+     * Returns a cached normalized value when the raw field references match.
+     * @param {object} fields Field object.
+     * @param {string} cacheKey Cache key.
+     * @param {unknown} raw Raw field payload.
+     * @param {unknown} rawUtf8 Raw UTF-8 field payload.
+     * @returns {string | null}
+     */
+    static #cachedFieldValue(fields, cacheKey, raw, rawUtf8) {
+        const fieldCache = ParserUtils.#fieldValueCache.get(fields)
+        const cached = fieldCache?.get(cacheKey)
+        if (!cached || cached.raw !== raw || cached.rawUtf8 !== rawUtf8) {
+            return null
+        }
+
+        return cached.value
+    }
+
+    /**
+     * Stores one normalized field value.
+     * @param {object} fields Field object.
+     * @param {string} cacheKey Cache key.
+     * @param {unknown} raw Raw field payload.
+     * @param {unknown} rawUtf8 Raw UTF-8 field payload.
+     * @param {string} value Normalized value.
+     * @returns {void}
+     */
+    static #cacheFieldValue(fields, cacheKey, raw, rawUtf8, value) {
+        let fieldCache = ParserUtils.#fieldValueCache.get(fields)
+        if (!fieldCache) {
+            fieldCache = new Map()
+            ParserUtils.#fieldValueCache.set(fields, fieldCache)
+        }
+
+        fieldCache.set(cacheKey, { raw, rawUtf8, value })
     }
 
     /**
@@ -160,14 +216,27 @@ export class ParserUtils {
      * @returns {string}
      */
     static #pickFieldValue(raw, skipAsterisk) {
-        const values = Array.isArray(raw) ? raw : [raw]
+        if (!Array.isArray(raw)) {
+            const value = ParserUtils.#normalizeFieldValue(raw)
+            return value && (!skipAsterisk || value !== '*') ? value : ''
+        }
 
-        return (
-            values
-                .map((value) => String(value || '').trim())
-                .findLast(
-                    (value) => value && (!skipAsterisk || value !== '*')
-                ) || ''
-        )
+        for (let index = raw.length - 1; index >= 0; index -= 1) {
+            const value = ParserUtils.#normalizeFieldValue(raw[index])
+            if (value && (!skipAsterisk || value !== '*')) {
+                return value
+            }
+        }
+
+        return ''
+    }
+
+    /**
+     * Normalizes one field payload value.
+     * @param {string | undefined} value
+     * @returns {string}
+     */
+    static #normalizeFieldValue(value) {
+        return String(value || '').trim()
     }
 }

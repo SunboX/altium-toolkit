@@ -8,6 +8,8 @@ import { ParserUtils } from './ParserUtils.mjs'
  * Parses source-only layer-stack metadata that is not part of core geometry.
  */
 export class PcbLayerStackSourceMetadataParser {
+    static #fieldIndexes = new WeakMap()
+
     /**
      * Parses source-aware extras for one layer-stack row.
      * @param {Record<string, string | string[]>} fields Source fields.
@@ -401,15 +403,36 @@ export class PcbLayerStackSourceMetadataParser {
      * @returns {string}
      */
     static #field(fields, key) {
-        if (Object.hasOwn(fields, key)) {
+        if (Object.hasOwn(fields, key) || key in fields) {
             return ParserUtils.getField(fields, key)
         }
-        const upperKey = key.toUpperCase()
-        const realKey = Object.keys(fields).find(
-            (fieldKey) => fieldKey.toUpperCase() === upperKey
-        )
+        const realKey = PcbLayerStackSourceMetadataParser.#fieldIndex(
+            fields
+        ).get(key.toUpperCase())
 
         return realKey ? ParserUtils.getField(fields, realKey) : ''
+    }
+
+    /**
+     * Builds or returns a cached case-insensitive field-key index.
+     * @param {Record<string, string | string[]>} fields Source fields.
+     * @returns {Map<string, string>}
+     */
+    static #fieldIndex(fields) {
+        const cached =
+            PcbLayerStackSourceMetadataParser.#fieldIndexes.get(fields)
+        if (cached) return cached
+
+        const fieldIndex = new Map()
+        for (const fieldKey of Object.keys(fields)) {
+            const upperKey = fieldKey.toUpperCase()
+            if (!fieldIndex.has(upperKey)) {
+                fieldIndex.set(upperKey, fieldKey)
+            }
+        }
+
+        PcbLayerStackSourceMetadataParser.#fieldIndexes.set(fields, fieldIndex)
+        return fieldIndex
     }
 
     /**

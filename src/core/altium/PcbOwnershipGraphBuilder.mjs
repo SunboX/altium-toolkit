@@ -228,9 +228,7 @@ export class PcbOwnershipGraphBuilder {
         if (!groups[key]) {
             groups[key] = fallbackGroup
         }
-        if (!groups[key].primitiveKeys.includes(primitiveKey)) {
-            groups[key].primitiveKeys.push(primitiveKey)
-        }
+        groups[key].primitiveKeys.push(primitiveKey)
     }
 
     /**

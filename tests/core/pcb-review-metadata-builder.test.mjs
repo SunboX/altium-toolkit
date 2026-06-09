@@ -4,6 +4,8 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { PcbReviewMetadataBuilder } from '../../src/core/altium/PcbReviewMetadataBuilder.mjs'
+import { PcbReviewRouteHighlightProfileBuilder } from '../../src/core/altium/PcbReviewRouteHighlightProfileBuilder.mjs'
 import { PcbModelParser } from '../../src/parser.mjs'
 
 /**
@@ -288,6 +290,210 @@ test('PcbModelParser emits route and board-assembly review metadata', () => {
             }
         }
     })
+})
+
+test('PcbReviewRouteHighlightProfileBuilder indexes route rows without repeated net scans', () => {
+    const routeRows = Array.from({ length: 25 }, (_entry, index) => ({
+        netName: 'NET_' + index,
+        layerParticipation: [
+            {
+                layerKey: 'L1',
+                totalLengthMil: index + 1
+            }
+        ],
+        connectedRouteGroups: [
+            {
+                layerKeys: ['L1'],
+                primitiveKeys: ['track-' + index]
+            }
+        ]
+    }))
+    let filterCalls = 0
+    const byNet = new Proxy(routeRows, {
+        get(target, property, receiver) {
+            if (property === 'filter') filterCalls += 1
+            return Reflect.get(target, property, receiver)
+        }
+    })
+
+    const profiles = PcbReviewRouteHighlightProfileBuilder.build({
+        byNet,
+        classes: [
+            {
+                name: 'All Signals',
+                netNames: routeRows.map((row) => row.netName)
+            }
+        ],
+        differentialPairs: []
+    })
+
+    assert.equal(profiles.length, 26)
+    assert.equal(filterCalls, 0)
+})
+
+test('PcbReviewMetadataBuilder indexes route groups without repeated net scans', () => {
+    const routeRows = Array.from({ length: 20 }, (_entry, index) => ({
+        netName: 'NET_' + index,
+        layers: ['L1'],
+        connectedRouteGroups: [
+            {
+                primitiveKeys: ['track-' + index]
+            }
+        ]
+    }))
+    let filterCalls = 0
+    const byNet = new Proxy(routeRows, {
+        get(target, property, receiver) {
+            if (property === 'filter') filterCalls += 1
+            return Reflect.get(target, property, receiver)
+        }
+    })
+
+    const reviewMetadata = PcbReviewMetadataBuilder.build({
+        routeAnalysis: {
+            byNet,
+            classes: [
+                {
+                    name: 'All Signals',
+                    netNames: routeRows.map((row) => row.netName),
+                    totalLengthMil: 20
+                }
+            ],
+            differentialPairs: [
+                {
+                    name: 'PAIR_1',
+                    positiveNetName: 'NET_1',
+                    negativeNetName: 'NET_2'
+                }
+            ]
+        }
+    })
+
+    assert.equal(reviewMetadata.summary.routeGroupCount, 2)
+    assert.equal(filterCalls, 0)
+})
+
+test('PcbReviewRouteHighlightProfileBuilder sorts route keys without locale collation', () => {
+    const originalLocaleCompare = String.prototype.localeCompare
+    let localeCompareCalls = 0
+    let profiles = []
+
+    String.prototype.localeCompare = function countedLocaleCompare(...args) {
+        localeCompareCalls += 1
+        return originalLocaleCompare.apply(this, args)
+    }
+
+    try {
+        profiles = PcbReviewRouteHighlightProfileBuilder.build({
+            byNet: [
+                {
+                    netName: 'NET_2',
+                    layerParticipation: [
+                        {
+                            layerKey: 'L2',
+                            totalLengthMil: 1
+                        },
+                        {
+                            layerKey: 'L10',
+                            totalLengthMil: 1
+                        },
+                        {
+                            layerKey: 'L1',
+                            totalLengthMil: 3
+                        }
+                    ],
+                    connectedRouteGroups: [
+                        {
+                            layerKeys: ['L2', 'L10', 'L1'],
+                            primitiveKeys: [
+                                'track-10',
+                                'track-2',
+                                'track-1',
+                                'track-2'
+                            ]
+                        }
+                    ]
+                }
+            ],
+            classes: [
+                {
+                    name: 'Class 10',
+                    netNames: ['NET_2']
+                }
+            ],
+            differentialPairs: []
+        })
+    } finally {
+        String.prototype.localeCompare = originalLocaleCompare
+    }
+
+    const netProfile = profiles.find((profile) => profile.name === 'NET_2')
+    assert.deepEqual(
+        netProfile.layerGroups.map((group) => group.layerKey),
+        ['L1', 'L2', 'L10']
+    )
+    assert.deepEqual(netProfile.layerGroups[0].primitiveKeys, [
+        'track-1',
+        'track-2',
+        'track-10'
+    ])
+    assert.equal(localeCompareCalls, 0)
+})
+
+test('PcbReviewMetadataBuilder sorts primitive keys without locale collation', () => {
+    const originalLocaleCompare = String.prototype.localeCompare
+    let localeCompareCalls = 0
+    let reviewMetadata = null
+
+    String.prototype.localeCompare = function countedLocaleCompare(...args) {
+        localeCompareCalls += 1
+        return originalLocaleCompare.apply(this, args)
+    }
+
+    try {
+        reviewMetadata = PcbReviewMetadataBuilder.build({
+            routeAnalysis: {
+                byNet: [
+                    {
+                        netName: 'NET_2',
+                        layers: ['L2', 'L10', 'L1'],
+                        connectedRouteGroups: [
+                            {
+                                primitiveKeys: [
+                                    'track-10',
+                                    'track-2',
+                                    'track-1',
+                                    'track-2'
+                                ]
+                            }
+                        ]
+                    }
+                ],
+                classes: [
+                    {
+                        name: 'Class 10',
+                        netNames: ['NET_2'],
+                        totalLengthMil: 3
+                    }
+                ],
+                differentialPairs: []
+            }
+        })
+    } finally {
+        String.prototype.localeCompare = originalLocaleCompare
+    }
+
+    assert.deepEqual(reviewMetadata.routeGroups[0].layerKeys, [
+        'L1',
+        'L2',
+        'L10'
+    ])
+    assert.deepEqual(reviewMetadata.routeGroups[0].primitiveKeys, [
+        'track-1',
+        'track-2',
+        'track-10'
+    ])
+    assert.equal(localeCompareCalls, 0)
 })
 
 test('PcbModelParser emits polygon, route-highlight, and drill review sidecars', () => {

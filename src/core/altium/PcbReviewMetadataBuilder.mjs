@@ -5,6 +5,7 @@
 import { PcbReviewDrillMetadataBuilder } from './PcbReviewDrillMetadataBuilder.mjs'
 import { PcbReviewPolygonRealizationBuilder } from './PcbReviewPolygonRealizationBuilder.mjs'
 import { PcbReviewRouteHighlightProfileBuilder } from './PcbReviewRouteHighlightProfileBuilder.mjs'
+import { NaturalStringComparator } from './NaturalStringComparator.mjs'
 
 /**
  * Builds PCB review metadata for routed-class and board-assembly workflows.
@@ -18,11 +19,15 @@ export class PcbReviewMetadataBuilder {
      * @returns {object}
      */
     static build(pcb = {}) {
+        const routeAnalysis = pcb.routeAnalysis || {}
+        const routeRowsByName =
+            PcbReviewMetadataBuilder.#routeRowsByName(routeAnalysis)
         const routeGroups = PcbReviewMetadataBuilder.#routeGroups(
-            pcb.routeAnalysis || {}
+            routeAnalysis,
+            routeRowsByName
         )
         const routeHighlightProfiles =
-            PcbReviewRouteHighlightProfileBuilder.build(pcb.routeAnalysis || {})
+            PcbReviewRouteHighlightProfileBuilder.build(routeAnalysis)
         const polygonRealizations =
             PcbReviewPolygonRealizationBuilder.build(pcb)
         const drillReview = PcbReviewDrillMetadataBuilder.build(pcb)
@@ -51,7 +56,7 @@ export class PcbReviewMetadataBuilder {
                 polygonRealizations,
                 drillReview,
                 boardAssemblyViews,
-                pcb.routeAnalysis || {}
+                routeAnalysis
             )
         }
     }
@@ -59,21 +64,29 @@ export class PcbReviewMetadataBuilder {
     /**
      * Builds route highlight groups from route analysis.
      * @param {object} routeAnalysis Route analysis model.
+     * @param {Map<string, object[]>} routeRowsByName Route rows by net name.
      * @returns {object[]}
      */
-    static #routeGroups(routeAnalysis) {
+    static #routeGroups(routeAnalysis, routeRowsByName) {
         return [
-            ...PcbReviewMetadataBuilder.#classGroups(routeAnalysis),
-            ...PcbReviewMetadataBuilder.#differentialPairGroups(routeAnalysis)
+            ...PcbReviewMetadataBuilder.#classGroups(
+                routeAnalysis,
+                routeRowsByName
+            ),
+            ...PcbReviewMetadataBuilder.#differentialPairGroups(
+                routeAnalysis,
+                routeRowsByName
+            )
         ]
     }
 
     /**
      * Builds net-class route groups.
      * @param {object} routeAnalysis Route analysis model.
+     * @param {Map<string, object[]>} routeRowsByName Route rows by net name.
      * @returns {object[]}
      */
-    static #classGroups(routeAnalysis) {
+    static #classGroups(routeAnalysis, routeRowsByName) {
         return (routeAnalysis.classes || []).map((classRow) =>
             PcbReviewMetadataBuilder.#stripEmpty({
                 key:
@@ -83,11 +96,11 @@ export class PcbReviewMetadataBuilder {
                 name: classRow.name,
                 netNames: classRow.netNames || [],
                 layerKeys: PcbReviewMetadataBuilder.#layerKeysForNets(
-                    routeAnalysis,
+                    routeRowsByName,
                     classRow.netNames || []
                 ),
                 primitiveKeys: PcbReviewMetadataBuilder.#primitiveKeysForNets(
-                    routeAnalysis,
+                    routeRowsByName,
                     classRow.netNames || []
                 ),
                 totalLengthMil: classRow.totalLengthMil
@@ -98,9 +111,10 @@ export class PcbReviewMetadataBuilder {
     /**
      * Builds differential-pair route groups.
      * @param {object} routeAnalysis Route analysis model.
+     * @param {Map<string, object[]>} routeRowsByName Route rows by net name.
      * @returns {object[]}
      */
-    static #differentialPairGroups(routeAnalysis) {
+    static #differentialPairGroups(routeAnalysis, routeRowsByName) {
         return (routeAnalysis.differentialPairs || []).map((pair) => {
             const netNames = [
                 pair.positiveNetName,
@@ -115,11 +129,11 @@ export class PcbReviewMetadataBuilder {
                 name: pair.name,
                 netNames,
                 layerKeys: PcbReviewMetadataBuilder.#layerKeysForNets(
-                    routeAnalysis,
+                    routeRowsByName,
                     netNames
                 ),
                 primitiveKeys: PcbReviewMetadataBuilder.#primitiveKeysForNets(
-                    routeAnalysis,
+                    routeRowsByName,
                     netNames
                 ),
                 totalLengthMil: PcbReviewMetadataBuilder.#round(
@@ -226,20 +240,20 @@ export class PcbReviewMetadataBuilder {
         }
         return Object.fromEntries(
             Object.entries(entries).sort(([left], [right]) =>
-                left.localeCompare(right, undefined, { numeric: true })
+                NaturalStringComparator.compare(left, right)
             )
         )
     }
 
     /**
      * Returns layer keys participating in a list of nets.
-     * @param {object} routeAnalysis Route analysis model.
+     * @param {Map<string, object[]>} routeRowsByName Route rows by net name.
      * @param {string[]} netNames Net names.
      * @returns {string[]}
      */
-    static #layerKeysForNets(routeAnalysis, netNames) {
+    static #layerKeysForNets(routeRowsByName, netNames) {
         const nets = PcbReviewMetadataBuilder.#netsByName(
-            routeAnalysis,
+            routeRowsByName,
             netNames
         )
         return PcbReviewMetadataBuilder.#sortedStrings(
@@ -249,13 +263,13 @@ export class PcbReviewMetadataBuilder {
 
     /**
      * Returns primitive keys participating in a list of nets.
-     * @param {object} routeAnalysis Route analysis model.
+     * @param {Map<string, object[]>} routeRowsByName Route rows by net name.
      * @param {string[]} netNames Net names.
      * @returns {string[]}
      */
-    static #primitiveKeysForNets(routeAnalysis, netNames) {
+    static #primitiveKeysForNets(routeRowsByName, netNames) {
         const nets = PcbReviewMetadataBuilder.#netsByName(
-            routeAnalysis,
+            routeRowsByName,
             netNames
         )
         return PcbReviewMetadataBuilder.#sortedStrings(
@@ -264,15 +278,32 @@ export class PcbReviewMetadataBuilder {
     }
 
     /**
-     * Resolves net route rows by name.
+     * Builds route rows indexed by net name.
      * @param {object} routeAnalysis Route analysis model.
+     * @returns {Map<string, object[]>}
+     */
+    static #routeRowsByName(routeAnalysis) {
+        const rowsByName = new Map()
+        for (const net of routeAnalysis.byNet || []) {
+            const netName = String(net?.netName || '')
+            if (!netName) continue
+            if (!rowsByName.has(netName)) {
+                rowsByName.set(netName, [])
+            }
+            rowsByName.get(netName).push(net)
+        }
+        return rowsByName
+    }
+
+    /**
+     * Resolves net route rows by name.
+     * @param {Map<string, object[]>} routeRowsByName Route rows by net name.
      * @param {string[]} netNames Net names.
      * @returns {object[]}
      */
-    static #netsByName(routeAnalysis, netNames) {
-        const wanted = new Set(netNames || [])
-        return (routeAnalysis.byNet || []).filter((net) =>
-            wanted.has(net.netName)
+    static #netsByName(routeRowsByName, netNames) {
+        return (netNames || []).flatMap(
+            (netName) => routeRowsByName.get(netName) || []
         )
     }
 
@@ -323,10 +354,10 @@ export class PcbReviewMetadataBuilder {
      * @returns {string[]}
      */
     static #sortedStrings(values) {
-        return [...new Set((values || []).filter(Boolean))].sort(
-            (left, right) =>
-                left.localeCompare(right, undefined, { numeric: true })
-        )
+        const sortedValues = [...new Set((values || []).filter(Boolean))]
+        return sortedValues.length < 2
+            ? sortedValues
+            : sortedValues.sort(NaturalStringComparator.compare)
     }
 
     /**

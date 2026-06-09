@@ -183,23 +183,30 @@ export class PcbRouteAnalysisBuilder {
      * @returns {object[]}
      */
     static #netRows(pcb, routePrimitives, viaRows) {
+        const primitivesByNet =
+            PcbRouteAnalysisBuilder.#rowsByNet(routePrimitives)
+        const viasByNet = PcbRouteAnalysisBuilder.#rowsByNet(viaRows)
         const netNames = new Set([
             ...(pcb?.nets || []).map((net) => net.name).filter(Boolean),
-            ...routePrimitives.map((primitive) => primitive.netName),
-            ...viaRows.map((via) => via.netName)
+            ...primitivesByNet.keys(),
+            ...viasByNet.keys()
         ])
 
         return [...netNames]
-            .map((netName) =>
-                PcbRouteAnalysisBuilder.#netRow(
+            .map((netName) => {
+                const primitives = primitivesByNet.get(netName) || []
+                const vias = viasByNet.get(netName) || []
+                if (!primitives.length && !vias.length) {
+                    return null
+                }
+
+                return PcbRouteAnalysisBuilder.#netRow(
                     netName,
-                    routePrimitives.filter(
-                        (primitive) => primitive.netName === netName
-                    ),
-                    viaRows.filter((via) => via.netName === netName)
+                    primitives,
+                    vias
                 )
-            )
-            .filter((net) => net.totalLengthMil > 0 || net.viaCount > 0)
+            })
+            .filter(Boolean)
             .sort((left, right) =>
                 left.netName.localeCompare(right.netName, undefined, {
                     numeric: true
@@ -215,12 +222,16 @@ export class PcbRouteAnalysisBuilder {
      * @returns {object}
      */
     static #netRow(netName, primitives, vias) {
-        const trackRows = primitives.filter(
-            (primitive) => primitive.kind === 'track'
-        )
-        const arcRows = primitives.filter(
-            (primitive) => primitive.kind === 'arc'
-        )
+        const trackRows = []
+        const arcRows = []
+
+        for (const primitive of primitives || []) {
+            if (primitive.kind === 'track') {
+                trackRows.push(primitive)
+            } else if (primitive.kind === 'arc') {
+                arcRows.push(primitive)
+            }
+        }
 
         return {
             netName,
@@ -238,6 +249,29 @@ export class PcbRouteAnalysisBuilder {
             connectedRouteGroups:
                 PcbRouteAnalysisBuilder.#connectedRouteGroups(primitives)
         }
+    }
+
+    /**
+     * Groups route rows by net name.
+     * @param {object[]} rows Route or via rows.
+     * @returns {Map<string, object[]>}
+     */
+    static #rowsByNet(rows) {
+        const rowsByNet = new Map()
+
+        for (const row of rows || []) {
+            const netName = String(row?.netName || '').trim()
+            if (!netName) {
+                continue
+            }
+
+            if (!rowsByNet.has(netName)) {
+                rowsByNet.set(netName, [])
+            }
+            rowsByNet.get(netName).push(row)
+        }
+
+        return rowsByNet
     }
 
     /**

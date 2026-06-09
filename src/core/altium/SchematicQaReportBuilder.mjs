@@ -4,8 +4,7 @@
 
 import { ParserUtils } from './ParserUtils.mjs'
 
-const { getDisplayText, getField, parseBoolean, parseNumericField, toColor } =
-    ParserUtils
+const { parseBoolean, parseNumericField, toColor } = ParserUtils
 
 /**
  * Builds deterministic read-only QA summaries for schematic documents.
@@ -25,12 +24,17 @@ export class SchematicQaReportBuilder {
         const lineWidths = SchematicQaReportBuilder.#lineWidths(records)
         const unresolvedParameters =
             SchematicQaReportBuilder.#unresolvedParameters(records)
+        const titleBlockResidue =
+            SchematicQaReportBuilder.#titleBlockResidue(records)
         const findings = [
             ...SchematicQaReportBuilder.#fontFindings(fonts),
             ...SchematicQaReportBuilder.#unresolvedFindings(
                 unresolvedParameters
             ),
-            ...SchematicQaReportBuilder.#titleBlockFindings(records)
+            ...SchematicQaReportBuilder.#titleBlockFindings(
+                records,
+                titleBlockResidue
+            )
         ]
 
         return {
@@ -47,8 +51,7 @@ export class SchematicQaReportBuilder {
             colors,
             lineWidths,
             unresolvedParameters,
-            titleBlockResidue:
-                SchematicQaReportBuilder.#titleBlockResidue(records),
+            titleBlockResidue,
             geometryFallbacks: SchematicQaReportBuilder.#geometryFallbacks(
                 input?.texts
             ),
@@ -138,26 +141,15 @@ export class SchematicQaReportBuilder {
      * @returns {string[]}
      */
     static #unresolvedParameters(records) {
-        const metadata = new Set(
-            (records || [])
-                .filter((record) => getField(record.fields, 'RECORD') === '41')
-                .map((record) => getField(record.fields, 'Name'))
-                .filter(Boolean)
-        )
         const unresolved = []
 
         for (const record of records || []) {
-            const text = getDisplayText(record.fields)
+            const text = SchematicQaReportBuilder.#displayText(record.fields)
             const match = text.match(/^=([A-Za-z_][\w.]*)$/)
             if (!match) {
                 continue
             }
-            if (
-                !metadata.has(match[1]) ||
-                text === getDisplayText(record.fields)
-            ) {
-                unresolved.push(match[1])
-            }
+            unresolved.push(match[1])
         }
 
         return [...new Set(unresolved)].sort()
@@ -200,23 +192,25 @@ export class SchematicQaReportBuilder {
     /**
      * Builds title-block findings.
      * @param {object[]} records Schematic records.
+     * @param {object[]} titleBlockResidue Hidden title-block residue rows.
      * @returns {object[]}
      */
-    static #titleBlockFindings(records) {
+    static #titleBlockFindings(records, titleBlockResidue) {
         const sheet = (records || []).find(
-            (record) => getField(record.fields, 'RECORD') === '31'
+            (record) =>
+                SchematicQaReportBuilder.#field(record.fields, 'RECORD') ===
+                '31'
         )
         if (!sheet || parseBoolean(sheet.fields.TitleBlockOn)) {
             return []
         }
 
-        const residue = SchematicQaReportBuilder.#titleBlockResidue(records)
-        return residue.length
+        return titleBlockResidue.length
             ? [
                   {
                       code: 'schematic.title-block.hidden-residue',
                       severity: 'info',
-                      count: residue.length,
+                      count: titleBlockResidue.length,
                       message:
                           'Hidden title-block parameter records remain while the title block is disabled.'
                   }
@@ -240,22 +234,32 @@ export class SchematicQaReportBuilder {
             'drawnby'
         ])
 
-        return (records || [])
-            .filter(
-                (record) =>
-                    getField(record.fields, 'RECORD') === '41' &&
-                    parseBoolean(record.fields.IsHidden) &&
-                    titleBlockNames.has(
-                        getField(record.fields, 'Name')
-                            .replace(/\s+/g, '')
-                            .toLowerCase()
-                    )
-            )
-            .map((record) => ({
+        const residue = []
+
+        for (const record of records || []) {
+            const fields = record.fields || {}
+            if (
+                SchematicQaReportBuilder.#field(fields, 'RECORD') !== '41' ||
+                !parseBoolean(
+                    SchematicQaReportBuilder.#rawField(fields, 'IsHidden')
+                )
+            ) {
+                continue
+            }
+
+            const name = SchematicQaReportBuilder.#field(fields, 'Name')
+            if (!titleBlockNames.has(name.replace(/\s+/g, '').toLowerCase())) {
+                continue
+            }
+
+            residue.push({
                 recordKey: SchematicQaReportBuilder.#recordKey(record),
-                name: getField(record.fields, 'Name'),
-                value: getDisplayText(record.fields)
-            }))
+                name,
+                value: SchematicQaReportBuilder.#displayText(fields)
+            })
+        }
+
+        return residue
     }
 
     /**
@@ -280,5 +284,78 @@ export class SchematicQaReportBuilder {
      */
     static #recordKey(record) {
         return 'schematic-record-' + String(record?.recordIndex ?? 0)
+    }
+
+    /**
+     * Reads one common field without invoking generic field-cache bookkeeping.
+     * @param {Record<string, string | string[]> | undefined} fields Record fields.
+     * @param {string} key Requested key.
+     * @returns {string}
+     */
+    static #field(fields, key) {
+        return SchematicQaReportBuilder.#pickFieldValue(
+            SchematicQaReportBuilder.#rawField(fields, key),
+            false
+        )
+    }
+
+    /**
+     * Returns the best schematic display text without shared field-cache overhead.
+     * @param {Record<string, string | string[]> | undefined} fields Record fields.
+     * @returns {string}
+     */
+    static #displayText(fields) {
+        return (
+            SchematicQaReportBuilder.#pickFieldValue(
+                SchematicQaReportBuilder.#rawField(fields, 'UTF8:Text'),
+                true
+            ) ||
+            SchematicQaReportBuilder.#pickFieldValue(
+                SchematicQaReportBuilder.#rawField(fields, 'Text'),
+                true
+            )
+        )
+    }
+
+    /**
+     * Reads one raw field from parsed records or simple fixture objects.
+     * @param {Record<string, string | string[]> | undefined} fields Record fields.
+     * @param {string} key Requested key.
+     * @returns {string | string[] | undefined}
+     */
+    static #rawField(fields, key) {
+        if (!fields || typeof fields !== 'object') {
+            return undefined
+        }
+
+        const direct = fields[key]
+        if (direct !== undefined) {
+            return direct
+        }
+
+        const upperKey = key.toUpperCase()
+        return upperKey === key ? undefined : fields[upperKey]
+    }
+
+    /**
+     * Returns the last meaningful value from one field payload.
+     * @param {string | string[] | undefined} raw Raw field payload.
+     * @param {boolean} skipAsterisk Whether placeholder asterisks are ignored.
+     * @returns {string}
+     */
+    static #pickFieldValue(raw, skipAsterisk) {
+        if (!Array.isArray(raw)) {
+            const value = String(raw || '').trim()
+            return value && (!skipAsterisk || value !== '*') ? value : ''
+        }
+
+        for (let index = raw.length - 1; index >= 0; index -= 1) {
+            const value = String(raw[index] || '').trim()
+            if (value && (!skipAsterisk || value !== '*')) {
+                return value
+            }
+        }
+
+        return ''
     }
 }

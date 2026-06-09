@@ -52,7 +52,22 @@ export class PcbInteractionIndex {
      * @returns {object[]}
      */
     static hitTest(documentModel, point, options = {}) {
-        return PcbInteractionIndex.build(documentModel)
+        return PcbInteractionIndex.hitTestItems(
+            PcbInteractionIndex.build(documentModel),
+            point,
+            options
+        )
+    }
+
+    /**
+     * Returns hit candidates from an already-built interaction item list.
+     * @param {object[]} items Built interaction items.
+     * @param {{ x?: unknown, y?: unknown }} point Hit-test point.
+     * @param {object} [options] Hit-test options.
+     * @returns {object[]}
+     */
+    static hitTestItems(items, point, options = {}) {
+        return (Array.isArray(items) ? items : [])
             .filter((item) =>
                 PcbInteractionIndex.#isVisibleCandidate(item, options)
             )
