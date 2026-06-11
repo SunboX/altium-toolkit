@@ -22,6 +22,8 @@ export class SchematicPinSvgRenderer {
      * @param {Set<string>} rotatedVerticalNumberOwners
      * @param {Set<string>} explicitOwnerPinNameLabels
      * @param {Map<string, number>} explicitOwnerPinLabelOffsets
+     * @param {Map<string, 'left' | 'right'>} compactExternalNumberLabelSides
+     * @param {Map<string, { left: number, right: number }>} internalNumberLabelBoxes
      * @returns {string}
      */
     static buildMarkup(
@@ -30,7 +32,9 @@ export class SchematicPinSvgRenderer {
         sheet,
         rotatedVerticalNumberOwners,
         explicitOwnerPinNameLabels,
-        explicitOwnerPinLabelOffsets
+        explicitOwnerPinLabelOffsets,
+        compactExternalNumberLabelSides = new Map(),
+        internalNumberLabelBoxes = new Map()
     ) {
         const geometry =
             SchematicPinSvgRenderer.#projectSchematicPinGeometry(pin)
@@ -60,15 +64,43 @@ export class SchematicPinSvgRenderer {
         const hasExplicitOwnerPinName =
             Boolean(pin.name) &&
             explicitOwnerPinNameLabels.has(ownerPinLabelKey)
+        const compactExternalNumberLabelSide =
+            compactExternalNumberLabelSides.get(String(pin.ownerIndex || '')) ||
+            null
+        const internalNumberLabelBox =
+            internalNumberLabelBoxes.get(String(pin.ownerIndex || '')) || null
 
         if (pin.orientation === 'left') {
             if (labelMode !== 'hidden' && labelMode !== 'name-only') {
-                const defaultNumberX =
-                    geometry.bodyX -
-                    SchematicPinSvgRenderer.#resolveHorizontalPinNumberClearance(
-                        outerMarkerStyle,
-                        pin
+                const internalNumberPlacement =
+                    SchematicPinSvgRenderer.#resolveInternalHorizontalNumberPlacement(
+                        pin,
+                        internalNumberLabelBox
                     )
+                if (internalNumberPlacement) {
+                    texts.push(
+                        SchematicPinSvgRenderer.#buildPinNameTextMarkup(
+                            'schematic-pin-name',
+                            internalNumberPlacement.x,
+                            projectedY - 1,
+                            pin,
+                            labelColor,
+                            internalNumberPlacement.anchor,
+                            textOptions
+                        )
+                    )
+                }
+
+                const defaultNumberX = compactExternalNumberLabelSide
+                    ? SchematicPinSvgRenderer.#resolveCompactExternalHorizontalNumberX(
+                          pin,
+                          geometry
+                      )
+                    : geometry.bodyX -
+                      SchematicPinSvgRenderer.#resolveHorizontalPinNumberClearance(
+                          outerMarkerStyle,
+                          pin
+                      )
                 const numberX = hasExplicitOwnerPinName
                     ? SchematicOwnerPinLabelLayout.resolveExplicitOwnerPinNumberX(
                           pin,
@@ -116,12 +148,35 @@ export class SchematicPinSvgRenderer {
 
         if (pin.orientation === 'right') {
             if (labelMode !== 'hidden' && labelMode !== 'name-only') {
-                const defaultNumberX =
-                    geometry.bodyX +
-                    SchematicPinSvgRenderer.#resolveHorizontalPinNumberClearance(
-                        outerMarkerStyle,
-                        pin
+                const internalNumberPlacement =
+                    SchematicPinSvgRenderer.#resolveInternalHorizontalNumberPlacement(
+                        pin,
+                        internalNumberLabelBox
                     )
+                if (internalNumberPlacement) {
+                    texts.push(
+                        SchematicPinSvgRenderer.#buildPinNameTextMarkup(
+                            'schematic-pin-name',
+                            internalNumberPlacement.x,
+                            projectedY - 1,
+                            pin,
+                            labelColor,
+                            internalNumberPlacement.anchor,
+                            textOptions
+                        )
+                    )
+                }
+
+                const defaultNumberX = compactExternalNumberLabelSide
+                    ? SchematicPinSvgRenderer.#resolveCompactExternalHorizontalNumberX(
+                          pin,
+                          geometry
+                      )
+                    : geometry.bodyX +
+                      SchematicPinSvgRenderer.#resolveHorizontalPinNumberClearance(
+                          outerMarkerStyle,
+                          pin
+                      )
                 const numberX = hasExplicitOwnerPinName
                     ? SchematicOwnerPinLabelLayout.resolveExplicitOwnerPinNumberX(
                           pin,
@@ -175,7 +230,12 @@ export class SchematicPinSvgRenderer {
             texts.push(
                 createSvgText(
                     'schematic-pin-number',
-                    geometry.bodyX - 2,
+                    compactExternalNumberLabelSide
+                        ? SchematicPinSvgRenderer.#resolveCompactExternalVerticalNumberX(
+                              geometry,
+                              compactExternalNumberLabelSide
+                          )
+                        : geometry.bodyX - 2,
                     pin.orientation === 'top'
                         ? projectedInnerY - 6
                         : projectedInnerY + 7,
@@ -324,7 +384,7 @@ export class SchematicPinSvgRenderer {
      * @param {{ orientation: 'left' | 'right' | 'top' | 'bottom', labelColor?: string, color: string }} pin
      * @param {{ bodyX: number, bodyY: number }} geometry
      * @param {number} sheetHeight
-     * @param {'single-in' | 'single-out' | 'double'} markerStyle
+     * @param {'single-in' | 'single-out' | 'double' | 'cross'} markerStyle
      * @returns {string}
      */
     static #buildOuterPinMarkerMarkup(pin, geometry, sheetHeight, markerStyle) {
@@ -338,6 +398,15 @@ export class SchematicPinSvgRenderer {
             pin.labelColor || pin.color,
             '--schematic-text-color'
         )
+
+        if (markerStyle === 'cross') {
+            return SchematicPinSvgRenderer.#buildOuterPinCrossMarkerMarkup(
+                geometry.bodyX,
+                projectedY,
+                pin.orientation,
+                strokeColor
+            )
+        }
 
         const polygons = SchematicPinSvgRenderer.#buildOuterPinMarkerPolygons(
             geometry.bodyX,
@@ -374,7 +443,7 @@ export class SchematicPinSvgRenderer {
 
     /**
      * Returns the horizontal pin-number clearance needed by the pin geometry.
-     * @param {'single-in' | 'single-out' | 'double' | null} markerStyle
+     * @param {'single-in' | 'single-out' | 'double' | 'cross' | null} markerStyle
      * @param {{ length?: number }} pin
      * @returns {number}
      */
@@ -382,6 +451,8 @@ export class SchematicPinSvgRenderer {
         switch (markerStyle) {
             case 'double':
                 return 17
+            case 'cross':
+                return 12
             case 'single-in':
             case 'single-out':
                 return 8
@@ -418,6 +489,115 @@ export class SchematicPinSvgRenderer {
         }
 
         return fallback === 2 ? 10 : 8
+    }
+
+    /**
+     * Places numeric-only labels just inside a rectangular owner body.
+     * @param {{ name?: string, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
+     * @param {{ left: number, right: number } | null} box
+     * @returns {{ x: number, anchor: 'middle' } | null}
+     */
+    static #resolveInternalHorizontalNumberPlacement(pin, box) {
+        if (
+            !box ||
+            (pin.orientation !== 'left' && pin.orientation !== 'right') ||
+            !/^\d+$/u.test(String(pin.name || '').trim())
+        ) {
+            return null
+        }
+
+        const left = Number(box.left)
+        const right = Number(box.right)
+
+        if (
+            !Number.isFinite(left) ||
+            !Number.isFinite(right) ||
+            right <= left
+        ) {
+            return null
+        }
+
+        const inset = Math.min(6, Math.max(3, (right - left) / 10))
+
+        return {
+            x: pin.orientation === 'left' ? left + inset : right - inset,
+            anchor: 'middle'
+        }
+    }
+
+    /**
+     * Places compact owner-drawn side pin numbers near the external pin stub.
+     * @param {{ length?: number, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
+     * @param {{ bodyX: number }} geometry
+     * @returns {number}
+     */
+    static #resolveCompactExternalHorizontalNumberX(pin, geometry) {
+        const length = Math.abs(Number(pin.length || 0))
+        const offset = Math.max(8, Math.min(length - 6, 12))
+
+        if (pin.orientation === 'left') {
+            return geometry.bodyX - offset
+        }
+
+        if (pin.orientation === 'right') {
+            return geometry.bodyX + offset
+        }
+
+        return geometry.bodyX
+    }
+
+    /**
+     * Places compact owner-drawn vertical pin numbers on the same side as the
+     * horizontal terminal contacts.
+     * @param {{ bodyX: number }} geometry
+     * @param {'left' | 'right'} side
+     * @returns {number}
+     */
+    static #resolveCompactExternalVerticalNumberX(geometry, side) {
+        return geometry.bodyX + (side === 'left' ? -10 : 10)
+    }
+
+    /**
+     * Builds an authored outer pin cross marker.
+     * @param {number} bodyX
+     * @param {number} projectedY
+     * @param {'left' | 'right' | 'top' | 'bottom'} orientation
+     * @param {string} strokeColor
+     * @returns {string}
+     */
+    static #buildOuterPinCrossMarkerMarkup(
+        bodyX,
+        projectedY,
+        orientation,
+        strokeColor
+    ) {
+        const direction = orientation === 'left' ? 1 : -1
+        const centerX = bodyX - direction * 8
+        const halfSize = 3
+
+        return (
+            '<g class="schematic-pin-marker"><line x1="' +
+            formatNumber(centerX - halfSize) +
+            '" y1="' +
+            formatNumber(projectedY - halfSize) +
+            '" x2="' +
+            formatNumber(centerX + halfSize) +
+            '" y2="' +
+            formatNumber(projectedY + halfSize) +
+            '" stroke="' +
+            escapeHtml(strokeColor) +
+            '" stroke-width="0.75" vector-effect="non-scaling-stroke" /><line x1="' +
+            formatNumber(centerX - halfSize) +
+            '" y1="' +
+            formatNumber(projectedY + halfSize) +
+            '" x2="' +
+            formatNumber(centerX + halfSize) +
+            '" y2="' +
+            formatNumber(projectedY - halfSize) +
+            '" stroke="' +
+            escapeHtml(strokeColor) +
+            '" stroke-width="0.75" vector-effect="non-scaling-stroke" /></g>'
+        )
     }
 
     /**
@@ -469,7 +649,7 @@ export class SchematicPinSvgRenderer {
     /**
      * Resolves one authored outer pin marker style from the stored symbol flag.
      * @param {{ symbolOuter?: number, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
-     * @returns {'single-in' | 'single-out' | 'double' | null}
+     * @returns {'single-in' | 'single-out' | 'double' | 'cross' | null}
      */
     static #resolveSchematicOuterPinMarkerStyle(pin) {
         if (pin.orientation !== 'left' && pin.orientation !== 'right') {
@@ -483,6 +663,8 @@ export class SchematicPinSvgRenderer {
                 return 'single-out'
             case 2:
                 return 'single-in'
+            case 6:
+                return 'cross'
             case 34:
                 return 'double'
             default:

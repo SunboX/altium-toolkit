@@ -144,6 +144,63 @@ export class SchematicOwnerPinLabelLayout {
     }
 
     /**
+     * Collects compact FET-like owner groups whose numeric contact labels need
+     * to stay outside the owner-drawn device body.
+     * @param {{ ownerIndex?: string, name?: string, designator?: string, length?: number, orientation: 'left' | 'right' | 'top' | 'bottom', labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number' }[]} pins
+     * @returns {Map<string, 'left' | 'right'>}
+     */
+    static collectCompactExternalNumberLabelSides(pins) {
+        const ownerPins = new Map()
+
+        for (const pin of pins) {
+            const ownerIndex = String(pin.ownerIndex || '').trim()
+            if (!ownerIndex) continue
+            if (!ownerPins.has(ownerIndex)) ownerPins.set(ownerIndex, [])
+            ownerPins.get(ownerIndex).push(pin)
+        }
+
+        const sides = new Map()
+
+        for (const [ownerIndex, groupedPins] of ownerPins.entries()) {
+            const side =
+                SchematicOwnerPinLabelLayout.#resolveCompactExternalNumberLabelSide(
+                    groupedPins
+                )
+            if (side) sides.set(ownerIndex, side)
+        }
+
+        return sides
+    }
+
+    /**
+     * Collects rectangular owner bodies whose numeric-only horizontal pin
+     * labels are drawn inside the body, close to the body edge.
+     * @param {{ ownerIndex?: string, name?: string, designator?: string, length?: number, x: number, y: number, orientation: 'left' | 'right' | 'top' | 'bottom', labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number' }[]} pins
+     * @param {{ ownerIndex?: string, x: number, y: number, width: number, height: number }[]} rectangles
+     * @returns {Map<string, { left: number, right: number }>}
+     */
+    static collectInternalNumberLabelBoxes(pins, rectangles) {
+        const ownerPins = SchematicOwnerPinLabelLayout.#groupByOwnerIndex(pins)
+        const ownerRectangles =
+            SchematicOwnerPinLabelLayout.#groupByOwnerIndex(rectangles)
+        const boxes = new Map()
+
+        for (const [ownerIndex, groupedPins] of ownerPins.entries()) {
+            const box =
+                SchematicOwnerPinLabelLayout.#resolveInternalNumberLabelBox(
+                    groupedPins,
+                    ownerRectangles.get(ownerIndex) || []
+                )
+
+            if (box) {
+                boxes.set(ownerIndex, box)
+            }
+        }
+
+        return boxes
+    }
+
+    /**
      * Resolves the final SVG text anchor for one schematic free-text label.
      * Mirrored rotated owner pin-name labels need the opposite text edge so
      * their baseline starts on the same visual side after the signed rotation
@@ -168,6 +225,234 @@ export class SchematicOwnerPinLabelLayout {
         }
 
         return Number(text.y) >= Number(matchedOwnerPin.y) ? 'end' : 'start'
+    }
+
+    /**
+     * Resolves the side that should carry compact owner-drawn pin numbers.
+     * @param {{ name?: string, designator?: string, length?: number, orientation: 'left' | 'right' | 'top' | 'bottom', labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number' }[]} pins
+     * @returns {'left' | 'right' | null}
+     */
+    static #resolveCompactExternalNumberLabelSide(pins) {
+        if (
+            pins.length !== 4 ||
+            !pins.every(
+                (pin) =>
+                    (pin.labelMode || 'name-and-number') === 'number-only' &&
+                    /^\d+$/.test(String(pin.designator || '').trim()) &&
+                    Math.abs(Number(pin.length || 0)) <= 20 &&
+                    SchematicOwnerPinLabelLayout.#isFetTerminalName(pin.name)
+            )
+        ) {
+            return null
+        }
+
+        const hasTopPin = pins.some((pin) => pin.orientation === 'top')
+        const hasBottomPin = pins.some((pin) => pin.orientation === 'bottom')
+        const horizontalPins = pins.filter(
+            (pin) => pin.orientation === 'left' || pin.orientation === 'right'
+        )
+        const horizontalSides = new Set(
+            horizontalPins.map((pin) => pin.orientation)
+        )
+
+        if (
+            !hasTopPin ||
+            !hasBottomPin ||
+            horizontalPins.length === 0 ||
+            horizontalSides.size !== 1
+        ) {
+            return null
+        }
+
+        return horizontalPins[0].orientation
+    }
+
+    /**
+     * Resolves one rectangular body suitable for internal numeric pin labels.
+     * @param {{ name?: string, designator?: string, length?: number, x: number, y: number, orientation: 'left' | 'right' | 'top' | 'bottom', labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number' }[]} pins
+     * @param {{ x: number, y: number, width: number, height: number }[]} rectangles
+     * @returns {{ left: number, right: number } | null}
+     */
+    static #resolveInternalNumberLabelBox(pins, rectangles) {
+        if (
+            pins.length < 4 ||
+            !pins.every((pin) =>
+                SchematicOwnerPinLabelLayout.#isInternalNumberLabelPin(pin)
+            )
+        ) {
+            return null
+        }
+
+        const sides = new Set(pins.map((pin) => pin.orientation))
+
+        if (!sides.has('left') || !sides.has('right') || sides.size !== 2) {
+            return null
+        }
+
+        const rectangle =
+            SchematicOwnerPinLabelLayout.#findInternalNumberLabelRectangle(
+                pins,
+                rectangles
+            )
+
+        if (!rectangle) {
+            return null
+        }
+
+        return {
+            left: rectangle.left,
+            right: rectangle.right
+        }
+    }
+
+    /**
+     * Returns the owner rectangle whose vertical edges carry every pin.
+     * @param {{ x: number, y: number, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
+     * @param {{ x: number, y: number, width: number, height: number }[]} rectangles
+     * @returns {{ left: number, right: number, top: number, bottom: number } | null}
+     */
+    static #findInternalNumberLabelRectangle(pins, rectangles) {
+        for (const rectangle of rectangles) {
+            const normalized =
+                SchematicOwnerPinLabelLayout.#normalizeRectangle(rectangle)
+
+            if (
+                normalized &&
+                SchematicOwnerPinLabelLayout.#pinsAlignWithRectangleEdges(
+                    pins,
+                    normalized
+                )
+            ) {
+                return normalized
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Returns true when every pin body endpoint lies on a vertical body edge.
+     * @param {{ x: number, y: number, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
+     * @param {{ left: number, right: number, top: number, bottom: number }} rectangle
+     * @returns {boolean}
+     */
+    static #pinsAlignWithRectangleEdges(pins, rectangle) {
+        const tolerance = 1.5
+
+        for (const pin of pins) {
+            const x = Number(pin.x)
+            const y = Number(pin.y)
+
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                return false
+            }
+
+            if (
+                y < rectangle.top - tolerance ||
+                y > rectangle.bottom + tolerance
+            ) {
+                return false
+            }
+
+            if (
+                pin.orientation === 'left' &&
+                Math.abs(x - rectangle.left) > tolerance
+            ) {
+                return false
+            }
+
+            if (
+                pin.orientation === 'right' &&
+                Math.abs(x - rectangle.right) > tolerance
+            ) {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    /**
+     * Normalizes a rectangle to absolute edge coordinates.
+     * @param {{ x: number, y: number, width: number, height: number }} rectangle
+     * @returns {{ left: number, right: number, top: number, bottom: number } | null}
+     */
+    static #normalizeRectangle(rectangle) {
+        const x1 = Number(rectangle?.x)
+        const y1 = Number(rectangle?.y)
+        const x2 = x1 + Number(rectangle?.width)
+        const y2 = y1 + Number(rectangle?.height)
+
+        if (
+            !Number.isFinite(x1) ||
+            !Number.isFinite(y1) ||
+            !Number.isFinite(x2) ||
+            !Number.isFinite(y2) ||
+            x1 === x2 ||
+            y1 === y2
+        ) {
+            return null
+        }
+
+        return {
+            left: Math.min(x1, x2),
+            right: Math.max(x1, x2),
+            top: Math.min(y1, y2),
+            bottom: Math.max(y1, y2)
+        }
+    }
+
+    /**
+     * Returns true for numeric-only horizontal pins on short owner stubs.
+     * @param {{ name?: string, designator?: string, length?: number, orientation: 'left' | 'right' | 'top' | 'bottom', labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number' }} pin
+     * @returns {boolean}
+     */
+    static #isInternalNumberLabelPin(pin) {
+        const name = String(pin.name || '').trim()
+        const designator = String(pin.designator || '').trim()
+
+        return (
+            (pin.orientation === 'left' || pin.orientation === 'right') &&
+            (pin.labelMode || 'name-and-number') === 'number-only' &&
+            /^\d+$/.test(designator) &&
+            (!name || /^\d+$/.test(name)) &&
+            Math.abs(Number(pin.length || 0)) <= 30
+        )
+    }
+
+    /**
+     * Groups schematic owner-local primitives by owner index.
+     * @template T
+     * @param {(T & { ownerIndex?: string })[]} items
+     * @returns {Map<string, T[]>}
+     */
+    static #groupByOwnerIndex(items) {
+        const groups = new Map()
+
+        for (const item of items) {
+            const ownerIndex = String(item.ownerIndex || '').trim()
+
+            if (!ownerIndex) {
+                continue
+            }
+
+            if (!groups.has(ownerIndex)) {
+                groups.set(ownerIndex, [])
+            }
+
+            groups.get(ownerIndex).push(item)
+        }
+
+        return groups
+    }
+
+    /**
+     * Returns true for FET terminal names, including numbered gate/source pins.
+     * @param {string | undefined} name
+     * @returns {boolean}
+     */
+    static #isFetTerminalName(name) {
+        return /^(?:[DS]|[GS]\d*)$/i.test(String(name || '').trim())
     }
 
     /**
@@ -206,7 +491,7 @@ export class SchematicOwnerPinLabelLayout {
     /**
      * Resolves schematic pin-number placement.
      * @param {{ x: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
-     * @param {'single-in' | 'single-out' | 'double' | null} markerStyle
+     * @param {'single-in' | 'single-out' | 'double' | 'cross' | null} markerStyle
      * @param {{ rotateTopNumber?: boolean }} options
      * @returns {{ x: number, yOffset: number, anchor: 'start' | 'middle' | 'end', rotation: number } | null}
      */
@@ -308,7 +593,7 @@ export class SchematicOwnerPinLabelLayout {
 
     /**
      * Returns the horizontal pin-number clearance needed by the pin geometry.
-     * @param {'single-in' | 'single-out' | 'double' | null} markerStyle
+     * @param {'single-in' | 'single-out' | 'double' | 'cross' | null} markerStyle
      * @param {{ length?: number }} pin
      * @returns {number}
      */
@@ -316,6 +601,8 @@ export class SchematicOwnerPinLabelLayout {
         switch (markerStyle) {
             case 'double':
                 return 17
+            case 'cross':
+                return 12
             case 'single-in':
             case 'single-out':
                 return 8
@@ -357,7 +644,7 @@ export class SchematicOwnerPinLabelLayout {
     /**
      * Resolves one authored outer pin marker style from the stored symbol flag.
      * @param {{ symbolOuter?: number, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
-     * @returns {'single-in' | 'single-out' | 'double' | null}
+     * @returns {'single-in' | 'single-out' | 'double' | 'cross' | null}
      */
     static #resolveOuterPinMarkerStyle(pin) {
         if (pin.orientation !== 'left' && pin.orientation !== 'right') {
@@ -370,6 +657,8 @@ export class SchematicOwnerPinLabelLayout {
                 return 'single-out'
             case 2:
                 return 'single-in'
+            case 6:
+                return 'cross'
             case 34:
                 return 'double'
             default:

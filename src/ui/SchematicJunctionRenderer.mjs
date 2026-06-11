@@ -44,7 +44,7 @@ export class SchematicJunctionRenderer {
                     formatNumber(projectSchematicY(sheetHeight, junction.y)) +
                     '" r="2" fill="' +
                     escapeHtml(
-                        SchematicColorResolver.resolveColor(
+                        SchematicColorResolver.resolveNonTextColor(
                             junction.color,
                             '--schematic-default-ink-color'
                         )

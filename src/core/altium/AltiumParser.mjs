@@ -59,6 +59,7 @@ const {
     extractSchematicFonts,
     extractSchematicFontDiagnostics,
     extractSchematicMetadata,
+    extractSchematicOwnerMetadata,
     extractSchematicTitleBlock,
     normalizeSchematicTextRecord
 } = SchematicTextParser
@@ -186,7 +187,7 @@ export class AltiumParser {
             AltiumParser.#collectOwnersWithImplicitDisplayMode(records)
         const activeMultipartOwnerParts =
             SchematicMultipartOwnerMatcher.collectActiveMultipartOwnerParts(
-                records,
+                recordIndexAwareRecords,
                 componentRecords
             )
         const sheetRecord = records.find(
@@ -329,21 +330,30 @@ export class AltiumParser {
         }
 
         const metadataTexts = extractSchematicMetadata(textRecords)
+        const ownerMetadataTexts = extractSchematicOwnerMetadata(textRecords)
         const schematicFonts = extractSchematicFonts(sheetRecord?.fields)
         const schematicRenderDiagnostics = extractSchematicFontDiagnostics(
             sheetRecord?.fields
         )
-        const sheetWidth =
+        const storedSheetWidth =
             parseNumericField(sheetRecord?.fields, 'CustomX') || 1500
-        const sheetHeight =
+        const storedSheetHeight =
             parseNumericField(sheetRecord?.fields, 'CustomY') || 950
+        const templatePageSize =
+            AltiumLayoutParser.resolveSchematicTemplatePageSize(
+                sheetRecord?.fields,
+                storedSheetWidth,
+                storedSheetHeight
+            )
+        const sheetWidth = templatePageSize?.width || storedSheetWidth
+        const sheetHeight = templatePageSize?.height || storedSheetHeight
         const sheetMargin =
             parseNumericField(sheetRecord?.fields, 'CustomMarginWidth') || 20
         const sheet = {
             width: sheetWidth,
             height: sheetHeight,
-            sourceWidth: sheetWidth,
-            sourceHeight: sheetHeight,
+            sourceWidth: templatePageSize?.sourceWidth || storedSheetWidth,
+            sourceHeight: templatePageSize?.sourceHeight || storedSheetHeight,
             visibleGrid:
                 parseNumericField(sheetRecord?.fields, 'VisibleGridSize') || 10,
             snapGrid:
@@ -363,6 +373,9 @@ export class AltiumParser {
             fonts: schematicFonts,
             sheetStyle:
                 parseNumericField(sheetRecord?.fields, 'SheetStyle') || 0,
+            ...(templatePageSize?.paperSize
+                ? { paperSize: templatePageSize.paperSize }
+                : {}),
             titleBlock: extractSchematicTitleBlock(
                 textRecords,
                 metadataTexts,
@@ -415,7 +428,19 @@ export class AltiumParser {
                 )
             )
         ]
-        const pins = parseSchematicPins(pinRecords)
+        const ownerDrawnInternalPinOwners =
+            AltiumParser.#collectInaccessibleOwnerDrawnPrimitiveOwners(
+                drawableRecords
+            )
+        const numericEndpointLabelOwners =
+            AltiumParser.#collectNumericEndpointLabelOwners(
+                componentRecords,
+                recordIndexAwareRecords
+            )
+        const pins = parseSchematicPins(pinRecords, {
+            ownerDrawnInternalPinOwners,
+            numericEndpointLabelOwners
+        })
         const junctions = SchematicJunctionParser.parseSchematicJunctions(
             recordIndexAwareRecords
         )
@@ -489,7 +514,8 @@ export class AltiumParser {
                     record.fields,
                     metadataTexts,
                     sheet,
-                    schematicFonts
+                    schematicFonts,
+                    ownerMetadataTexts
                 )
             )
             .filter(Boolean)
@@ -524,7 +550,13 @@ export class AltiumParser {
                     normalizedLines,
                     pins,
                     ports,
-                    rectangles
+                    {
+                        rectangles,
+                        roundedRectangles,
+                        ellipses,
+                        arcs,
+                        pies
+                    }
                 ),
                 normalizedLines,
                 pins,
@@ -584,6 +616,8 @@ export class AltiumParser {
 
         resolvedSheet.xZones =
             SchematicSheetStyleResolver.resolveXZones(resolvedSheet)
+        resolvedSheet.yZones =
+            SchematicSheetStyleResolver.resolveYZones(resolvedSheet)
         delete resolvedSheet.sheetStyle
 
         const title =
@@ -649,6 +683,11 @@ export class AltiumParser {
                 busEntries,
                 sheetEntries
             })
+        AltiumParser.#suppressRedundantSinglePinPowerNetNames(
+            pins,
+            nets,
+            anchoredTexts
+        )
         diagnostics.push(...netDiagnostics)
         const qa = SchematicQaReportBuilder.build({
             records: recordIndexAwareRecords,
@@ -742,6 +781,142 @@ export class AltiumParser {
     }
 
     /**
+     * Hides one-pin owner pin names when a connected power port already labels
+     * the same net, preserving the numeric pin endpoint label.
+     * @param {{ ownerIndex?: string, name?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number' }[]} pins
+     * @param {{ powerPorts?: { text?: string }[], pins?: { ownerIndex?: string, name?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number' }[] }[]} nets
+     * @param {{ x: number, y: number, text?: string, recordType?: string }[]} texts
+     * @returns {void}
+     */
+    static #suppressRedundantSinglePinPowerNetNames(pins, nets, texts = []) {
+        const ownerPinCounts = new Map()
+
+        for (const pin of pins || []) {
+            const ownerIndex = String(pin.ownerIndex || '').trim()
+
+            if (!ownerIndex) continue
+
+            ownerPinCounts.set(
+                ownerIndex,
+                (ownerPinCounts.get(ownerIndex) || 0) + 1
+            )
+        }
+
+        for (const net of nets || []) {
+            const powerPortNames = new Set(
+                (net.powerPorts || [])
+                    .map((powerPort) =>
+                        AltiumParser.#normalizePowerNetLabel(powerPort.text)
+                    )
+                    .filter(Boolean)
+            )
+
+            if (!powerPortNames.size) continue
+
+            for (const pin of net.pins || []) {
+                if (
+                    AltiumParser.#canSuppressSinglePinName(
+                        pin,
+                        ownerPinCounts
+                    ) &&
+                    powerPortNames.has(
+                        AltiumParser.#normalizePowerNetLabel(pin.name)
+                    )
+                ) {
+                    pin.labelMode = 'number-only'
+                }
+            }
+        }
+
+        const powerPorts = (texts || []).filter(
+            (text) => text?.recordType === '17'
+        )
+
+        for (const pin of pins || []) {
+            if (!AltiumParser.#canSuppressSinglePinName(pin, ownerPinCounts)) {
+                continue
+            }
+
+            const pinName = AltiumParser.#normalizePowerNetLabel(pin.name)
+            const connectionPoint = AltiumParser.#resolvePinConnectionPoint(pin)
+            const matchesDirectPowerPort = powerPorts.some(
+                (powerPort) =>
+                    pinName ===
+                        AltiumParser.#normalizePowerNetLabel(powerPort.text) &&
+                    AltiumParser.#pointsAreNear(connectionPoint, powerPort, 2)
+            )
+
+            if (matchesDirectPowerPort) {
+                pin.labelMode = 'number-only'
+            }
+        }
+    }
+
+    /**
+     * Returns true when a pin is the only pin on its owner and currently shows
+     * a name label.
+     * @param {{ ownerIndex?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number' }} pin
+     * @param {Map<string, number>} ownerPinCounts
+     * @returns {boolean}
+     */
+    static #canSuppressSinglePinName(pin, ownerPinCounts) {
+        const ownerIndex = String(pin?.ownerIndex || '').trim()
+        const labelMode = pin?.labelMode || 'name-and-number'
+
+        return (
+            ownerIndex &&
+            ownerPinCounts.get(ownerIndex) === 1 &&
+            labelMode !== 'hidden' &&
+            labelMode !== 'number-only'
+        )
+    }
+
+    /**
+     * Resolves the outer electrical endpoint for a normalized schematic pin.
+     * @param {{ x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
+     * @returns {{ x: number, y: number }}
+     */
+    static #resolvePinConnectionPoint(pin) {
+        switch (pin.orientation) {
+            case 'right':
+                return { x: pin.x + pin.length, y: pin.y }
+            case 'top':
+                return { x: pin.x, y: pin.y + pin.length }
+            case 'bottom':
+                return { x: pin.x, y: pin.y - pin.length }
+            case 'left':
+            default:
+                return { x: pin.x - pin.length, y: pin.y }
+        }
+    }
+
+    /**
+     * Returns true when two schematic points are close enough to represent the
+     * same recovered connection endpoint.
+     * @param {{ x: number, y: number }} left
+     * @param {{ x: number, y: number }} right
+     * @param {number} tolerance
+     * @returns {boolean}
+     */
+    static #pointsAreNear(left, right, tolerance) {
+        return (
+            Math.abs(Number(left.x) - Number(right.x)) <= tolerance &&
+            Math.abs(Number(left.y) - Number(right.y)) <= tolerance
+        )
+    }
+
+    /**
+     * Normalizes a power-net label for structural comparisons.
+     * @param {string | undefined} label
+     * @returns {string}
+     */
+    static #normalizePowerNetLabel(label) {
+        return String(label || '')
+            .trim()
+            .toUpperCase()
+    }
+
+    /**
      * Finds a visible text string with a given logical name.
      * @param {{ fields: Record<string, string | string[]> }[]} records
      * @param {string} logicalName
@@ -777,6 +952,63 @@ export class AltiumParser {
                     record.fields
                 )
             ) {
+                owners.add(ownerIndex)
+            }
+        }
+
+        return owners
+    }
+
+    /**
+     * Collects symbol owners that draw an inaccessible body around compact
+     * internal pins.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @returns {Set<string>}
+     */
+    static #collectInaccessibleOwnerDrawnPrimitiveOwners(records) {
+        const owners = new Set()
+
+        for (const record of records) {
+            const ownerIndex = getField(record.fields, 'OwnerIndex')
+            const ownerPartId = getField(record.fields, 'OwnerPartId')
+
+            if (
+                ownerIndex &&
+                ownerPartId &&
+                ownerPartId !== '-1' &&
+                parseBoolean(record.fields.IsNotAccesible) &&
+                SchematicComponentOwnerTextResolver.isDisplayModeSelectablePrimitive(
+                    record.fields
+                )
+            ) {
+                owners.add(ownerIndex)
+            }
+        }
+
+        return owners
+    }
+
+    /**
+     * Collects component owners whose passive two-pin numeric endpoints are
+     * intended to remain visible in the schematic body.
+     * @param {{ fields: Record<string, string | string[]>, recordIndex?: number }[]} componentRecords Component records.
+     * @param {{ fields: Record<string, string | string[]>, recordIndex?: number }[]} records Indexed schematic records.
+     * @returns {Set<string>}
+     */
+    static #collectNumericEndpointLabelOwners(componentRecords, records) {
+        const owners = new Set()
+
+        for (const componentRecord of componentRecords) {
+            if (
+                parseNumericField(componentRecord.fields, 'ComponentKind') !== 4
+            ) {
+                continue
+            }
+
+            for (const ownerIndex of SchematicComponentOwnerTextResolver.resolveOwnerIndexes(
+                componentRecord,
+                records
+            )) {
                 owners.add(ownerIndex)
             }
         }

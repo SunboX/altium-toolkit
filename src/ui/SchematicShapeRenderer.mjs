@@ -157,7 +157,7 @@ export class SchematicShapeRenderer {
             pie.startAngle,
             pie.endAngle
         )
-        const sweep = delta >= 0 ? 0 : 1
+        const sweep = SchematicShapeRenderer.#resolvePieSweep(delta)
         const center = {
             x: Number(pie.x) || 0,
             y: projectSchematicY(sheetHeight, Number(pie.y) || 0)
@@ -226,11 +226,16 @@ export class SchematicShapeRenderer {
 
     /**
      * Builds one schematic rectangle primitive.
-     * @param {{ x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, lineStyle?: number }} rectangle
+     * @param {{ x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, lineStyle?: number, ownerIndex?: string }} rectangle
      * @param {number} sheetHeight
      * @returns {string}
      */
     static buildRectangleMarkup(rectangle, sheetHeight) {
+        const fill =
+            SchematicShapeRenderer.#resolveSchematicRectangleFill(rectangle)
+        const preserveSourceColors =
+            SchematicShapeRenderer.#isOwnerColorStrip(rectangle)
+
         return (
             '<rect class="schematic-rectangle" x="' +
             formatNumber(rectangle.x) +
@@ -244,19 +249,27 @@ export class SchematicShapeRenderer {
             formatNumber(rectangle.height) +
             '" fill="' +
             escapeHtml(
-                SchematicColorResolver.resolveFill(
-                    SchematicShapeRenderer.#resolveSchematicRectangleFill(
-                        rectangle
-                    ),
-                    '--schematic-fill-color'
-                )
+                preserveSourceColors
+                    ? SchematicColorResolver.resolveSourceFill(
+                          fill,
+                          '--schematic-fill-color'
+                      )
+                    : SchematicColorResolver.resolveFill(
+                          fill,
+                          '--schematic-fill-color'
+                      )
             ) +
             '" stroke="' +
             escapeHtml(
-                SchematicColorResolver.resolveColor(
-                    rectangle.color,
-                    '--schematic-default-ink-color'
-                )
+                preserveSourceColors
+                    ? SchematicColorResolver.resolveSourceColor(
+                          rectangle.color,
+                          '--schematic-default-ink-color'
+                      )
+                    : SchematicColorResolver.resolveColor(
+                          rectangle.color,
+                          '--schematic-default-ink-color'
+                      )
             ) +
             '" stroke-width="' +
             formatNumber(Math.max(rectangle.lineWidth || 1, 0.8)) +
@@ -271,12 +284,16 @@ export class SchematicShapeRenderer {
 
     /**
      * Builds one schematic rounded-rectangle primitive.
-     * @param {{ x: number, y: number, width: number, height: number, radius?: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, lineStyle?: number }} rectangle
+     * @param {{ x: number, y: number, width: number, height: number, radius?: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, lineStyle?: number, ownerIndex?: string }} rectangle
      * @param {number} sheetHeight
      * @returns {string}
      */
     static buildRoundedRectangleMarkup(rectangle, sheetHeight) {
         const radius = Math.max(Number(rectangle.radius || 0), 0)
+        const fill =
+            SchematicShapeRenderer.#resolveSchematicRectangleFill(rectangle)
+        const preserveSourceColors =
+            SchematicShapeRenderer.#isOwnerColorStrip(rectangle)
 
         return (
             '<rect class="schematic-rounded-rectangle" x="' +
@@ -295,19 +312,27 @@ export class SchematicShapeRenderer {
             formatNumber(radius) +
             '" fill="' +
             escapeHtml(
-                SchematicColorResolver.resolveFill(
-                    SchematicShapeRenderer.#resolveSchematicRectangleFill(
-                        rectangle
-                    ),
-                    '--schematic-fill-color'
-                )
+                preserveSourceColors
+                    ? SchematicColorResolver.resolveSourceFill(
+                          fill,
+                          '--schematic-fill-color'
+                      )
+                    : SchematicColorResolver.resolveFill(
+                          fill,
+                          '--schematic-fill-color'
+                      )
             ) +
             '" stroke="' +
             escapeHtml(
-                SchematicColorResolver.resolveColor(
-                    rectangle.color,
-                    '--schematic-default-ink-color'
-                )
+                preserveSourceColors
+                    ? SchematicColorResolver.resolveSourceColor(
+                          rectangle.color,
+                          '--schematic-default-ink-color'
+                      )
+                    : SchematicColorResolver.resolveColor(
+                          rectangle.color,
+                          '--schematic-default-ink-color'
+                      )
             ) +
             '" stroke-width="' +
             formatNumber(Math.max(rectangle.lineWidth || 1, 0.8)) +
@@ -453,6 +478,25 @@ export class SchematicShapeRenderer {
         }
 
         return rectangle.fill || 'none'
+    }
+
+    /**
+     * Returns true for narrow symbol-owned color swatches such as per-section
+     * strips that carry literal source palette meaning.
+     * @param {{ width: number, height: number, ownerIndex?: string }} rectangle
+     * @returns {boolean}
+     */
+    static #isOwnerColorStrip(rectangle) {
+        if (!rectangle?.ownerIndex) {
+            return false
+        }
+
+        const width = Math.abs(Number(rectangle.width || 0))
+        const height = Math.abs(Number(rectangle.height || 0))
+        const shortSide = Math.min(width, height)
+        const longSide = Math.max(width, height)
+
+        return shortSide > 0 && shortSide <= 8 && longSide >= 40
     }
 
     /**
@@ -765,5 +809,20 @@ export class SchematicShapeRenderer {
         }
 
         return delta
+    }
+
+    /**
+     * Resolves SVG sweep direction for filled Altium pie primitives.
+     * @param {number} delta Normalized source angle delta.
+     * @returns {number}
+     */
+    static #resolvePieSweep(delta) {
+        const magnitude = Math.abs(Number(delta) || 0)
+
+        if (Math.abs(magnitude - 180) <= 0.001) {
+            return 0
+        }
+
+        return delta >= 0 ? 0 : 1
     }
 }

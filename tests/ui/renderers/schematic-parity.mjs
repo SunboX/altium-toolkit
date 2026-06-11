@@ -147,8 +147,19 @@ test('renderSchematicSvg renders schematic images and placeholders', () => {
                     y: 30,
                     cornerX: 80,
                     cornerY: 70,
+                    fileName: 'C:\\Forge\\Diagrams\\neutral_block_diagram.png',
                     mimeType: 'image/png',
                     dataBase64: 'AAAA',
+                    diagnosticState: 'embedded'
+                },
+                {
+                    x: 82,
+                    y: 30,
+                    cornerX: 88,
+                    cornerY: 36,
+                    fileName: 'C:\\Forge\\Brand\\neutral_logo.bmp',
+                    mimeType: 'image/bmp',
+                    dataBase64: 'BBBB',
                     diagnosticState: 'embedded'
                 },
                 {
@@ -173,6 +184,19 @@ test('renderSchematicSvg renders schematic images and placeholders', () => {
 
     assert.match(markup, /class="schematic-embedded-image"/)
     assert.match(markup, /href="data:image\/png;base64,AAAA"/)
+    assert.doesNotMatch(markup, /id="schematic-blueprint-image-filter"/)
+    assert.match(
+        markup,
+        /class="schematic-embedded-image schematic-embedded-image--diagram"[^>]*href="data:image\/png;base64,AAAA"/
+    )
+    assert.doesNotMatch(
+        markup,
+        /class="schematic-embedded-image schematic-embedded-image--diagram"[^>]*filter="url\(#schematic-blueprint-image-filter\)"/
+    )
+    assert.match(
+        markup,
+        /class="schematic-embedded-image"[^>]*href="data:image\/bmp;base64,BBBB"/
+    )
     assert.match(placeholderMarkup, /class="schematic-image-placeholder"/)
     assert.match(textContent, /Cannot open file/)
     assert.match(placeholderMarkup, /C:\\Forge\\Library\\Blueprints/)
@@ -180,6 +204,106 @@ test('renderSchematicSvg renders schematic images and placeholders', () => {
     assert.doesNotMatch(placeholderMarkup, /<rect\b/)
     assert.match(textContent, /\. File does not exist\./)
     assert.doesNotMatch(placeholderMarkup, /<line\b/)
+})
+
+/**
+ * Verifies image colorization remains available as an explicit renderer
+ * option for consumers that want the schematic-themed diagram palette.
+ */
+test('renderSchematicSvg colorizes diagram images when enabled', () => {
+    const markup = SchematicSvgRenderer.render(
+        {
+            summary: { title: 'Image schematic' },
+            schematic: {
+                sheet: { width: 120, height: 80 },
+                lines: [],
+                texts: [],
+                components: [],
+                pins: [],
+                ports: [],
+                crosses: [],
+                images: [
+                    {
+                        x: 20,
+                        y: 30,
+                        cornerX: 80,
+                        cornerY: 70,
+                        fileName:
+                            'C:\\Forge\\Diagrams\\neutral_block_diagram.png',
+                        mimeType: 'image/png',
+                        dataBase64: 'AAAA',
+                        diagnosticState: 'embedded'
+                    }
+                ]
+            }
+        },
+        { colorizeImages: true }
+    )
+
+    assert.match(markup, /id="schematic-blueprint-image-filter"/)
+    assert.match(
+        markup,
+        /class="schematic-embedded-image schematic-embedded-image--diagram"[^>]*filter="url\(#schematic-blueprint-image-filter\)"[^>]*href="data:image\/png;base64,AAAA"/
+    )
+})
+
+/**
+ * Verifies recovered bitmap artwork without explicit diagram metadata stays
+ * source-colored so embedded block boxes and text are not over-tinted.
+ */
+test('renderSchematicSvg leaves unnamed large power images source-colored', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Power overview' },
+        schematic: {
+            sheet: { width: 360, height: 240 },
+            lines: [],
+            texts: [],
+            components: [],
+            pins: [],
+            ports: [],
+            crosses: [],
+            images: [
+                {
+                    x: 20,
+                    y: 30,
+                    cornerX: 300,
+                    cornerY: 180,
+                    mimeType: 'image/png',
+                    dataBase64: 'AAAA',
+                    diagnosticState: 'embedded'
+                },
+                {
+                    x: 305,
+                    y: 32,
+                    cornerX: 340,
+                    cornerY: 52,
+                    fileName: 'C:\\Forge\\Brand\\neutral_logo.bmp',
+                    mimeType: 'image/bmp',
+                    dataBase64: 'BBBB',
+                    diagnosticState: 'embedded'
+                }
+            ]
+        }
+    })
+
+    assert.doesNotMatch(markup, /id="schematic-blueprint-image-filter"/)
+    assert.doesNotMatch(markup, /id="schematic-power-diagram-image-filter"/)
+    assert.match(
+        markup,
+        /class="schematic-embedded-image"[^>]*href="data:image\/png;base64,AAAA"/
+    )
+    assert.doesNotMatch(
+        markup,
+        /class="schematic-embedded-image[^"]*"[^>]*filter="[^"]+"[^>]*href="data:image\/png;base64,AAAA"/
+    )
+    assert.match(
+        markup,
+        /class="schematic-embedded-image"[^>]*href="data:image\/bmp;base64,BBBB"/
+    )
+    assert.doesNotMatch(
+        markup,
+        /class="schematic-embedded-image"[^>]*filter="[^"]+"[^>]*href="data:image\/bmp;base64,BBBB"/
+    )
 })
 
 /**

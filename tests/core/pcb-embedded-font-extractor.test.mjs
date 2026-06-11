@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import assert from 'node:assert/strict'
+import { performance } from 'node:perf_hooks'
 import test from 'node:test'
 import { zlibSync } from 'fflate'
 import { PcbEmbeddedFontExtractor } from '../../src/core/altium/PcbEmbeddedFontExtractor.mjs'
@@ -99,17 +100,76 @@ class PcbEmbeddedFontTestFactory {
     }
 
     /**
-     * Creates a minimal sfnt font with only metric-bearing tables.
-     * @param {{ unitsPerEm: number, ascent: number, descent: number, lineGap: number, averageAdvanceWidth: number, capHeight: number, weightClass: number }} metrics
+     * Creates a stream with large compressed sfnt payloads.
      * @returns {Uint8Array}
      */
-    static createMinimalSfnt(metrics) {
+    static createLargeEmbeddedFontStream() {
+        const firstFont = PcbEmbeddedFontTestFactory.createMinimalSfnt(
+            {
+                unitsPerEm: 1000,
+                ascent: 760,
+                descent: -240,
+                lineGap: 40,
+                averageAdvanceWidth: 510,
+                capHeight: 690,
+                weightClass: 400
+            },
+            { extraTableByteCount: 5 * 1024 * 1024 }
+        )
+        const secondFont = PcbEmbeddedFontTestFactory.createMinimalSfnt(
+            {
+                unitsPerEm: 1000,
+                ascent: 760,
+                descent: -240,
+                lineGap: 40,
+                averageAdvanceWidth: 520,
+                capHeight: 700,
+                weightClass: 700
+            },
+            { extraTableByteCount: 5 * 1024 * 1024 }
+        )
+
+        return PcbEmbeddedFontTestFactory.#concat([
+            PcbEmbeddedFontTestFactory.#fontRecord({
+                family: 'Large Synthetic Sans',
+                alternateFamily: 'Large Synthetic Sans',
+                style: '',
+                payload: firstFont,
+                metadataBytes: [0x01],
+                compressionOptions: { level: 0 }
+            }),
+            PcbEmbeddedFontTestFactory.#fontRecord({
+                family: 'Large Synthetic Sans Bold',
+                alternateFamily: 'Large Synthetic Sans',
+                style: '',
+                payload: secondFont,
+                metadataBytes: [0x02],
+                compressionOptions: { level: 0 }
+            })
+        ])
+    }
+
+    /**
+     * Creates a minimal sfnt font with only metric-bearing tables.
+     * @param {{ unitsPerEm: number, ascent: number, descent: number, lineGap: number, averageAdvanceWidth: number, capHeight: number, weightClass: number }} metrics
+     * @param {{ extraTableByteCount?: number }} [options]
+     * @returns {Uint8Array}
+     */
+    static createMinimalSfnt(metrics, options = {}) {
         const tables = [
             ['head', PcbEmbeddedFontTestFactory.#headTable(metrics)],
             ['hhea', PcbEmbeddedFontTestFactory.#hheaTable(metrics)],
             ['OS/2', PcbEmbeddedFontTestFactory.#os2Table(metrics)],
             ['hmtx', PcbEmbeddedFontTestFactory.#hmtxTable(metrics)]
         ]
+        if (Number(options.extraTableByteCount || 0) > 0) {
+            tables.push([
+                'JUNK',
+                PcbEmbeddedFontTestFactory.#deterministicBytes(
+                    Number(options.extraTableByteCount || 0)
+                )
+            ])
+        }
         const headerLength = 12 + tables.length * 16
         let payloadOffset = headerLength
         const tableRecords = []
@@ -152,7 +212,7 @@ class PcbEmbeddedFontTestFactory {
 
     /**
      * Creates an embedded-font record with UTF-16LE metadata and zlib payload.
-     * @param {{ family: string, alternateFamily: string, style: string, payload: Uint8Array, metadataBytes?: number[] }} options
+     * @param {{ family: string, alternateFamily: string, style: string, payload: Uint8Array, metadataBytes?: number[], compressionOptions?: object }} options
      * @returns {Uint8Array}
      */
     static #fontRecord(options) {
@@ -161,8 +221,25 @@ class PcbEmbeddedFontTestFactory {
             PcbEmbeddedFontTestFactory.#utf16Field(options.alternateFamily),
             PcbEmbeddedFontTestFactory.#utf16Field(options.style),
             new Uint8Array(options.metadataBytes || []),
-            zlibSync(options.payload)
+            zlibSync(options.payload, options.compressionOptions)
         ])
+    }
+
+    /**
+     * Builds deterministic incompressible-ish bytes for large sfnt padding.
+     * @param {number} byteCount Number of bytes.
+     * @returns {Uint8Array}
+     */
+    static #deterministicBytes(byteCount) {
+        const bytes = new Uint8Array(byteCount)
+        let state = 0x12345678
+
+        for (let index = 0; index < bytes.byteLength; index += 1) {
+            state = (1664525 * state + 1013904223) >>> 0
+            bytes[index] = state & 0xff
+        }
+
+        return bytes
     }
 
     /**
@@ -331,6 +408,25 @@ test('PcbEmbeddedFontExtractor extracts embedded font payloads and metrics', () 
     assert.equal(extracted.fonts[1].style, 'Bold')
     assert.equal(extracted.fonts[1].fileName, 'Synthetic Sans-Bold.ttf')
     assert.equal(extracted.fonts[1].metrics.weightClass, 700)
+})
+
+/**
+ * Verifies large embedded-font streams avoid repeated full-payload inflation
+ * while locating compressed record boundaries.
+ */
+test('PcbEmbeddedFontExtractor locates large compressed font records quickly', () => {
+    const stream = PcbEmbeddedFontTestFactory.createLargeEmbeddedFontStream()
+    const startedAt = performance.now()
+    const extracted = PcbEmbeddedFontExtractor.extractFromBytes(stream)
+    const durationMs = performance.now() - startedAt
+
+    assert.equal(extracted.length, 2)
+    assert.ok(
+        durationMs < 240,
+        'expected large embedded font extraction below 240ms, got ' +
+            durationMs.toFixed(1) +
+            'ms'
+    )
 })
 
 /**

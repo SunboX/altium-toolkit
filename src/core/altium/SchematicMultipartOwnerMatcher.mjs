@@ -542,10 +542,12 @@ export class SchematicMultipartOwnerMatcher {
     static #inferSchematicPinOrientation(conglomerate) {
         switch (conglomerate) {
             case 34:
+            case 42:
             case 50:
             case 58:
                 return 'left'
             case 32:
+            case 40:
             case 48:
             case 56:
                 return 'right'

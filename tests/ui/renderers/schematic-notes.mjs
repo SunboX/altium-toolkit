@@ -98,3 +98,50 @@ test('renderSchematicSvg keeps compact one-line notes readable', () => {
     )
     assert.doesNotMatch(markup, />Use this marker only</)
 })
+
+/**
+ * Verifies short borderless marker notes render around the authored note box
+ * center instead of treating the box as a left-aligned prose callout.
+ */
+test('renderSchematicSvg centers compact marker notes in their note box', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Compact marker note schematic' },
+        schematic: {
+            sheet: { width: 220, height: 120 },
+            lines: [],
+            texts: [
+                {
+                    x: 80,
+                    y: 40,
+                    text: 'NF',
+                    color: '#ff0000',
+                    hidden: false,
+                    recordType: '28',
+                    style: 0,
+                    fontSize: 14,
+                    fontFamily: 'Times New Roman',
+                    fontWeight: 700,
+                    rotation: 0,
+                    anchor: 'start',
+                    cornerX: 116,
+                    cornerY: 56,
+                    fill: '#ffffff',
+                    borderColor: '#ff0000',
+                    isSolid: false,
+                    showBorder: false,
+                    textMargin: 4,
+                    noteLines: ['NF']
+                }
+            ],
+            components: [],
+            pins: [],
+            ports: [],
+            crosses: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /<text class="schematic-note-text" x="98" y="76.55" fill="var\(--schematic-alert-color\)" text-anchor="middle" font-size="13" font-family="Times New Roman" font-weight="700" xml:space="preserve">NF</
+    )
+})

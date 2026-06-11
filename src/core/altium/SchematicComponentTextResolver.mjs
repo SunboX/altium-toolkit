@@ -56,7 +56,7 @@ export class SchematicComponentTextResolver {
      */
     static resolveValue(ownerTexts, texts, component) {
         const ownerValue =
-            SchematicComponentTextResolver.#findFirstRelatedTextRecord(
+            SchematicComponentTextResolver.#findFirstUsableRelatedTextRecord(
                 ownerTexts,
                 ['Comment', 'VALUE']
             )
@@ -126,6 +126,45 @@ export class SchematicComponentTextResolver {
         }
 
         return { found: false, text: '' }
+    }
+
+    /**
+     * Finds the first owner text that is resolved or explicitly empty, while
+     * allowing unresolved templates to fall through to later owner parameters.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @param {string[]} logicalNames Logical text names.
+     * @returns {{ found: boolean, text: string }}
+     */
+    static #findFirstUsableRelatedTextRecord(records, logicalNames) {
+        let unresolvedMatch = { found: false, text: '' }
+
+        for (const logicalName of logicalNames) {
+            const match = SchematicComponentTextResolver.#findRelatedTextRecord(
+                records,
+                logicalName
+            )
+
+            if (!match.found) {
+                continue
+            }
+
+            if (
+                SchematicComponentTextResolver.#isExplicitEmptyText(
+                    match.text
+                ) ||
+                SchematicComponentTextResolver.#isResolvedComponentText(
+                    match.text
+                )
+            ) {
+                return match
+            }
+
+            if (!unresolvedMatch.found) {
+                unresolvedMatch = match
+            }
+        }
+
+        return unresolvedMatch
     }
 
     /**

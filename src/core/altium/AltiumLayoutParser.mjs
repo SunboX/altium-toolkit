@@ -267,7 +267,7 @@ export class AltiumLayoutParser {
      * @param {{ width: number, height: number, marginWidth: number, paperSize?: string }} sheet
      * @param {{ fields: Record<string, string | string[]> }[]} textRecords
      * @param {{ x1: number, y1: number, x2: number, y2: number }[]} lines
-     * @param {{ x: number, y: number }[]} texts
+     * @param {{ x: number, y: number, cornerX?: number, cornerY?: number }[]} texts
      * @param {{ x: number, y: number }[]} components
      * @param {{ x: number, y: number }[]} pins
      * @param {{ x: number, y: number, width: number, height: number }[]} rectangles
@@ -303,12 +303,47 @@ export class AltiumLayoutParser {
         }
 
         const margin = Math.max(Number(sheet?.marginWidth || 20), 20)
+        const nativeTemplateSheet =
+            AltiumLayoutParser.#resolveNativeStandardTemplateSheetSize(
+                sheet,
+                bounds,
+                margin
+            )
+        if (nativeTemplateSheet) {
+            return {
+                ...sheet,
+                ...nativeTemplateSheet
+            }
+        }
+
+        if (
+            AltiumLayoutParser.#shouldPreserveNativeStandardTemplateSize(
+                sheet,
+                bounds,
+                margin
+            )
+        ) {
+            return sheet
+        }
+
         const footerBounds = AltiumLayoutParser.#collectSchematicFooterBounds(
             textRecords,
             Number(sheet?.width || 0)
         )
-        const requiredWidth =
-            Math.max(bounds.maxX, footerBounds?.maxX || 0) + margin * 2
+        const footerLineBounds =
+            AltiumLayoutParser.#collectSchematicFooterLineBounds(
+                lines,
+                sheet,
+                margin
+            )
+        const requiredWidthResult =
+            AltiumLayoutParser.#resolveSchematicRequiredWidth(
+                sheet,
+                Math.max(bounds.maxX, footerBounds?.maxX || 0),
+                footerLineBounds?.maxX || 0,
+                margin
+            )
+        const requiredWidth = requiredWidthResult.width
         const requiredHeight =
             Math.max(bounds.maxY, footerBounds?.maxY || 0) + margin * 2
 
@@ -322,10 +357,12 @@ export class AltiumLayoutParser {
             return sheet
         }
 
-        const standardSheet = AltiumLayoutParser.#resolveStandardSheetSize(
-            requiredWidth,
-            requiredHeight
-        )
+        const standardSheet = requiredWidthResult.usesNativeFrameEdge
+            ? null
+            : AltiumLayoutParser.#resolveStandardSheetSize(
+                  requiredWidth,
+                  requiredHeight
+              )
 
         if (standardSheet) {
             return {
@@ -344,11 +381,12 @@ export class AltiumLayoutParser {
             sheet.height,
             requiredHeight
         )
-        const resolvedStandardSheet =
-            AltiumLayoutParser.#resolveStandardSheetSize(
-                resolvedWidth,
-                resolvedHeight
-            )
+        const resolvedStandardSheet = requiredWidthResult.usesNativeFrameEdge
+            ? null
+            : AltiumLayoutParser.#resolveStandardSheetSize(
+                  resolvedWidth,
+                  resolvedHeight
+              )
 
         if (resolvedStandardSheet) {
             return {
@@ -364,6 +402,126 @@ export class AltiumLayoutParser {
             width: resolvedWidth,
             height: resolvedHeight,
             paperSize: sheet?.paperSize
+        }
+    }
+
+    /**
+     * Resolves the standard template page named by Altium standard sheet
+     * records, preserving landscape or portrait orientation from the stored
+     * custom dimensions.
+     * @param {Record<string, string | string[]> | undefined} fields Sheet fields.
+     * @param {number} fallbackWidth Stored custom width.
+     * @param {number} fallbackHeight Stored custom height.
+     * @returns {{ width: number, height: number, paperSize: string, sourceWidth?: number, sourceHeight?: number } | null}
+     */
+    static resolveSchematicTemplatePageSize(
+        fields,
+        fallbackWidth,
+        fallbackHeight
+    ) {
+        if (parseNumericField(fields, 'SheetStyle') !== 1) {
+            return null
+        }
+
+        const templateFileName = getField(fields, 'TemplateFileName')
+        const match = String(templateFileName || '').match(
+            /(?:^|[^a-z0-9])A([0-5])(?:[^a-z0-9]|$)/iu
+        )
+
+        if (!match) {
+            return null
+        }
+
+        const paperSize = 'A' + match[1]
+        const portraitSheet = ISO_A_PORTRAIT_SHEETS.find(
+            (sheet) => sheet.label === paperSize
+        )
+
+        if (!portraitSheet) {
+            return null
+        }
+
+        const normalizedFallbackWidth = Number(fallbackWidth || 0)
+        const normalizedFallbackHeight = Number(fallbackHeight || 0)
+        const portraitTemplate =
+            parseNumericField(fields, 'WorkspaceOrientation') === 1 ||
+            /portrait/iu.test(String(templateFileName || ''))
+
+        if (
+            portraitTemplate &&
+            normalizedFallbackWidth > normalizedFallbackHeight &&
+            normalizedFallbackHeight > 0
+        ) {
+            return {
+                width: normalizedFallbackHeight,
+                height: normalizedFallbackWidth,
+                sourceWidth: normalizedFallbackHeight,
+                sourceHeight: normalizedFallbackWidth,
+                paperSize
+            }
+        }
+
+        const landscape = normalizedFallbackWidth >= normalizedFallbackHeight
+
+        return {
+            width: landscape ? portraitSheet.height : portraitSheet.width,
+            height: landscape ? portraitSheet.width : portraitSheet.height,
+            paperSize
+        }
+    }
+
+    /**
+     * Resolves the page width required by recovered schematic geometry.
+     * Native template linework can use the declared custom width as the inner
+     * frame edge; adding both margins would create an artificial right gutter.
+     * @param {{ width?: number, borderOn?: boolean, titleBlockOn?: boolean, sheetStyle?: number }} sheet
+     * @param {number} maxX
+     * @param {number} footerLineMaxX
+     * @param {number} margin
+     * @returns {{ width: number, usesNativeFrameEdge: boolean }}
+     */
+    static #resolveSchematicRequiredWidth(sheet, maxX, footerLineMaxX, margin) {
+        const reachesNativeFrameEdge =
+            Number(sheet?.sheetStyle || 0) !== 1 &&
+            Boolean(sheet?.borderOn || sheet?.titleBlockOn) &&
+            footerLineMaxX > 0 &&
+            maxX <= footerLineMaxX + 0.01
+        const rightPadding = reachesNativeFrameEdge ? margin : margin * 2
+
+        return {
+            width: maxX + rightPadding,
+            usesNativeFrameEdge: reachesNativeFrameEdge
+        }
+    }
+
+    /**
+     * Collects owned lower-page linework that represents native title-block or
+     * footer chrome rather than schematic content.
+     * @param {{ x1: number, y1: number, x2: number, y2: number, ownerIndex?: string }[]} lines
+     * @param {{ width?: number }} sheet
+     * @param {number} margin
+     * @returns {{ maxX: number } | null}
+     */
+    static #collectSchematicFooterLineBounds(lines, sheet, margin) {
+        const footerLimit = Math.max(margin * 6, 120)
+        const sheetWidth = Math.max(Number(sheet?.width || 0), 0)
+        const footerStartX = sheetWidth > 0 ? sheetWidth * 0.5 : 0
+        const coordinates = []
+
+        for (const line of lines || []) {
+            if (!line?.ownerIndex) continue
+            if (Math.max(line.y1, line.y2) > footerLimit) continue
+            if (Math.max(line.x1, line.x2) < footerStartX) continue
+
+            coordinates.push(line.x1, line.x2)
+        }
+
+        if (!coordinates.length) {
+            return null
+        }
+
+        return {
+            maxX: Math.max(...coordinates)
         }
     }
 
@@ -404,10 +562,107 @@ export class AltiumLayoutParser {
     }
 
     /**
+     * Returns true when a standard template has already resolved to its native
+     * template coordinate frame rather than a promoted ISO sheet envelope.
+     * @param {{ width?: number, height?: number, sourceWidth?: number, sourceHeight?: number, paperSize?: string, sheetStyle?: number }} sheet
+     * @param {{ maxX: number, maxY: number }} bounds
+     * @param {number} margin
+     * @returns {boolean}
+     */
+    static #shouldPreserveNativeStandardTemplateSize(sheet, bounds, margin) {
+        const width = Number(sheet?.width || 0)
+        const height = Number(sheet?.height || 0)
+        const sourceWidth = Number(sheet?.sourceWidth || 0)
+        const sourceHeight = Number(sheet?.sourceHeight || 0)
+
+        if (
+            Number(sheet?.sheetStyle || 0) !== 1 ||
+            !sheet?.paperSize ||
+            width <= 0 ||
+            height <= 0 ||
+            width !== sourceWidth ||
+            height !== sourceHeight
+        ) {
+            return false
+        }
+
+        return (
+            Number(bounds?.maxX || 0) <= width - margin + 0.01 &&
+            Number(bounds?.maxY || 0) <= height - margin + 0.01
+        )
+    }
+
+    /**
+     * Derives a native standard-template frame from embedded template graphics
+     * when those graphics overrun the stored custom dimensions but fit inside
+     * a smaller-than-ISO template envelope.
+     * @param {{ width?: number, height?: number, sourceWidth?: number, sourceHeight?: number, paperSize?: string, sheetStyle?: number }} sheet
+     * @param {{ maxX: number, maxY: number }} bounds
+     * @param {number} margin
+     * @returns {{ width: number, height: number, sourceWidth: number, sourceHeight: number } | null}
+     */
+    static #resolveNativeStandardTemplateSheetSize(sheet, bounds, margin) {
+        const width = Number(sheet?.width || 0)
+        const height = Number(sheet?.height || 0)
+        const sourceWidth = Number(sheet?.sourceWidth || 0)
+        const sourceHeight = Number(sheet?.sourceHeight || 0)
+
+        if (
+            Number(sheet?.sheetStyle || 0) !== 1 ||
+            !sheet?.paperSize ||
+            sourceWidth <= 0 ||
+            sourceHeight <= 0 ||
+            width <= sourceWidth ||
+            height <= sourceHeight
+        ) {
+            return null
+        }
+
+        const maxX = Number(bounds?.maxX || 0)
+        const maxY = Number(bounds?.maxY || 0)
+        if (maxX <= sourceWidth && maxY <= sourceHeight) {
+            return null
+        }
+
+        const nativeWidth = AltiumLayoutParser.#roundTemplateExtent(
+            maxX + margin
+        )
+        const nativeHeight = AltiumLayoutParser.#roundTemplateExtent(
+            maxY + margin
+        )
+
+        if (
+            nativeWidth <= sourceWidth ||
+            nativeHeight <= sourceHeight ||
+            nativeWidth >= width ||
+            nativeHeight >= height
+        ) {
+            return null
+        }
+
+        return {
+            width: nativeWidth,
+            height: nativeHeight,
+            sourceWidth: nativeWidth,
+            sourceHeight: nativeHeight
+        }
+    }
+
+    /**
+     * Rounds a recovered template frame edge to the next schematic grid
+     * interval.
+     * @param {number} value Raw extent.
+     * @returns {number}
+     */
+    static #roundTemplateExtent(value) {
+        return Math.ceil(Math.max(Number(value || 0), 0) / 10) * 10
+    }
+
+    /**
      * Collects the visible coordinate envelope from recovered schematic
      * primitives.
      * @param {{ x1: number, y1: number, x2: number, y2: number }[]} lines
-     * @param {{ x: number, y: number }[]} texts
+     * @param {{ x: number, y: number, cornerX?: number, cornerY?: number }[]} texts
      * @param {{ x: number, y: number }[]} components
      * @param {{ x: number, y: number }[]} pins
      * @param {{ x: number, y: number, width: number, height: number }[]} rectangles
@@ -434,6 +689,13 @@ export class AltiumLayoutParser {
 
         for (const text of texts) {
             coordinates.push([text.x, text.y])
+
+            if (
+                Number.isFinite(Number(text.cornerX)) &&
+                Number.isFinite(Number(text.cornerY))
+            ) {
+                coordinates.push([Number(text.cornerX), Number(text.cornerY)])
+            }
         }
 
         for (const component of components) {

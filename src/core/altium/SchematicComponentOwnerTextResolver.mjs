@@ -72,6 +72,19 @@ export class SchematicComponentOwnerTextResolver {
      * @param {{ fields: Record<string, string | string[]>, recordIndex?: number }[]} records Indexed schematic records.
      * @returns {string[]}
      */
+    static resolveOwnerIndexes(componentRecord, records) {
+        return SchematicComponentOwnerTextResolver.#resolveOwnerIndexes(
+            componentRecord,
+            records
+        )
+    }
+
+    /**
+     * Resolves candidate owner indexes for one schematic component record.
+     * @param {{ fields: Record<string, string | string[]>, recordIndex?: number }} componentRecord Component placement record.
+     * @param {{ fields: Record<string, string | string[]>, recordIndex?: number }[]} records Indexed schematic records.
+     * @returns {string[]}
+     */
     static #resolveOwnerIndexes(componentRecord, records) {
         return SchematicComponentOwnerTextResolver.#dedupeStrings([
             SchematicComponentOwnerTextResolver.#inferFollowingOwnerIndex(

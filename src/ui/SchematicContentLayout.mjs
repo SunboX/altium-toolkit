@@ -721,7 +721,12 @@ export class SchematicContentLayout {
         }
 
         for (const text of schematic?.texts || []) {
-            coordinates.push([text.x, projectSchematicY(sheetHeight, text.y)])
+            coordinates.push(
+                ...SchematicContentLayout.#collectRenderedTextPoints(
+                    text,
+                    sheetHeight
+                )
+            )
         }
 
         for (const component of schematic?.components || []) {
@@ -827,6 +832,58 @@ export class SchematicContentLayout {
             maxX: box.x + box.width,
             maxY: projectSchematicY(sheetHeight, box.y)
         }))
+    }
+
+    /**
+     * Collects rendered bounds points for a text primitive.
+     * @param {{ x?: number, y?: number, recordType?: string, cornerX?: number, cornerY?: number, noteLines?: string[] }} text Text primitive.
+     * @param {number} sheetHeight Sheet height.
+     * @returns {number[][]}
+     */
+    static #collectRenderedTextPoints(text, sheetHeight) {
+        const x = Number(text?.x)
+        const y = Number(text?.y)
+
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            return []
+        }
+
+        if (SchematicContentLayout.#hasRenderedTextFrame(text)) {
+            const cornerX = Number(text.cornerX)
+            const cornerY = Number(text.cornerY)
+            const left = Math.min(x, cornerX)
+            const right = Math.max(x, cornerX)
+            const top = Math.min(
+                projectSchematicY(sheetHeight, y),
+                projectSchematicY(sheetHeight, cornerY)
+            )
+            const bottom = Math.max(
+                projectSchematicY(sheetHeight, y),
+                projectSchematicY(sheetHeight, cornerY)
+            )
+
+            return [
+                [left, top],
+                [right, bottom]
+            ]
+        }
+
+        return [[x, projectSchematicY(sheetHeight, y)]]
+    }
+
+    /**
+     * Returns true when a text primitive renders as a framed note/callout box.
+     * @param {{ recordType?: string, cornerX?: number, cornerY?: number, noteLines?: string[] }} text Text primitive.
+     * @returns {boolean}
+     */
+    static #hasRenderedTextFrame(text) {
+        const recordType = String(text?.recordType || '')
+
+        return Boolean(
+            (recordType === '28' || recordType === '209') &&
+            Number.isFinite(Number(text?.cornerX)) &&
+            Number.isFinite(Number(text?.cornerY))
+        )
     }
 
     /**

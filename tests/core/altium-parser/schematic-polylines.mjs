@@ -458,6 +458,10 @@ test('parseAltiumArrayBuffer exposes schematic text frame metadata', () => {
     assert.match(markup, /class="schematic-note-box"/)
     assert.match(markup, /stroke-width="2"/)
     assert.match(markup, /font-family="Arial"/)
+    assert.match(
+        markup,
+        /<text class="schematic-note-text" x="110"[^>]*text-anchor="middle"/
+    )
     assert.match(markup, />Frame</)
     assert.match(markup, />Body</)
 })

@@ -12,10 +12,15 @@ export class SchematicPinParser {
     /**
      * Normalizes schematic pin records into drawable pin primitives.
      * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @param {{ ownerDrawnInternalPinOwners?: Set<string>, numericEndpointLabelOwners?: Set<string> }} [options]
      * @returns {{ x: number, y: number, length: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color: string, labelColor: string, labelMode: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', ownerIndex: string }[]}
      */
-    static parseSchematicPins(records) {
+    static parseSchematicPins(records, options = {}) {
         const groups = new Map()
+        const ownerDrawnInternalPinOwners =
+            options.ownerDrawnInternalPinOwners || new Set()
+        const numericEndpointLabelOwners =
+            options.numericEndpointLabelOwners || new Set()
 
         for (const record of records) {
             const ownerIndex = ParserUtils.getField(record.fields, 'OwnerIndex')
@@ -81,7 +86,11 @@ export class SchematicPinParser {
         }
 
         return [...groups.values()].flatMap((pins) =>
-            SchematicPinParser.#normalizeSchematicPinGroup(pins)
+            SchematicPinParser.#normalizeSchematicPinGroup(
+                pins,
+                ownerDrawnInternalPinOwners,
+                numericEndpointLabelOwners
+            )
         )
     }
 
@@ -730,9 +739,15 @@ export class SchematicPinParser {
     /**
      * Deduces the visible pins for one schematic symbol owner.
      * @param {{ x: number, y: number, length: number, conglomerate?: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color?: string, labelColor?: string, ownerIndex: string }[]} pins
+     * @param {Set<string>} ownerDrawnInternalPinOwners
+     * @param {Set<string>} numericEndpointLabelOwners
      * @returns {{ x: number, y: number, length: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color: string, labelColor: string, labelMode: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', ownerIndex: string }[]}
      */
-    static #normalizeSchematicPinGroup(pins) {
+    static #normalizeSchematicPinGroup(
+        pins,
+        ownerDrawnInternalPinOwners,
+        numericEndpointLabelOwners
+    ) {
         const deduped = SchematicPinParser.#dedupeSchematicPins(pins)
         const inferredSequentialDesignators =
             SchematicPinDesignatorInferer.inferSequentialCompactFourPinDesignators(
@@ -773,6 +788,7 @@ export class SchematicPinParser {
                     /^\d+$/.test(String(pin.designator || '').trim()) &&
                     (!pin.name || /^\d+$/.test(String(pin.name || '').trim()))
             )
+        const ownerIndex = normalizedPins[0]?.ownerIndex || ''
         let labelMode = 'name-and-number'
 
         if (
@@ -795,12 +811,26 @@ export class SchematicPinParser {
             labelMode = 'number-only'
         }
 
-        if (allPassive && normalizedPins.length <= 2) {
+        if (
+            numericEndpointLabelOwners.has(ownerIndex) &&
+            SchematicPinParser.#isTwoPinNumericEndpointGroup(normalizedPins)
+        ) {
+            labelMode = 'number-only'
+        } else if (allPassive && normalizedPins.length <= 2) {
             labelMode = SchematicPinParser.#isCanonicalPassiveTwoPinGroup(
                 normalizedPins
             )
                 ? 'hidden'
                 : 'number-only'
+        } else if (
+            ownerDrawnInternalPinOwners.has(ownerIndex) &&
+            SchematicPinParser.#isCompactNumberedFetTerminalGroup(
+                normalizedPins,
+                semanticNames,
+                orientationCount
+            )
+        ) {
+            labelMode = 'number-only'
         } else if (
             SchematicPinParser.#isOwnerDrawnTerminalGlyphGroup(
                 normalizedPins,
@@ -809,6 +839,24 @@ export class SchematicPinParser {
             )
         ) {
             labelMode = 'hidden'
+        } else if (
+            ownerDrawnInternalPinOwners.has(ownerIndex) &&
+            SchematicPinParser.#isCompactInternalTerminalGroup(
+                normalizedPins,
+                names,
+                orientationCount
+            )
+        ) {
+            labelMode = 'hidden'
+        } else if (
+            ownerDrawnInternalPinOwners.has(ownerIndex) &&
+            SchematicPinParser.#isCompactTwoPinInternalTerminalGroup(
+                normalizedPins,
+                names,
+                orientationCount
+            )
+        ) {
+            labelMode = 'number-only'
         } else if (!semanticNames.length && orientationCount <= 2) {
             labelMode = 'number-only'
         } else if (
@@ -825,6 +873,33 @@ export class SchematicPinParser {
             labelColor: pin.labelColor || '#1f1f1f',
             labelMode
         }))
+    }
+
+    /**
+     * Returns true when a compact owner-drawn FET body uses semantic terminal
+     * names internally but still exposes external numeric contact labels.
+     * @param {{ designator: string, name: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
+     * @param {string[]} semanticNames
+     * @param {number} orientationCount
+     * @returns {boolean}
+     */
+    static #isCompactNumberedFetTerminalGroup(
+        pins,
+        semanticNames,
+        orientationCount
+    ) {
+        if (
+            pins.length !== 4 ||
+            orientationCount < 3 ||
+            semanticNames.length !== pins.length ||
+            !pins.every((pin) => /^\d+$/.test(String(pin.designator || '')))
+        ) {
+            return false
+        }
+
+        return semanticNames.every((name) =>
+            SchematicPinParser.#isFetTerminalName(name)
+        )
     }
 
     /**
@@ -859,6 +934,60 @@ export class SchematicPinParser {
     }
 
     /**
+     * Returns true when a compact owner-drawn body carries repeated internal
+     * terminal names that belong to the symbol body, not external labels.
+     * @param {{ designator: string, name: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
+     * @param {string[]} names
+     * @param {number} orientationCount
+     * @returns {boolean}
+     */
+    static #isCompactInternalTerminalGroup(pins, names, orientationCount) {
+        if (
+            pins.length < 3 ||
+            pins.length > 4 ||
+            orientationCount < 3 ||
+            names.length >= pins.length ||
+            !SchematicPinParser.#hasOptionalNumericPinDesignators(pins)
+        ) {
+            return false
+        }
+
+        return (
+            names.length > 0 &&
+            names.every((name) =>
+                SchematicPinParser.#isInternalTerminalName(name)
+            )
+        )
+    }
+
+    /**
+     * Returns true when a compact two-pin owner-drawn symbol stores internal
+     * placeholder terminal names that should not be rendered as labels.
+     * @param {{ designator: string, name: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
+     * @param {string[]} names
+     * @param {number} orientationCount
+     * @returns {boolean}
+     */
+    static #isCompactTwoPinInternalTerminalGroup(
+        pins,
+        names,
+        orientationCount
+    ) {
+        if (
+            pins.length !== 2 ||
+            orientationCount < 2 ||
+            names.length !== pins.length ||
+            !SchematicPinParser.#hasOptionalNumericPinDesignators(pins)
+        ) {
+            return false
+        }
+
+        return names.every((name) =>
+            SchematicPinParser.#isInternalTerminalName(name)
+        )
+    }
+
+    /**
      * Returns true when compact owner-drawn terminal glyph pins have either no
      * external designators or ordinary numeric pin numbers.
      * @param {{ designator: string }[]} pins
@@ -882,6 +1011,28 @@ export class SchematicPinParser {
     }
 
     /**
+     * Returns true for FET terminal names, including numbered gate/source
+     * variants used by dual-gate symbols.
+     * @param {string} name
+     * @returns {boolean}
+     */
+    static #isFetTerminalName(name) {
+        return /^(?:[DS]|[GS]\d*)$/i.test(String(name || '').trim())
+    }
+
+    /**
+     * Returns true for compact internal terminal labels usually drawn inside
+     * owner-authored symbol bodies.
+     * @param {string} name
+     * @returns {boolean}
+     */
+    static #isInternalTerminalName(name) {
+        return /^(x|y|gnd|agnd|dgnd|pgnd|vcc|vdd|vee|vss|nc)$/i.test(
+            String(name || '').trim()
+        )
+    }
+
+    /**
      * Returns true when one passive two-pin symbol uses the ordinary 1/2 pin
      * numbering that should stay hidden for simple resistor-like parts.
      * @param {{ designator: string }[]} pins
@@ -897,6 +1048,24 @@ export class SchematicPinParser {
             .sort((left, right) => Number(left) - Number(right))
 
         return designators[0] === '1' && designators[1] === '2'
+    }
+
+    /**
+     * Returns true when one owner exposes exactly two numeric endpoints.
+     * @param {{ designator: string, name: string }[]} pins
+     * @returns {boolean}
+     */
+    static #isTwoPinNumericEndpointGroup(pins) {
+        if (pins.length !== 2) {
+            return false
+        }
+
+        return pins.every((pin) => {
+            const designator = String(pin.designator || '').trim()
+            const name = String(pin.name || '').trim()
+
+            return /^\d+$/.test(designator) && (!name || /^\d+$/.test(name))
+        })
     }
 
     /**
@@ -1049,10 +1218,12 @@ export class SchematicPinParser {
     static #inferSchematicPinOrientation(conglomerate) {
         switch (conglomerate) {
             case 34:
+            case 42:
             case 50:
             case 58:
                 return 'left'
             case 32:
+            case 40:
             case 48:
             case 56:
                 return 'right'

@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { SchematicMultipartDesignatorNormalizer } from './SchematicMultipartDesignatorNormalizer.mjs'
+
 /**
  * Applies placement-oriented cleanup passes to normalized schematic text.
  */
@@ -47,84 +49,17 @@ export class SchematicTextPostProcessor {
     }
 
     /**
-     * Adds multipart section suffixes like A/B/J to visible designator texts
-     * when the active Altium part id is stored separately from the base
+     * Normalizes multipart section suffixes like A/B/J on visible designator
+     * texts when the active Altium part id is stored separately from the
      * designator string.
      * @param {{ text: string, name?: string, ownerIndex?: string, recordType?: string }[]} texts
      * @param {Map<string, string>} activeMultipartOwnerParts
      * @returns {{ text: string, name?: string, ownerIndex?: string, recordType?: string }[]}
      */
     static decorateMultipartDesignators(texts, activeMultipartOwnerParts) {
-        const duplicatedActiveBaseDesignators =
-            SchematicTextPostProcessor.#collectDuplicatedActiveMultipartDesignators(
-                texts,
-                activeMultipartOwnerParts
-            )
-
-        return texts.map((text) => {
-            const ownerIndex = String(text.ownerIndex || '')
-            const suffix =
-                SchematicTextPostProcessor.#formatMultipartPartSuffix(
-                    activeMultipartOwnerParts.get(ownerIndex)
-                )
-
-            if (
-                !suffix ||
-                text.recordType !== '34' ||
-                String(text.name || '')
-                    .trim()
-                    .toLowerCase() !== 'designator' ||
-                !duplicatedActiveBaseDesignators.has(text.text)
-            ) {
-                return text
-            }
-
-            if (!/\d$/i.test(text.text) || text.text.endsWith(suffix)) {
-                return text
-            }
-
-            return {
-                ...text,
-                text: text.text + suffix
-            }
-        })
-    }
-
-    /**
-     * Collects base multipart designators that belong to more than one active
-     * visible owner on the current sheet.
-     * @param {{ text: string, name?: string, ownerIndex?: string, recordType?: string }[]} texts
-     * @param {Map<string, string>} activeMultipartOwnerParts
-     * @returns {Set<string>}
-     */
-    static #collectDuplicatedActiveMultipartDesignators(
-        texts,
-        activeMultipartOwnerParts
-    ) {
-        const counts = new Map()
-
-        for (const text of texts) {
-            const ownerIndex = String(text.ownerIndex || '')
-
-            if (
-                !activeMultipartOwnerParts.has(ownerIndex) ||
-                text.recordType !== '34' ||
-                String(text.name || '')
-                    .trim()
-                    .toLowerCase() !== 'designator' ||
-                !/\d$/i.test(String(text.text || '').trim())
-            ) {
-                continue
-            }
-
-            const baseDesignator = String(text.text || '').trim()
-            counts.set(baseDesignator, (counts.get(baseDesignator) || 0) + 1)
-        }
-
-        return new Set(
-            [...counts.entries()]
-                .filter(([, count]) => count > 1)
-                .map(([baseDesignator]) => baseDesignator)
+        return SchematicMultipartDesignatorNormalizer.normalize(
+            texts,
+            activeMultipartOwnerParts
         )
     }
 
@@ -136,7 +71,7 @@ export class SchematicTextPostProcessor {
      * @param {{ x1: number, y1: number, x2: number, y2: number, ownerIndex?: string }[]} lines
      * @param {{ x: number, y: number, ownerIndex: string, length: number, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
      * @param {{ x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down' }[]} ports
-     * @param {{ x: number, y: number, width: number, height: number, ownerIndex?: string }[]} rectangles
+     * @param {{ x: number, y: number, width: number, height: number, ownerIndex?: string }[] | { rectangles?: { x: number, y: number, width: number, height: number, ownerIndex?: string }[], roundedRectangles?: { x: number, y: number, width: number, height: number, ownerIndex?: string }[], ellipses?: { x: number, y: number, radiusX: number, radiusY: number, ownerIndex?: string }[], arcs?: { x: number, y: number, radius: number, radiusY?: number, ownerIndex?: string }[], pies?: { x: number, y: number, radius: number, radiusY?: number, ownerIndex?: string }[] }} bodyPrimitives
      * @returns {{ x: number, y: number, text: string, name?: string, ownerIndex?: string, recordType?: string, rotation?: number, anchor?: 'start' | 'middle' | 'end' }[]}
      */
     static anchorComponentTextsFromOwnerBounds(
@@ -144,17 +79,22 @@ export class SchematicTextPostProcessor {
         lines,
         pins,
         ports = [],
-        rectangles = []
+        bodyPrimitives = []
     ) {
+        const normalizedBodyPrimitives =
+            SchematicTextPostProcessor.#normalizeOwnerBodyPrimitives(
+                bodyPrimitives
+            )
         const ownerBounds = SchematicTextPostProcessor.#buildOwnerBounds(
             lines,
             pins
         )
-        const ownerBodyBounds = SchematicTextPostProcessor.#buildOwnerBounds(
-            lines,
-            pins,
-            rectangles
-        )
+        const ownerBodyBounds =
+            SchematicTextPostProcessor.#buildOwnerBodyBounds(
+                lines,
+                pins,
+                normalizedBodyPrimitives
+            )
         const ownerPinCounts =
             SchematicTextPostProcessor.#buildOwnerPinCounts(pins)
         const ownerPinOrientations =
@@ -234,6 +174,131 @@ export class SchematicTextPostProcessor {
 
             return paddedText
         })
+    }
+
+    /**
+     * Normalizes owner body primitive arguments while preserving the older
+     * rectangle-array call shape.
+     * @param {{ x: number, y: number, width: number, height: number, ownerIndex?: string }[] | { rectangles?: { x: number, y: number, width: number, height: number, ownerIndex?: string }[], roundedRectangles?: { x: number, y: number, width: number, height: number, ownerIndex?: string }[], ellipses?: { x: number, y: number, radiusX: number, radiusY: number, ownerIndex?: string }[], arcs?: { x: number, y: number, radius: number, radiusY?: number, ownerIndex?: string }[], pies?: { x: number, y: number, radius: number, radiusY?: number, ownerIndex?: string }[] }} bodyPrimitives
+     * @returns {{ rectangles: { x: number, y: number, width: number, height: number, ownerIndex?: string }[], roundedRectangles: { x: number, y: number, width: number, height: number, ownerIndex?: string }[], ellipses: { x: number, y: number, radiusX: number, radiusY: number, ownerIndex?: string }[], arcs: { x: number, y: number, radius: number, radiusY?: number, ownerIndex?: string }[], pies: { x: number, y: number, radius: number, radiusY?: number, ownerIndex?: string }[] }}
+     */
+    static #normalizeOwnerBodyPrimitives(bodyPrimitives) {
+        if (Array.isArray(bodyPrimitives)) {
+            return {
+                rectangles: bodyPrimitives,
+                roundedRectangles: [],
+                ellipses: [],
+                arcs: [],
+                pies: []
+            }
+        }
+
+        return {
+            rectangles: bodyPrimitives?.rectangles || [],
+            roundedRectangles: bodyPrimitives?.roundedRectangles || [],
+            ellipses: bodyPrimitives?.ellipses || [],
+            arcs: bodyPrimitives?.arcs || [],
+            pies: bodyPrimitives?.pies || []
+        }
+    }
+
+    /**
+     * Builds per-owner body bounds from straight and curved owner primitives.
+     * @param {{ x1: number, y1: number, x2: number, y2: number, ownerIndex?: string }[]} lines
+     * @param {{ x: number, y: number, ownerIndex: string }[]} pins
+     * @param {{ rectangles: { x: number, y: number, width: number, height: number, ownerIndex?: string }[], roundedRectangles: { x: number, y: number, width: number, height: number, ownerIndex?: string }[], ellipses: { x: number, y: number, radiusX: number, radiusY: number, ownerIndex?: string }[], arcs: { x: number, y: number, radius: number, radiusY?: number, ownerIndex?: string }[], pies: { x: number, y: number, radius: number, radiusY?: number, ownerIndex?: string }[] }} bodyPrimitives
+     * @returns {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>}
+     */
+    static #buildOwnerBodyBounds(lines, pins, bodyPrimitives) {
+        const ownerBounds = SchematicTextPostProcessor.#buildOwnerBounds(
+            lines,
+            pins,
+            [...bodyPrimitives.rectangles, ...bodyPrimitives.roundedRectangles]
+        )
+
+        SchematicTextPostProcessor.#extendCenteredOwnerBounds(
+            ownerBounds,
+            bodyPrimitives.ellipses
+        )
+        SchematicTextPostProcessor.#extendCenteredOwnerBounds(
+            ownerBounds,
+            bodyPrimitives.arcs
+        )
+        SchematicTextPostProcessor.#extendCenteredOwnerBounds(
+            ownerBounds,
+            bodyPrimitives.pies
+        )
+
+        return ownerBounds
+    }
+
+    /**
+     * Extends owner bounds by primitives expressed as a center and radii.
+     * @param {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>} ownerBounds
+     * @param {{ x: number, y: number, radius?: number, radiusX?: number, radiusY?: number, ownerIndex?: string }[]} primitives
+     * @returns {void}
+     */
+    static #extendCenteredOwnerBounds(ownerBounds, primitives) {
+        for (const primitive of primitives) {
+            if (!primitive.ownerIndex) {
+                continue
+            }
+
+            const radiusX =
+                SchematicTextPostProcessor.#resolveHorizontalRadius(primitive)
+            const radiusY =
+                SchematicTextPostProcessor.#resolveVerticalRadius(primitive)
+
+            if (radiusX <= 0 || radiusY <= 0) {
+                continue
+            }
+
+            SchematicTextPostProcessor.#extendBounds(
+                ownerBounds,
+                primitive.ownerIndex,
+                [
+                    { x: primitive.x - radiusX, y: primitive.y - radiusY },
+                    { x: primitive.x + radiusX, y: primitive.y + radiusY }
+                ]
+            )
+        }
+    }
+
+    /**
+     * Resolves the horizontal radius of a center-defined primitive.
+     * @param {{ radius?: number, radiusX?: number }} primitive
+     * @returns {number}
+     */
+    static #resolveHorizontalRadius(primitive) {
+        return SchematicTextPostProcessor.#coercePositiveNumber(
+            primitive.radiusX ?? primitive.radius
+        )
+    }
+
+    /**
+     * Resolves the vertical radius of a center-defined primitive.
+     * @param {{ radius?: number, radiusY?: number }} primitive
+     * @returns {number}
+     */
+    static #resolveVerticalRadius(primitive) {
+        return SchematicTextPostProcessor.#coercePositiveNumber(
+            primitive.radiusY ?? primitive.radius
+        )
+    }
+
+    /**
+     * Converts finite positive numeric values, preserving zero for invalids.
+     * @param {number | string | undefined | null} value
+     * @returns {number}
+     */
+    static #coercePositiveNumber(value) {
+        const numericValue = Number(value)
+
+        if (!Number.isFinite(numericValue) || numericValue <= 0) {
+            return 0
+        }
+
+        return numericValue
     }
 
     /**
@@ -401,6 +466,8 @@ export class SchematicTextPostProcessor {
             case 2:
             case 33:
                 return 8
+            case 6:
+                return 12
             default:
                 return 2
         }
@@ -742,29 +809,6 @@ export class SchematicTextPostProcessor {
                 line !== containingSegment &&
                 SchematicTextPostProcessor.#pointTouchesLine(leftPoint, line)
         )
-    }
-
-    /**
-     * Converts one numeric multipart section id into an alphabetic suffix.
-     * @param {string | undefined} partId
-     * @returns {string}
-     */
-    static #formatMultipartPartSuffix(partId) {
-        const numericPartId = Number.parseInt(String(partId || ''), 10)
-        if (!Number.isInteger(numericPartId) || numericPartId <= 0) {
-            return ''
-        }
-
-        let suffix = ''
-        let remaining = numericPartId
-
-        while (remaining > 0) {
-            remaining -= 1
-            suffix = String.fromCharCode(65 + (remaining % 26)) + suffix
-            remaining = Math.floor(remaining / 26)
-        }
-
-        return suffix
     }
 
     /**

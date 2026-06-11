@@ -15,7 +15,7 @@ const MINIMUM_NOTE_TEXT_SIZE = 4
 export class SchematicNoteRenderer {
     /**
      * Builds one boxed schematic note/callout with wrapped text rows.
-     * @param {{ x: number, y: number, color: string, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, lineWidth?: number, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }} text
+     * @param {{ x: number, y: number, color: string, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, anchor?: 'start' | 'middle' | 'end', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, lineWidth?: number, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }} text
      * @param {number} sheetHeight
      * @returns {string}
      */
@@ -59,6 +59,10 @@ export class SchematicNoteRenderer {
                 height,
                 requestedTextSize
             )
+        const compactMarkerNote = SchematicNoteRenderer.#isCompactMarkerNote(
+            noteSourceLines,
+            compactSingleLineNote
+        )
         const horizontalTextMargin =
             SchematicNoteRenderer.#resolveHorizontalTextMargin(
                 textMargin,
@@ -94,6 +98,7 @@ export class SchematicNoteRenderer {
                     lineHeight,
                     textSize,
                     compactSingleLineNote,
+                    compactMarkerNote,
                     text
                 )
             )
@@ -462,7 +467,8 @@ export class SchematicNoteRenderer {
      * @param {number} lineHeight
      * @param {number} textSize
      * @param {boolean} compactSingleLineNote
-     * @param {{ color: string, fontFamily?: string, fontWeight?: number, fontStyle?: string }} text
+     * @param {boolean} compactMarkerNote
+     * @param {{ color: string, fontFamily?: string, fontWeight?: number, fontStyle?: string, anchor?: 'start' | 'middle' | 'end' }} text
      * @returns {string}
      */
     static #buildNoteLineMarkup(
@@ -476,9 +482,21 @@ export class SchematicNoteRenderer {
         lineHeight,
         textSize,
         compactSingleLineNote,
+        compactMarkerNote,
         text
     ) {
-        const x = left + horizontalTextMargin
+        const anchor = SchematicNoteRenderer.#resolveTextAnchor(
+            text,
+            compactMarkerNote
+        )
+        const x = SchematicNoteRenderer.#resolveLineX(
+            left,
+            right,
+            horizontalTextMargin,
+            anchor
+        )
+        const ruleLeft = left + horizontalTextMargin
+        const ruleRight = right - horizontalTextMargin
         const y =
             top +
             verticalTextMargin +
@@ -491,11 +509,11 @@ export class SchematicNoteRenderer {
         if (/^_+$/.test(String(line || '').trim())) {
             return (
                 '<line class="schematic-note-rule" x1="' +
-                formatNumber(x) +
+                formatNumber(ruleLeft) +
                 '" y1="' +
                 formatNumber(y - textSize * 0.35) +
                 '" x2="' +
-                formatNumber(right - horizontalTextMargin) +
+                formatNumber(ruleRight) +
                 '" y2="' +
                 formatNumber(y - textSize * 0.35) +
                 '" stroke="' +
@@ -521,7 +539,9 @@ export class SchematicNoteRenderer {
                     '--schematic-text-color'
                 )
             ) +
-            '" text-anchor="start" font-size="' +
+            '" text-anchor="' +
+            escapeHtml(anchor) +
+            '" font-size="' +
             formatNumber(textSize) +
             '" font-family="' +
             escapeHtml(text.fontFamily || 'Times New Roman') +
@@ -532,6 +552,62 @@ export class SchematicNoteRenderer {
             escapeHtml(line) +
             '</text>'
         )
+    }
+
+    /**
+     * Resolves the x coordinate for a note line from its text anchor.
+     * @param {number} left Note box left edge.
+     * @param {number} right Note box right edge.
+     * @param {number} horizontalTextMargin Text margin.
+     * @param {'start' | 'middle' | 'end'} anchor Text anchor.
+     * @returns {number}
+     */
+    static #resolveLineX(left, right, horizontalTextMargin, anchor) {
+        if (anchor === 'middle') return (left + right) / 2
+        if (anchor === 'end') return right - horizontalTextMargin
+
+        return left + horizontalTextMargin
+    }
+
+    /**
+     * Returns true for tight single-token marker boxes that Altium centers
+     * inside the authored note rectangle.
+     * @param {string[]} noteLines Source note rows.
+     * @param {boolean} compactSingleLineNote True for tight one-line note boxes.
+     * @returns {boolean}
+     */
+    static #isCompactMarkerNote(noteLines, compactSingleLineNote) {
+        if (!compactSingleLineNote) {
+            return false
+        }
+
+        const visibleLines = noteLines
+            .map((line) => String(line || '').trim())
+            .filter(Boolean)
+
+        if (visibleLines.length !== 1) {
+            return false
+        }
+
+        return /^[A-Z0-9._/-]{1,4}$/u.test(visibleLines[0])
+    }
+
+    /**
+     * Normalizes note text anchors to SVG text-anchor values.
+     * @param {{ anchor?: string }} text Note text.
+     * @param {boolean} compactMarkerNote True for centered marker notes.
+     * @returns {'start' | 'middle' | 'end'}
+     */
+    static #resolveTextAnchor(text, compactMarkerNote) {
+        if (compactMarkerNote) {
+            return 'middle'
+        }
+
+        if (text.anchor === 'middle' || text.anchor === 'end') {
+            return text.anchor
+        }
+
+        return 'start'
     }
 
     /**

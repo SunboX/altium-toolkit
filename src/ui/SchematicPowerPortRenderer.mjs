@@ -36,7 +36,7 @@ export class SchematicPowerPortRenderer {
             fontStyle: text.fontStyle
         })
         const fontSize = Number(labelOptions.fontSize || 9)
-        const resolvedColor = SchematicColorResolver.resolveColor(
+        const resolvedColor = SchematicColorResolver.resolveNonTextColor(
             text.color,
             '--schematic-power-color'
         )

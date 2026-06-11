@@ -2,13 +2,16 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { unzlibSync } from 'fflate'
+import { Unzlib } from 'fflate'
 import { PcbFontMetricsParser } from './PcbFontMetricsParser.mjs'
 
 /**
  * Extracts zlib-compressed embedded font payloads from PCB compound streams.
  */
 export class PcbEmbeddedFontExtractor {
+    static #BASE64_ALPHABET =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
     static #CANDIDATE_STREAM_NAMES = [
         'EmbeddedFonts6/Data',
         'EmbeddedFonts/Data',
@@ -114,16 +117,19 @@ export class PcbEmbeddedFontExtractor {
             return null
         }
 
-        const compressedEnd = PcbEmbeddedFontExtractor.#findCompressedEnd(
+        const payload = PcbEmbeddedFontExtractor.#inflateZlibPayloadAt(
             bytes,
             zlibOffset
         )
-        if (compressedEnd <= zlibOffset) {
+        if (!payload) {
             return null
         }
 
-        const compressedBytes = bytes.subarray(zlibOffset, compressedEnd)
-        const payloadBytes = unzlibSync(compressedBytes)
+        const compressedBytes = bytes.subarray(
+            zlibOffset,
+            payload.compressedEnd
+        )
+        const payloadBytes = payload.bytes
         const metadata = PcbEmbeddedFontExtractor.#normalizeFontMetadata(
             familyField.text,
             alternateField.text,
@@ -151,7 +157,7 @@ export class PcbEmbeddedFontExtractor {
                     PcbEmbeddedFontExtractor.#bytesToBase64(payloadBytes),
                 metrics
             },
-            nextOffset: compressedEnd
+            nextOffset: payload.compressedEnd
         }
     }
 
@@ -224,48 +230,146 @@ export class PcbEmbeddedFontExtractor {
     }
 
     /**
-     * Finds the smallest trailing offset that fully contains a zlib payload.
+     * Inflates one zlib payload and returns its exact stream boundary.
      * @param {Uint8Array} bytes
      * @param {number} zlibOffset
-     * @returns {number}
+     * @returns {{ bytes: Uint8Array, compressedEnd: number } | null}
      */
-    static #findCompressedEnd(bytes, zlibOffset) {
-        let low = zlibOffset + 2
-        let high = bytes.byteLength
+    static #inflateZlibPayloadAt(bytes, zlibOffset) {
+        const input = bytes.subarray(zlibOffset)
+        const chunks = []
+        let inflater
 
-        while (low < high) {
-            const midpoint = Math.floor((low + high) / 2)
-            if (
-                PcbEmbeddedFontExtractor.#canInflate(
-                    bytes.subarray(zlibOffset, midpoint)
-                )
-            ) {
-                high = midpoint
-            } else {
-                low = midpoint + 1
-            }
+        try {
+            inflater = new Unzlib((chunk) => {
+                chunks.push(chunk)
+            })
+            inflater.push(input, false)
+        } catch {
+            return null
         }
 
-        return PcbEmbeddedFontExtractor.#canInflate(
-            bytes.subarray(zlibOffset, low)
-        )
-            ? low
-            : -1
+        if (!Number(inflater?.s?.f || 0)) {
+            return null
+        }
+
+        const payloadBytes = PcbEmbeddedFontExtractor.#concatBytes(chunks)
+        const compressedByteCount =
+            PcbEmbeddedFontExtractor.#resolveCompressedByteCount(
+                input,
+                inflater,
+                payloadBytes
+            )
+
+        if (compressedByteCount <= 2) {
+            return null
+        }
+
+        return {
+            bytes: payloadBytes,
+            compressedEnd: zlibOffset + compressedByteCount
+        }
     }
 
     /**
-     * Returns true when one byte slice can be inflated as a complete zlib
-     * stream.
-     * @param {Uint8Array} bytes
+     * Resolves the zlib stream length from fflate's remaining input buffer.
+     * @param {Uint8Array} input
+     * @param {Unzlib} inflater
+     * @param {Uint8Array} payloadBytes
+     * @returns {number}
+     */
+    static #resolveCompressedByteCount(input, inflater, payloadBytes) {
+        const remainingByteCount = Number(inflater?.p?.byteLength || 0)
+        if (remainingByteCount < 4) {
+            return -1
+        }
+
+        const baseByteCount = input.byteLength - remainingByteCount + 4
+        const checksum = PcbEmbeddedFontExtractor.#adler32(payloadBytes)
+
+        // fflate can leave the final consumed deflate byte in `p` when the
+        // stream ends mid-byte, so validate both adjacent boundary candidates.
+        for (const compressedByteCount of [baseByteCount, baseByteCount + 1]) {
+            if (
+                PcbEmbeddedFontExtractor.#hasZlibChecksumAt(
+                    input,
+                    compressedByteCount,
+                    checksum
+                )
+            ) {
+                return compressedByteCount
+            }
+        }
+
+        return -1
+    }
+
+    /**
+     * Returns true when a candidate zlib boundary ends with the checksum.
+     * @param {Uint8Array} input
+     * @param {number} compressedByteCount
+     * @param {number} checksum
      * @returns {boolean}
      */
-    static #canInflate(bytes) {
-        try {
-            unzlibSync(bytes)
-            return true
-        } catch {
+    static #hasZlibChecksumAt(input, compressedByteCount, checksum) {
+        if (compressedByteCount < 6 || compressedByteCount > input.byteLength) {
             return false
         }
+
+        const checksumOffset = compressedByteCount - 4
+        const actualChecksum = new DataView(
+            input.buffer,
+            input.byteOffset + checksumOffset,
+            4
+        ).getUint32(0, false)
+
+        return actualChecksum === checksum
+    }
+
+    /**
+     * Computes the Adler-32 checksum used by zlib trailers.
+     * @param {Uint8Array} bytes
+     * @returns {number}
+     */
+    static #adler32(bytes) {
+        const modulo = 65521
+        let low = 1
+        let high = 0
+
+        for (let offset = 0; offset < bytes.byteLength; offset += 5552) {
+            const end = Math.min(offset + 5552, bytes.byteLength)
+            for (let index = offset; index < end; index += 1) {
+                low += bytes[index]
+                high += low
+            }
+            low %= modulo
+            high %= modulo
+        }
+
+        return ((high << 16) | low) >>> 0
+    }
+
+    /**
+     * Concatenates inflated output chunks.
+     * @param {Uint8Array[]} chunks
+     * @returns {Uint8Array}
+     */
+    static #concatBytes(chunks) {
+        if (chunks.length === 1) {
+            return chunks[0]
+        }
+
+        const bytes = new Uint8Array(
+            chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
+        )
+        let offset = 0
+
+        for (const chunk of chunks) {
+            bytes.set(chunk, offset)
+            offset += chunk.byteLength
+        }
+
+        return bytes
     }
 
     /**
@@ -451,22 +555,61 @@ export class PcbEmbeddedFontExtractor {
      * @returns {string}
      */
     static #bytesToBase64(bytes) {
-        if (typeof btoa === 'function') {
-            let binary = ''
-            const chunkSize = 0x8000
-            for (
-                let offset = 0;
-                offset < bytes.byteLength;
-                offset += chunkSize
-            ) {
-                binary += String.fromCharCode(
-                    ...bytes.subarray(offset, offset + chunkSize)
-                )
-            }
-            return btoa(binary)
+        if (typeof Buffer === 'function' && typeof Buffer.from === 'function') {
+            return Buffer.from(bytes).toString('base64')
         }
 
-        return Buffer.from(bytes).toString('base64')
+        return PcbEmbeddedFontExtractor.#bytesToBase64Portable(bytes)
+    }
+
+    /**
+     * Encodes bytes as base64 without relying on Node APIs.
+     * @param {Uint8Array} bytes
+     * @returns {string}
+     */
+    static #bytesToBase64Portable(bytes) {
+        const alphabet = PcbEmbeddedFontExtractor.#BASE64_ALPHABET
+        const groupBuffer = new Array(4096)
+        const outputChunks = []
+        let groupIndex = 0
+        let byteIndex = 0
+
+        for (; byteIndex + 2 < bytes.byteLength; byteIndex += 3) {
+            const value =
+                (bytes[byteIndex] << 16) |
+                (bytes[byteIndex + 1] << 8) |
+                bytes[byteIndex + 2]
+            groupBuffer[groupIndex] =
+                alphabet[(value >> 18) & 63] +
+                alphabet[(value >> 12) & 63] +
+                alphabet[(value >> 6) & 63] +
+                alphabet[value & 63]
+            groupIndex += 1
+
+            if (groupIndex === groupBuffer.length) {
+                outputChunks.push(groupBuffer.join(''))
+                groupIndex = 0
+            }
+        }
+
+        if (byteIndex < bytes.byteLength) {
+            const hasSecondByte = byteIndex + 1 < bytes.byteLength
+            const value =
+                (bytes[byteIndex] << 16) |
+                ((hasSecondByte ? bytes[byteIndex + 1] : 0) << 8)
+            groupBuffer[groupIndex] =
+                alphabet[(value >> 18) & 63] +
+                alphabet[(value >> 12) & 63] +
+                (hasSecondByte ? alphabet[(value >> 6) & 63] : '=') +
+                '='
+            groupIndex += 1
+        }
+
+        if (groupIndex > 0) {
+            outputChunks.push(groupBuffer.slice(0, groupIndex).join(''))
+        }
+
+        return outputChunks.join('')
     }
 
     /**

@@ -354,28 +354,28 @@ test('renderSchematicSvg uses sparse A4 footer hints for compact footer placemen
         }
     })
 
-    assert.match(markup, /<rect x="920" y="702" width="420" height="78" \/>/)
-    assert.match(markup, /<line x1="920" y1="741" x2="1340" y2="741" \/>/)
-    assert.match(markup, /<line x1="920" y1="760.50" x2="1340" y2="760.50" \/>/)
+    assert.match(markup, /<rect x="920" y="742" width="420" height="78" \/>/)
+    assert.match(markup, /<line x1="920" y1="781" x2="1340" y2="781" \/>/)
+    assert.match(markup, /<line x1="920" y1="800.50" x2="1340" y2="800.50" \/>/)
     assert.match(
         markup,
-        /<text class="sheet-title-value" x="1050.20" y="720" fill="var\(--schematic-power-color\)" text-anchor="middle" font-size="14" font-family="Times New Roman" font-weight="700">EMBER-TRIGGER Board</
+        /<text class="sheet-title-value" x="1050.20" y="760" fill="var\(--schematic-power-color\)" text-anchor="middle" font-size="14" font-family="Times New Roman" font-weight="700">EMBER-TRIGGER Board</
     )
     assert.match(
         markup,
-        /<text class="sheet-title-value" x="1310.60" y="753.19" fill="var\(--schematic-power-color\)" text-anchor="middle" font-size="10" font-family="Times New Roman" font-weight="400">01</
+        /<text class="sheet-title-value" x="1310.60" y="793.19" fill="var\(--schematic-power-color\)" text-anchor="middle" font-size="10" font-family="Times New Roman" font-weight="400">01</
     )
     assert.match(
         markup,
-        /<text class="sheet-title-value" x="1256" y="766.84" fill="var\(--schematic-default-ink-color\)" text-anchor="middle">1</
+        /<text class="sheet-title-value" x="1256" y="806.84" fill="var\(--schematic-default-ink-color\)" text-anchor="middle">1</
     )
     assert.match(
         markup,
-        /<text class="sheet-title-value" x="1289.60" y="766.84" fill="var\(--schematic-default-ink-color\)" text-anchor="middle">8</
+        /<text class="sheet-title-value" x="1289.60" y="806.84" fill="var\(--schematic-default-ink-color\)" text-anchor="middle">8</
     )
     assert.match(
         markup,
-        /<text class="sheet-title-value" x="1310.60" y="776.59" fill="var\(--schematic-default-ink-color\)" text-anchor="middle" font-size="10" font-family="Times New Roman" font-weight="400">NR</
+        /<text class="sheet-title-value" x="1310.60" y="816.59" fill="var\(--schematic-default-ink-color\)" text-anchor="middle" font-size="10" font-family="Times New Roman" font-weight="400">NR</
     )
     assert.doesNotMatch(
         markup,

@@ -63,6 +63,114 @@ test('parseAltiumArrayBuffer keeps footer-driven A3 sizing when content is narro
 })
 
 /**
+ * Verifies portrait standard sheets derive their zone rows from the resolved
+ * ISO page orientation when the source omits explicit zone fields.
+ */
+test('parseAltiumArrayBuffer derives portrait standard sheet zone rows', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|SheetStyle=1|CustomX=1169|CustomY=1654|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=T|TitleBlockOn=F|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|TemplateFileName=C:\\\\Templates\\\\A3_FAKE_portrait.SchDot' +
+            '|RECORD=4|Location.X=1050|Location.Y=1614|Color=8388608|FontID=1|Text=EDGE'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'portrait-standard-zones.SchDoc',
+        arrayBuffer
+    )
+
+    assert.equal(documentModel.schematic.sheet.paperSize, 'A3')
+    assert.equal(documentModel.schematic.sheet.width, 1169)
+    assert.equal(documentModel.schematic.sheet.height, 1654)
+    assert.equal(documentModel.schematic.sheet.xZones, 4)
+    assert.equal(documentModel.schematic.sheet.yZones, 8)
+})
+
+/**
+ * Verifies portrait standard templates keep their native coordinate frame
+ * when the stored dimensions are landscape-ordered.
+ */
+test('parseAltiumArrayBuffer swaps native portrait template dimensions', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|SheetStyle=1|WorkspaceOrientation=1|CustomX=1550|CustomY=1110' +
+            '|VisibleGridSize=10|SnapGridSize=5|BorderOn=T|TitleBlockOn=F' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|TemplateFileName=C:\\\\Templates\\\\A3_FAKE_portrait.SchDot' +
+            '|RECORD=209|Location.X=373|Location.Y=1481|Corner.X=739|Corner.Y=1516' +
+            '|FontID=1|Color=8388608|Text=FAKE SECTION' +
+            '|RECORD=6|Location.X=20|Location.Y=20|Corner.X=1090|Corner.Y=20|Color=128'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'native-portrait-frame.SchDoc',
+        arrayBuffer
+    )
+
+    assert.equal(documentModel.schematic.sheet.paperSize, 'A3')
+    assert.equal(documentModel.schematic.sheet.width, 1110)
+    assert.equal(documentModel.schematic.sheet.height, 1550)
+    assert.equal(documentModel.schematic.sheet.sourceWidth, 1110)
+    assert.equal(documentModel.schematic.sheet.sourceHeight, 1550)
+    assert.equal(documentModel.schematic.sheet.xZones, 4)
+    assert.equal(documentModel.schematic.sheet.yZones, 8)
+})
+
+/**
+ * Verifies standard template graphics can define a native landscape frame
+ * that is smaller than the promoted ISO page envelope.
+ */
+test('parseAltiumArrayBuffer derives native landscape template dimensions', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|SheetStyle=1|CustomX=1000|CustomY=800' +
+            '|VisibleGridSize=10|SnapGridSize=5|BorderOn=T|TitleBlockOn=F' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|TemplateFileName=C:\\\\Templates\\\\A3_FAKE.SchDot' +
+            '|RECORD=209|Location.X=606|Location.Y=1047|Corner.X=974|Corner.Y=1082' +
+            '|FontID=1|Color=8388608|Text=FAKE SECTION' +
+            '|RECORD=6|Location.X=1070|Location.Y=30|Corner.X=1530|Corner.Y=30|Color=128'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'native-landscape-frame.SchDoc',
+        arrayBuffer
+    )
+
+    assert.equal(documentModel.schematic.sheet.paperSize, 'A3')
+    assert.equal(documentModel.schematic.sheet.width, 1550)
+    assert.equal(documentModel.schematic.sheet.height, 1110)
+    assert.equal(documentModel.schematic.sheet.sourceWidth, 1550)
+    assert.equal(documentModel.schematic.sheet.sourceHeight, 1110)
+    assert.equal(documentModel.schematic.sheet.xZones, 8)
+    assert.equal(documentModel.schematic.sheet.yZones, 4)
+})
+
+/**
+ * Verifies native footer linework that reaches the recovered custom sheet
+ * edge does not receive an extra right margin during sheet-width inference.
+ */
+test('parseAltiumArrayBuffer keeps native footer linework on the frame edge', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CustomX=1000|CustomY=760|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=T|TitleBlockOn=T|CustomMarginWidth=20|CustomXZones=4|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|RECORD=6|OwnerIndex=1|Location.X=660|Location.Y=80|Corner.X=1130|Corner.Y=80|LineWidth=1|Color=128' +
+            '|RECORD=6|OwnerIndex=1|Location.X=660|Location.Y=105|Corner.X=1130|Corner.Y=105|LineWidth=1|Color=128' +
+            '|RECORD=6|Location.X=120|Location.Y=760|Corner.X=160|Corner.Y=760|LineWidth=1|Color=128' +
+            '|RECORD=4|Location.X=720|Location.Y=90|Color=8388608|FontID=1|Text=Neutral footer'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'native-footer-edge.SchDoc',
+        arrayBuffer
+    )
+
+    assert.equal(documentModel.schematic.sheet.width, 1150)
+    assert.equal(documentModel.schematic.sheet.height, 800)
+    assert.equal(documentModel.schematic.sheet.sourceWidth, 1000)
+    assert.equal(documentModel.schematic.sheet.sourceHeight, 760)
+})
+
+/**
  * Verifies custom-style sheets keep their declared page size even when the
  * visible drawing occupies only one smaller region of the authored page.
  */

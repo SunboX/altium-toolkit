@@ -17,6 +17,10 @@ export class SchematicTextParser {
         const metadata = {}
 
         for (const record of records) {
+            if (ParserUtils.getField(record.fields, 'OwnerIndex')) {
+                continue
+            }
+
             const name = ParserUtils.getField(record.fields, 'Name').trim()
             const value = ParserUtils.getDisplayText(record.fields)
 
@@ -28,6 +32,39 @@ export class SchematicTextParser {
         }
 
         return metadata
+    }
+
+    /**
+     * Extracts owner-local parameter values used by component text templates.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @returns {Map<string, Record<string, string>>}
+     */
+    static extractSchematicOwnerMetadata(records) {
+        const ownerMetadata = new Map()
+
+        for (const record of records) {
+            const ownerIndex = ParserUtils.getField(record.fields, 'OwnerIndex')
+            const name = ParserUtils.getField(record.fields, 'Name').trim()
+            const value = ParserUtils.getDisplayText(record.fields)
+
+            if (
+                !ownerIndex ||
+                !name ||
+                !value ||
+                value === '*' ||
+                String(value).trim().startsWith('=')
+            ) {
+                continue
+            }
+
+            if (!ownerMetadata.has(ownerIndex)) {
+                ownerMetadata.set(ownerIndex, {})
+            }
+
+            ownerMetadata.get(ownerIndex)[name.toLowerCase()] = value
+        }
+
+        return ownerMetadata
     }
 
     /**
@@ -96,18 +133,30 @@ export class SchematicTextParser {
      * @param {Record<string, string>} metadata
      * @param {{ width: number, marginWidth: number, titleBlockOn?: boolean }} sheet
      * @param {Record<string, { size: number, family: string, bold: boolean, italic?: boolean, rotation: number }>} fonts
+     * @param {Map<string, Record<string, string>>} [ownerMetadata]
      * @returns {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] } | null}
      */
-    static normalizeSchematicTextRecord(fields, metadata, sheet, fonts) {
+    static normalizeSchematicTextRecord(
+        fields,
+        metadata,
+        sheet,
+        fonts,
+        ownerMetadata = new Map()
+    ) {
         const x = ParserUtils.parseNumericField(fields, 'Location.X')
         const y = ParserUtils.parseNumericField(fields, 'Location.Y')
         const hidden = ParserUtils.parseBoolean(fields.IsHidden)
         const name = ParserUtils.getField(fields, 'Name')
         const rawText = ParserUtils.getDisplayText(fields)
         const recordType = ParserUtils.getField(fields, 'RECORD')
+        const ownerIndex = ParserUtils.getField(fields, 'OwnerIndex')
         const text = SchematicTextParser.#resolveSchematicTemplateText(
             rawText,
-            metadata
+            SchematicTextParser.#resolveSchematicTextMetadata(
+                ownerIndex,
+                metadata,
+                ownerMetadata
+            )
         )
 
         if (hidden || x === null || y === null || !text) {
@@ -149,7 +198,7 @@ export class SchematicTextParser {
             ),
             hidden,
             name,
-            ownerIndex: ParserUtils.getField(fields, 'OwnerIndex') || undefined,
+            ownerIndex: ownerIndex || undefined,
             recordType,
             style: ParserUtils.parseNumericField(fields, 'Style') || 0,
             renderOrder:
@@ -477,6 +526,21 @@ export class SchematicTextParser {
     }
 
     /**
+     * Chooses the parameter map for one text record.
+     * @param {string} ownerIndex
+     * @param {Record<string, string>} metadata
+     * @param {Map<string, Record<string, string>>} ownerMetadata
+     * @returns {Record<string, string>}
+     */
+    static #resolveSchematicTextMetadata(ownerIndex, metadata, ownerMetadata) {
+        if (!ownerIndex) {
+            return metadata
+        }
+
+        return ownerMetadata.get(ownerIndex) || {}
+    }
+
+    /**
      * Returns true when a text record is metadata rather than sheet content.
      * @param {Record<string, string | string[]>} fields
      * @param {string} name
@@ -510,7 +574,6 @@ export class SchematicTextParser {
         if (nonDrawableNames.has(normalizedName)) return true
         if (/uniqueid$/i.test(normalizedName)) return true
         if (!normalizedText || normalizedText === '*') return true
-        if (/^=/.test(normalizedText)) return true
         if (
             sheet.titleBlockOn &&
             SchematicTextParser.isTitleBlockFooterRecord(fields, sheet.width)
@@ -537,8 +600,45 @@ export class SchematicTextParser {
 
         if (recordType === '17') return 'middle'
         if (explicitAnchor) return explicitAnchor
+        if (
+            SchematicTextParser.#shouldCenterSchematicNoteByDefault(
+                fields,
+                recordType,
+                text
+            )
+        ) {
+            return 'middle'
+        }
 
         return 'start'
+    }
+
+    /**
+     * Returns true for Altium text frames that encode centered one-line labels
+     * without carrying an explicit justification field.
+     * @param {Record<string, string | string[]>} fields
+     * @param {string} recordType
+     * @param {string} text
+     * @returns {boolean}
+     */
+    static #shouldCenterSchematicNoteByDefault(fields, recordType, text) {
+        if (recordType !== '209' && recordType !== '28') return false
+        if (String(text || '').includes('~1')) return false
+        if (
+            ParserUtils.parseNumericField(fields, 'Corner.X') === null ||
+            ParserUtils.parseNumericField(fields, 'Corner.Y') === null
+        ) {
+            return false
+        }
+
+        if (recordType === '28') {
+            return ParserUtils.parseBoolean(fields.WordWrap)
+        }
+
+        return (
+            ParserUtils.parseBoolean(fields.WordWrap) &&
+            ParserUtils.parseBoolean(fields.ClipToRect)
+        )
     }
 
     /**
@@ -548,23 +648,37 @@ export class SchematicTextParser {
      * @returns {'start' | 'middle' | 'end' | null}
      */
     static #resolveSchematicTextJustificationAnchor(fields) {
-        const justification = ParserUtils.parseNumericField(
-            fields,
-            'Justification'
-        )
+        const justification =
+            ParserUtils.parseNumericField(fields, 'Justification') ??
+            ParserUtils.parseNumericField(fields, 'Alignment')
 
         if (justification === null) {
             return null
         }
 
+        let anchor = 'start'
         switch (((justification % 3) + 3) % 3) {
             case 1:
-                return 'middle'
+                anchor = 'middle'
+                break
             case 2:
-                return 'end'
+                anchor = 'end'
+                break
             default:
-                return 'start'
+                anchor = 'start'
         }
+
+        if (
+            anchor !== 'middle' &&
+            ParserUtils.getField(fields, 'RECORD') === '4' &&
+            ParserUtils.getField(fields, 'OwnerIndex') &&
+            ParserUtils.parseBoolean(fields.IsMirrored) &&
+            ParserUtils.parseNumericField(fields, 'Orientation') === 2
+        ) {
+            return anchor === 'start' ? 'end' : 'start'
+        }
+
+        return anchor
     }
 
     /**

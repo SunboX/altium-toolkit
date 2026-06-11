@@ -43,4 +43,42 @@ export class SchematicSheetStyleResolver {
 
         return configuredXZones
     }
+
+    /**
+     * Resolves the displayed vertical sheet-zone count after the page size
+     * has been normalized.
+     * @param {{ width: number, height: number, yZones: number, paperSize?: string, sheetStyle?: number }} sheet
+     * @returns {number}
+     */
+    static resolveYZones(sheet) {
+        const configuredYZones = Math.max(Number(sheet?.yZones || 0), 1)
+        const paperSize = String(sheet?.paperSize || '')
+            .trim()
+            .toUpperCase()
+
+        if (Number(sheet?.sheetStyle || 0) !== 1 && !paperSize) {
+            return configuredYZones
+        }
+
+        const width = Number(sheet?.width || 0)
+        const height = Number(sheet?.height || 0)
+        if (height < width) {
+            return configuredYZones
+        }
+
+        if (
+            paperSize === 'A2' ||
+            (width === 1654 && height === 2339) ||
+            paperSize === 'A3' ||
+            (width === 1169 && height === 1654)
+        ) {
+            return 8
+        }
+
+        if (paperSize === 'A4' || (width === 827 && height === 1169)) {
+            return 4
+        }
+
+        return configuredYZones
+    }
 }

@@ -6,6 +6,9 @@
  * Extracts long printable runs from binary Altium documents.
  */
 export class PrintableTextDecoder {
+    static #decoderCache = new Map()
+    static #decoderConstructor = null
+
     static #WINDOWS_1252_PRINTABLE_CONTROL_BYTES = new Set([
         0x80, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c,
         0x8e, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b,
@@ -115,7 +118,7 @@ export class PrintableTextDecoder {
         if (preferredEncoding === 'utf-8') {
             return (
                 PrintableTextDecoder.#tryDecode(bytes, 'utf-8') ||
-                new TextDecoder('utf-8').decode(bytes)
+                PrintableTextDecoder.#decode(bytes, 'utf-8')
             )
         }
         if (
@@ -124,7 +127,7 @@ export class PrintableTextDecoder {
         ) {
             return (
                 PrintableTextDecoder.#tryDecodeWindows1252(bytes) ||
-                new TextDecoder('utf-8').decode(bytes)
+                PrintableTextDecoder.#decode(bytes, 'utf-8')
             )
         }
 
@@ -144,7 +147,7 @@ export class PrintableTextDecoder {
         return (
             PrintableTextDecoder.#tryDecode(bytes, 'gb18030') ||
             PrintableTextDecoder.#tryDecodeWindows1252(bytes) ||
-            new TextDecoder('utf-8').decode(bytes)
+            PrintableTextDecoder.#decode(bytes, 'utf-8')
         )
     }
 
@@ -157,18 +160,25 @@ export class PrintableTextDecoder {
      * @param {number} minLength
      */
     static #pushRunBytes(runs, bytes, start, end, minLength) {
-        const length = end - start
+        const bounds = PrintableTextDecoder.#trimAsciiByteRange(
+            bytes,
+            start,
+            end
+        )
+        const length = bounds.end - bounds.start
         if (length < minLength) return
 
-        const slice = bytes.slice(start, end)
-        const normalized = PrintableTextDecoder.#normalizeRun(
-            PrintableTextDecoder.decodeBytes(slice)
-        )
+        if (
+            !PrintableTextDecoder.#containsRecordDelimiterBytes(
+                bytes,
+                bounds.start,
+                bounds.end
+            )
+        ) {
+            return
+        }
 
-        if (normalized.length < minLength) return
-        if (!normalized.includes('|') || !normalized.includes('=')) return
-
-        runs.push(slice)
+        runs.push(bytes.slice(start, end))
     }
 
     /**
@@ -219,6 +229,72 @@ export class PrintableTextDecoder {
     }
 
     /**
+     * Trims ASCII whitespace from one byte range.
+     * @param {Uint8Array} bytes
+     * @param {number} start
+     * @param {number} end
+     * @returns {{ start: number, end: number }}
+     */
+    static #trimAsciiByteRange(bytes, start, end) {
+        let trimmedStart = start
+        let trimmedEnd = end
+
+        while (
+            trimmedStart < trimmedEnd &&
+            PrintableTextDecoder.#isAsciiWhitespaceByte(bytes[trimmedStart])
+        ) {
+            trimmedStart += 1
+        }
+
+        while (
+            trimmedEnd > trimmedStart &&
+            PrintableTextDecoder.#isAsciiWhitespaceByte(bytes[trimmedEnd - 1])
+        ) {
+            trimmedEnd -= 1
+        }
+
+        return {
+            start: trimmedStart,
+            end: trimmedEnd
+        }
+    }
+
+    /**
+     * Returns true when one byte range contains Altium record delimiters.
+     * @param {Uint8Array} bytes
+     * @param {number} start
+     * @param {number} end
+     * @returns {boolean}
+     */
+    static #containsRecordDelimiterBytes(bytes, start, end) {
+        let hasPipe = false
+        let hasEquals = false
+
+        for (let index = start; index < end; index += 1) {
+            if (bytes[index] === 0x7c) {
+                hasPipe = true
+            } else if (bytes[index] === 0x3d) {
+                hasEquals = true
+            }
+
+            if (hasPipe && hasEquals) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * Returns true when a byte is ASCII whitespace normalized around runs.
+     * @param {number} byte
+     * @returns {boolean}
+     */
+    static #isAsciiWhitespaceByte(byte) {
+        return byte === 9 || byte === 10 || byte === 13 || byte === 32
+    }
+
+    /**
      * Tries one strict decode and returns null when bytes are invalid for it.
      * @param {Uint8Array} bytes
      * @param {string} encoding
@@ -226,10 +302,54 @@ export class PrintableTextDecoder {
      */
     static #tryDecode(bytes, encoding) {
         try {
-            return new TextDecoder(encoding, { fatal: true }).decode(bytes)
+            return PrintableTextDecoder.#decode(bytes, encoding, {
+                fatal: true
+            })
         } catch {
             return null
         }
+    }
+
+    /**
+     * Decodes one byte slice with a cached runtime decoder.
+     * @param {Uint8Array} bytes
+     * @param {string} encoding
+     * @param {{ fatal?: boolean }} [options]
+     * @returns {string}
+     */
+    static #decode(bytes, encoding, options = {}) {
+        return PrintableTextDecoder.#getTextDecoder(encoding, options).decode(
+            bytes
+        )
+    }
+
+    /**
+     * Resolves a cached TextDecoder for one encoding and fatal mode.
+     * @param {string} encoding
+     * @param {{ fatal?: boolean }} options
+     * @returns {TextDecoder}
+     */
+    static #getTextDecoder(encoding, options) {
+        const Decoder = globalThis.TextDecoder
+        if (PrintableTextDecoder.#decoderConstructor !== Decoder) {
+            PrintableTextDecoder.#decoderCache = new Map()
+            PrintableTextDecoder.#decoderConstructor = Decoder
+        }
+
+        const normalizedEncoding = String(encoding || 'utf-8').toLowerCase()
+        const fatal = Boolean(options?.fatal)
+        const cacheKey = `${normalizedEncoding}:${fatal ? 'fatal' : 'replace'}`
+        const cached = PrintableTextDecoder.#decoderCache.get(cacheKey)
+        if (cached) {
+            return cached
+        }
+
+        const decoder = new Decoder(
+            normalizedEncoding,
+            fatal ? { fatal: true } : {}
+        )
+        PrintableTextDecoder.#decoderCache.set(cacheKey, decoder)
+        return decoder
     }
 
     /**

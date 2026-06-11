@@ -4,6 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { deflateSync } from 'node:zlib'
 import { AltiumParser } from '../../../src/core/altium/AltiumParser.mjs'
 
 /**
@@ -36,6 +37,40 @@ class SchematicImageOleFactory {
             sectorByteLength * 3
         )
         bytes.set(options.imageBytes, sectorByteLength * 4)
+
+        return bytes.buffer
+    }
+
+    /**
+     * Creates one OLE document containing `FileHeader` and packed schematic
+     * image `Storage` streams.
+     * @param {{ fileHeaderText: string, imageFileName: string, imageBytes: Uint8Array }} options
+     * @returns {ArrayBuffer}
+     */
+    static createStorageDocumentBuffer(options) {
+        const sectorByteLength = 512
+        const totalSectorCount = 4
+        const storageBytes = SchematicImageOleFactory.#createIconStorageBytes(
+            options.imageFileName,
+            options.imageBytes
+        )
+        const bytes = new Uint8Array(sectorByteLength * (totalSectorCount + 1))
+        const dataView = new DataView(bytes.buffer)
+
+        SchematicImageOleFactory.#writeHeader(dataView)
+        SchematicImageOleFactory.#writeFatSector(dataView, sectorByteLength)
+        SchematicImageOleFactory.#writeDirectorySector(
+            dataView,
+            sectorByteLength,
+            'Storage',
+            options.fileHeaderText.length,
+            storageBytes.length
+        )
+        bytes.set(
+            new TextEncoder().encode(options.fileHeaderText),
+            sectorByteLength * 3
+        )
+        bytes.set(storageBytes, sectorByteLength * 4)
 
         return bytes.buffer
     }
@@ -160,6 +195,41 @@ class SchematicImageOleFactory {
 
         return bytes
     }
+
+    /**
+     * Builds a packed icon-storage stream matching Altium's compact schematic
+     * image payload records.
+     * @param {string} imageFileName Image file name.
+     * @param {Uint8Array} imageBytes Raw image bytes.
+     * @returns {Uint8Array}
+     */
+    static #createIconStorageBytes(imageFileName, imageBytes) {
+        const header = new TextEncoder().encode('|HEADER=Icon storage|Weight=2')
+        const pathBytes = new TextEncoder().encode(imageFileName)
+        const payloadBytes = deflateSync(imageBytes)
+        const entryBytes = new Uint8Array(
+            3 + 3 + pathBytes.length + 4 + payloadBytes.length
+        )
+        const bytes = new Uint8Array(4 + header.length + 1 + entryBytes.length)
+        const dataView = new DataView(bytes.buffer)
+        const entryView = new DataView(entryBytes.buffer)
+        const entryLength = entryBytes.length - 4
+
+        dataView.setUint32(0, header.length, true)
+        bytes.set(header, 4)
+        entryBytes[0] = entryLength & 0xff
+        entryBytes[1] = (entryLength >> 8) & 0xff
+        entryBytes[2] = (entryLength >> 16) & 0xff
+        entryBytes[3] = 1
+        entryBytes[4] = 0xd0
+        entryBytes[5] = pathBytes.length
+        entryBytes.set(pathBytes, 6)
+        entryView.setUint32(6 + pathBytes.length, payloadBytes.length, true)
+        entryBytes.set(payloadBytes, 10 + pathBytes.length)
+        bytes.set(entryBytes, 4 + header.length + 1)
+
+        return bytes
+    }
 }
 
 /**
@@ -199,6 +269,43 @@ test('parseAltiumArrayBuffer recovers embedded schematic images from OLE streams
             diagnosticState: 'embedded'
         }
     ])
+})
+
+/**
+ * Verifies packed Altium icon-storage streams are used for embedded schematic
+ * images whose payloads are not exposed as separate OLE streams.
+ */
+test('parseAltiumArrayBuffer recovers embedded schematic images from packed Storage streams', () => {
+    const imageFileName = 'C:\\Forge\\Obfuscated\\Artwork\\PackedDiagram.bmp'
+    const fileHeaderText =
+        '|HEADER=Schematic Document' +
+        '|RECORD=31|CustomX=160|CustomY=120|VisibleGridSize=10|SnapGridSize=5' +
+        '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+        '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+        '|RECORD=30|IndexInSheet=2|Location.X=20|Location.Y=30|Corner.X=80|Corner.Y=70' +
+        '|EmbedImage=T|KeepAspect=T|FileName=' +
+        imageFileName
+    const arrayBuffer = SchematicImageOleFactory.createStorageDocumentBuffer({
+        fileHeaderText,
+        imageFileName,
+        imageBytes: createOpaqueBmpBytes()
+    })
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'packed-image.SchDoc',
+        arrayBuffer
+    )
+
+    assert.equal(documentModel.schematic.images.length, 1)
+    assert.equal(documentModel.schematic.images[0].fileName, imageFileName)
+    assert.equal(documentModel.schematic.images[0].mimeType, 'image/bmp')
+    assert.equal(documentModel.schematic.images[0].diagnosticState, 'embedded')
+    assert.equal(documentModel.schematic.images[0].dataBase64.length > 0, true)
+    assert.doesNotMatch(
+        documentModel.diagnostics
+            .map((diagnostic) => diagnostic.message)
+            .join('\n'),
+        /could not be resolved/i
+    )
 })
 
 /**

@@ -5,6 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
+import { AltiumParser } from '../../../src/core/altium/AltiumParser.mjs'
 import { SchematicSvgRenderer } from '../../../src/ui/SchematicSvgRenderer.mjs'
 
 /**
@@ -64,7 +65,173 @@ test('renderSchematicSvg scales schematic content into the normalized inner fram
 
     assert.match(
         markup,
-        /<defs><clipPath id="schematic-content-clip-[^"]+"><rect x="20" y="20" width="1614" height="1129" \/><\/clipPath><\/defs><g class="schematic-content" clip-path="url\(#schematic-content-clip-[^"]+\)" transform="translate\(130 25\.10\) scale\(1\.1055\) translate\(-130 -152\)">/
+        /<g class="schematic-content" clip-path="url\(#schematic-content-clip-[^"]+\)" transform="translate\(130 25\.10\) scale\(1\.1055\) translate\(-130 -152\)">/u
+    )
+})
+
+/**
+ * Verifies framed text boxes contribute their full box to normalized-sheet
+ * placement, not only the text baseline.
+ */
+test('renderSchematicSvg keeps promoted framed text clear of the top border', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Framed text schematic' },
+        schematic: {
+            sheet: {
+                width: 1654,
+                height: 1169,
+                sourceWidth: 1000,
+                sourceHeight: 800,
+                marginWidth: 20,
+                borderOn: true,
+                titleBlockOn: false,
+                paperSize: 'A3',
+                fonts: {
+                    1: {
+                        size: 22,
+                        family: 'Times New Roman',
+                        bold: true
+                    }
+                }
+            },
+            lines: [
+                {
+                    x1: 300,
+                    y1: 50,
+                    x2: 700,
+                    y2: 50,
+                    color: '#000080',
+                    width: 1
+                }
+            ],
+            texts: [
+                {
+                    x: 300,
+                    y: 1047,
+                    cornerX: 700,
+                    cornerY: 1082,
+                    text: 'FAKE TITLE',
+                    color: '#800000',
+                    recordType: '209',
+                    fontSize: 22,
+                    fontFamily: 'Times New Roman',
+                    fontWeight: 700,
+                    anchor: 'middle',
+                    fill: '#ffff96',
+                    borderColor: '#800000',
+                    isSolid: true,
+                    showBorder: true,
+                    textMargin: 5,
+                    noteLines: ['FAKE TITLE']
+                }
+            ],
+            components: [],
+            pins: [],
+            ports: [],
+            crosses: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /<g class="schematic-content" clip-path="url\(#schematic-content-clip-[^"]+\)" transform="translate\(300 26\.30\) scale\([^)]+\) translate\(-300 -87\)">/u
+    )
+})
+
+/**
+ * Verifies standard template sheets keep authored footer chrome in the same
+ * coordinate space as the surrounding sheet frame.
+ */
+test('renderSchematicSvg keeps standard template footer chrome on the frame', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|SheetStyle=1|CustomX=1000|CustomY=800|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=T|TitleBlockOn=F|CustomMarginWidth=20|CustomXZones=6|CustomYZones=4' +
+            '|ShowTemplateGraphics=T|TemplateFileName=C:\\\\Templates\\\\A3_FAKE.SchDot' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|RECORD=13|Location.X=100|Location.Y=1100|Corner.X=160|Corner.Y=1100|LineWidth=1|Color=128' +
+            '|RECORD=6|OwnerIndex=1|Location.X=1070|Location.Y=30|Corner.X=1530|Corner.Y=30|LineWidth=1|Color=0' +
+            '|RECORD=6|OwnerIndex=1|Location.X=1070|Location.Y=103|Corner.X=1530|Corner.Y=103|LineWidth=1|Color=0' +
+            '|RECORD=4|OwnerIndex=1|Location.X=1076|Location.Y=86|Color=0|FontID=1|Text=Project name:' +
+            '|RECORD=4|OwnerIndex=1|Location.X=1138|Location.Y=85|Color=128|FontID=1|Text=FAKE-TEMPLATE'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'template-footer-frame.SchDoc',
+        arrayBuffer
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+    const contentGroup = markup.match(/<g class="schematic-content"[^>]*>/u)
+
+    assert.equal(documentModel.schematic.sheet.paperSize, 'A3')
+    assert.equal(documentModel.schematic.sheet.sourceWidth, 1000)
+    assert.equal(documentModel.schematic.sheet.sourceHeight, 800)
+    assert.match(
+        markup,
+        /<rect class="sheet-frame" x="20" y="20" width="1614" height="1129" \/>/u
+    )
+    assert.ok(contentGroup)
+    assert.match(contentGroup[0], /\btransform="/u)
+    assert.match(
+        markup,
+        /<g class="schematic-native-footer" stroke-linecap="round" transform="translate\(104 0\)">/u
+    )
+    assert.match(
+        markup,
+        /<line x1="1070" y1="1139" x2="1530" y2="1139" stroke="var\(--schematic-sheet-frame-stroke\)" stroke-width="1" \/>/u
+    )
+})
+
+/**
+ * Verifies native footer linework uses the same color as the surrounding
+ * border even when the sheet does not need footer partitioning.
+ */
+test('renderSchematicSvg themes unsplit native footer chrome like the frame', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Unsplit template footer' },
+        schematic: {
+            sheet: {
+                width: 1150,
+                height: 800,
+                marginWidth: 20,
+                borderOn: true,
+                titleBlockOn: false,
+                paperSize: 'A4'
+            },
+            lines: [
+                {
+                    x1: 670,
+                    y1: 105,
+                    x2: 1130,
+                    y2: 105,
+                    color: '#000000',
+                    width: 1,
+                    ownerIndex: '1'
+                },
+                {
+                    x1: 700,
+                    y1: 500,
+                    x2: 760,
+                    y2: 500,
+                    color: '#000000',
+                    width: 1,
+                    ownerIndex: '2'
+                }
+            ],
+            texts: [],
+            components: [],
+            pins: [],
+            ports: [],
+            crosses: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /<line x1="670" y1="695" x2="1130" y2="695" stroke="var\(--schematic-sheet-frame-stroke\)" stroke-width="1" \/>/u
+    )
+    assert.match(
+        markup,
+        /<line x1="700" y1="300" x2="760" y2="300" stroke="var\(--schematic-text-color\)" stroke-width="1" \/>/u
     )
 })
 
@@ -131,7 +298,7 @@ test('renderSchematicSvg biases normalized-sheet placement toward the dominant d
 
     assert.match(
         markup,
-        /<defs><clipPath id="schematic-content-clip-[^"]+"><rect x="20" y="20" width="1614" height="1129" \/><\/clipPath><\/defs><g class="schematic-content" clip-path="url\(#schematic-content-clip-[^"]+\)" transform="translate\(130 5\.20\) scale\(1\.1055\) translate\(-130 -152\)">/
+        /<g class="schematic-content" clip-path="url\(#schematic-content-clip-[^"]+\)" transform="translate\(130 5\.20\) scale\(1\.1055\) translate\(-130 -152\)">/u
     )
 })
 
@@ -241,7 +408,7 @@ test('renderSchematicSvg horizontally centers sparse custom-sheet content after 
 
     assert.match(
         markup,
-        /<defs><clipPath id="schematic-content-clip-[^"]+"><rect x="20" y="20" width="1460" height="950" \/><\/clipPath><\/defs><g class="schematic-content" clip-path="url\(#schematic-content-clip-[^"]+\)" transform="translate\(325\.84 571\.79\) scale\(1\.2932\) translate\(-225 -340\)">/
+        /<g class="schematic-content" clip-path="url\(#schematic-content-clip-[^"]+\)" transform="translate\(325\.84 571\.79\) scale\(1\.2932\) translate\(-225 -340\)">/u
     )
 })
 

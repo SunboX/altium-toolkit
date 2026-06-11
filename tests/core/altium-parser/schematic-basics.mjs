@@ -405,6 +405,39 @@ test('parseAltiumArrayBuffer renders visible placeholders without internal param
 })
 
 /**
+ * Verifies visible Altium special strings stay available for renderer-level
+ * project context while unresolved placeholders do not leak into SVG output.
+ */
+test('renderSchematicSvg resolves visible project special strings', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CUSTOMX=300|CUSTOMY=180|VISIBLEGRIDSIZE=10|SNAPGRIDSIZE=5' +
+            '|BORDERON=T|CUSTOMMARGINWIDTH=10|CUSTOMXZONES=6|CUSTOMYZONES=4' +
+            '|FONTIDCOUNT=1|SIZE1=10|FONTNAME1=Times New Roman|BOLD1=F|ROTATION1=0' +
+            '|RECORD=4|LOCATION.X=20|LOCATION.Y=150|COLOR=8388608|FONTID=1|TEXT==ProjectName' +
+            '|RECORD=4|LOCATION.X=20|LOCATION.Y=130|COLOR=8388608|FONTID=1|TEXT==DocumentName'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'visible-special-strings.SchDoc',
+        arrayBuffer
+    )
+    const visibleTexts = documentModel.schematic.texts.map((text) => text.text)
+    const unresolvedMarkup = SchematicSvgRenderer.render(documentModel)
+    const resolvedMarkup = SchematicSvgRenderer.render(documentModel, {
+        projectParameters: {
+            ProjectName: 'NEUTRAL_PROJECT.PrjPcb',
+            DocumentName: '01_Neutral.SchDoc'
+        }
+    })
+
+    assert.equal(visibleTexts.includes('=ProjectName'), true)
+    assert.equal(visibleTexts.includes('=DocumentName'), true)
+    assert.doesNotMatch(unresolvedMarkup, /=ProjectName|=DocumentName/u)
+    assert.match(resolvedMarkup, /NEUTRAL_PROJECT\.PrjPcb/u)
+    assert.match(resolvedMarkup, /01_Neutral\.SchDoc/u)
+})
+
+/**
  * Verifies extended Altium line styles survive parsing and render as a
  * dash-dot frame rather than a solid outline.
  */
@@ -455,6 +488,42 @@ test('parseAltiumArrayBuffer keeps record-28 notes out of schematic lines', () =
     assert.deepEqual(note.noteLines, ['*NOTE:', '1)Alpha', '2)Beta'])
     assert.equal(note.cornerX, 120)
     assert.equal(note.cornerY, 60)
+})
+
+/**
+ * Verifies single-line boxed schematic note titles render centered when Altium
+ * omits an explicit text-frame justification field.
+ */
+test('renderSchematicSvg centers boxed schematic note titles by default', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CustomX=240|CustomY=160|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=2|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|Size2=18|FontName2=Times New Roman|Bold2=T|Rotation2=0' +
+            '|RECORD=209|Location.X=40|Location.Y=100|Corner.X=200|Corner.Y=130' +
+            '|AreaColor=9895935|TextColor=128|FontID=2|IsSolid=T|ShowBorder=T' +
+            '|WordWrap=T|ClipToRect=T|Text=NEUTRAL TITLE|TextMargin=5'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'boxed-title-note.SchDoc',
+        arrayBuffer
+    )
+    const note = documentModel.schematic.texts.find(
+        (text) => text.recordType === '209'
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.equal(note.anchor, 'middle')
+    assert.match(
+        markup,
+        /<text class="schematic-note-text" x="120"[^>]*text-anchor="middle"/u
+    )
+    assert.match(
+        markup,
+        /<g class="schematic-note">[\s\S]*<rect class="schematic-note-box"[^>]*fill="var\(--schematic-note-fill-color\)" stroke="var\(--schematic-power-color\)"[\s\S]*<text class="schematic-note-text"[^>]*fill="var\(--schematic-power-color\)" text-anchor="middle"/u
+    )
+    assert.doesNotMatch(markup, /schematic-note--section-title/u)
 })
 
 /**

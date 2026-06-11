@@ -18,6 +18,7 @@ import { SchematicOwnerPinLabelLayout } from './SchematicOwnerPinLabelLayout.mjs
 import { SchematicRegionRenderer } from './SchematicRegionRenderer.mjs'
 import { SchematicSheetSymbolRenderer } from './SchematicSheetSymbolRenderer.mjs'
 import { SchematicImageRenderer } from './SchematicImageRenderer.mjs'
+import { SchematicNativeFooterPartitioner } from './SchematicNativeFooterPartitioner.mjs'
 import { TextGeometrySidecarBuilder } from './TextGeometrySidecarBuilder.mjs'
 import { SchematicRenderOpsSidecarBuilder } from './SchematicRenderOpsSidecarBuilder.mjs'
 import { SchematicProjectParameterResolver } from '../core/altium/SchematicProjectParameterResolver.mjs'
@@ -38,7 +39,7 @@ export class SchematicSvgRenderer {
     /**
      * Renders a normalized schematic model into SVG markup.
      * @param {{ fileName?: string, summary: { title?: string }, schematic?: { sheet: { width: number, height: number, sourceWidth?: number, sourceHeight?: number, paperSize?: string, borderOn?: boolean, titleBlockOn?: boolean, marginWidth?: number, xZones?: number, yZones?: number, titleBlock?: { title?: string, revision?: string, documentNumber?: string, sheetNumber?: string, sheetTotal?: string, date?: string, drawnBy?: string } }, lines: { x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle?: number, isBus?: boolean, ownerIndex?: string, renderOrder?: number, recordType?: string }[], polygons?: { points: { x: number, y: number }[], color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], rectangles?: { x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], regions?: { x: number, y: number, width: number, height: number, color: string, fill: string, renderOrder?: number }[], ellipses?: { x: number, y: number, radiusX: number, radiusY: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, color: string, width: number, ownerIndex?: string, renderOrder?: number }[], directives?: { x: number, y: number, color: string, name: string, orientation?: number }[], texts: { x: number, y: number, text: string, color: string, recordType?: string, style?: number, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, anchor?: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }[], components: { x: number, y: number, designator: string }[], pins?: { x: number, y: number, length: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color: string, labelColor?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', ownerIndex?: string }[], ports?: { x: number, y: number, width: number, height: number, name: string, fill: string, color: string, direction?: 'left' | 'right' | 'up' | 'down', shape?: 'single' | 'double' | 'plain' }[], crosses?: { x: number, y: number, size: number, color: string }[] } }} documentModel
-     * @param {{ projectParameters?: Record<string, string | number | boolean | null | undefined> }} options Render options.
+     * @param {{ projectParameters?: Record<string, string | number | boolean | null | undefined>, colorizeImages?: boolean, colorize_images?: boolean }} options Render options.
      * @returns {string}
      */
     static render(documentModel, options = {}) {
@@ -66,7 +67,9 @@ export class SchematicSvgRenderer {
             renderedSheet.contentSheet === schematic.sheet
                 ? schematic
                 : { ...schematic, sheet: renderedSheet.contentSheet }
-        const allTexts = schematic.texts || []
+        const allTexts = SchematicSvgRenderer.#filterDrawableSchematicTexts(
+            schematic.texts || []
+        )
         const lines = (schematic.lines || []).slice(0, 2500)
         const polygons = (schematic.polygons || []).slice(0, 1000)
         const rectangles = (schematic.rectangles || []).slice(0, 500)
@@ -146,25 +149,6 @@ export class SchematicSvgRenderer {
             renderedSchematic,
             contentClipId
         )
-        const ownerlessLines = lines.filter((line) => !line.ownerIndex)
-        const ownerlessPolygons = polygons.filter(
-            (polygon) => !polygon.ownerIndex
-        )
-        const ownerlessRectangles = rectangles.filter(
-            (rectangle) => !rectangle.ownerIndex
-        )
-        const ownerlessRoundedRectangles = roundedRectangles.filter(
-            (rectangle) => !rectangle.ownerIndex
-        )
-        const ownerlessEllipses = ellipses.filter(
-            (ellipse) => !ellipse.ownerIndex
-        )
-        const ownerlessArcs = arcs.filter((arc) => !arc.ownerIndex)
-        const ownerlessBeziers = beziers.filter((bezier) => !bezier.ownerIndex)
-        const ownerlessPies = pies.filter((pie) => !pie.ownerIndex)
-        const ownerlessIeeeSymbols = ieeeSymbols.filter(
-            (symbol) => !symbol.ownerIndex
-        )
         const resolvedTexts = texts.map((text) =>
             text.recordType === '17'
                 ? {
@@ -177,6 +161,61 @@ export class SchematicSvgRenderer {
                           )
                   }
                 : text
+        )
+        const partitionedPrimitives =
+            SchematicNativeFooterPartitioner.partitionPrimitives(
+                {
+                    lines,
+                    polygons,
+                    rectangles,
+                    roundedRectangles,
+                    ellipses,
+                    arcs,
+                    beziers,
+                    pies,
+                    ieeeSymbols,
+                    texts: resolvedTexts,
+                    images
+                },
+                renderedSchematic.sheet
+            )
+        const contentLines = SchematicSvgRenderer.#themeFooterChromeLines(
+            partitionedPrimitives.content.lines,
+            renderedSheet.sheet,
+            contentHeight
+        )
+        const contentPolygons = partitionedPrimitives.content.polygons
+        const contentRectangles = partitionedPrimitives.content.rectangles
+        const contentRoundedRectangles =
+            partitionedPrimitives.content.roundedRectangles
+        const contentEllipses = partitionedPrimitives.content.ellipses
+        const contentArcs = partitionedPrimitives.content.arcs
+        const contentBeziers = partitionedPrimitives.content.beziers
+        const contentPies = partitionedPrimitives.content.pies
+        const contentIeeeSymbols = partitionedPrimitives.content.ieeeSymbols
+        const contentTexts = partitionedPrimitives.content.texts
+        const contentImages = partitionedPrimitives.content.images
+        const footerPrimitives = partitionedPrimitives.footer
+        const ownerlessLines = contentLines.filter((line) => !line.ownerIndex)
+        const ownerlessPolygons = contentPolygons.filter(
+            (polygon) => !polygon.ownerIndex
+        )
+        const ownerlessRectangles = contentRectangles.filter(
+            (rectangle) => !rectangle.ownerIndex
+        )
+        const ownerlessRoundedRectangles = contentRoundedRectangles.filter(
+            (rectangle) => !rectangle.ownerIndex
+        )
+        const ownerlessEllipses = contentEllipses.filter(
+            (ellipse) => !ellipse.ownerIndex
+        )
+        const ownerlessArcs = contentArcs.filter((arc) => !arc.ownerIndex)
+        const ownerlessBeziers = contentBeziers.filter(
+            (bezier) => !bezier.ownerIndex
+        )
+        const ownerlessPies = contentPies.filter((pie) => !pie.ownerIndex)
+        const ownerlessIeeeSymbols = contentIeeeSymbols.filter(
+            (symbol) => !symbol.ownerIndex
         )
         const polygonMarkup = ownerlessPolygons
             .map((polygon, index) =>
@@ -357,15 +396,15 @@ export class SchematicSvgRenderer {
             .join('')
         const ownerGeometryMarkup =
             SchematicSvgRenderer.#buildOwnerGeometryMarkup(
-                lines,
-                polygons,
-                rectangles,
-                roundedRectangles,
-                ellipses,
-                arcs,
-                beziers,
-                pies,
-                ieeeSymbols,
+                contentLines,
+                contentPolygons,
+                contentRectangles,
+                contentRoundedRectangles,
+                contentEllipses,
+                contentArcs,
+                contentBeziers,
+                contentPies,
+                contentIeeeSymbols,
                 contentHeight,
                 semanticContext
             )
@@ -390,7 +429,7 @@ export class SchematicSvgRenderer {
         const resolvedAuthoredJunctions =
             SchematicSvgRenderer.#resolveAuthoredSchematicJunctions(
                 authoredJunctions,
-                lines
+                contentLines
             )
         const authoredJunctionMarkup = resolvedAuthoredJunctions
             .map((junction) =>
@@ -401,18 +440,26 @@ export class SchematicSvgRenderer {
             )
             .join('')
         const imageMarkup = SchematicImageRenderer.buildMarkup(
-            images,
-            contentHeight
+            contentImages,
+            contentHeight,
+            {
+                colorizeImages: renderOptions.colorizeImages,
+                title:
+                    renderModel?.summary?.title ||
+                    renderedSchematic?.sheet?.titleBlock?.title ||
+                    renderModel?.fileName ||
+                    ''
+            }
         )
         const markerDefsMarkup =
-            SchematicSvgRenderer.#buildSchematicLineMarkerDefs(lines)
+            SchematicSvgRenderer.#buildSchematicLineMarkerDefs(contentLines)
 
-        const textMarkup = resolvedTexts
+        const textMarkup = contentTexts
             .map((text, index) =>
                 SchematicSvgRenderer.#buildSchematicTextMarkup(
                     text,
                     contentHeight,
-                    lines,
+                    contentLines,
                     pins,
                     SchematicSvgRenderer.#primitiveIndex(
                         semanticContext,
@@ -424,6 +471,84 @@ export class SchematicSvgRenderer {
                 )
             )
             .join('')
+        const nativeFooterLines = SchematicSvgRenderer.#themeFooterChromeLines(
+            footerPrimitives.lines,
+            renderedSheet.sheet,
+            contentHeight
+        )
+        const nativeFooterOwnerGeometryMarkup =
+            SchematicSvgRenderer.#buildOwnerGeometryMarkup(
+                nativeFooterLines,
+                footerPrimitives.polygons,
+                footerPrimitives.rectangles,
+                footerPrimitives.roundedRectangles,
+                footerPrimitives.ellipses,
+                footerPrimitives.arcs,
+                footerPrimitives.beziers,
+                footerPrimitives.pies,
+                footerPrimitives.ieeeSymbols,
+                contentHeight,
+                semanticContext
+            )
+        const nativeFooterImageMarkup = SchematicImageRenderer.buildMarkup(
+            footerPrimitives.images,
+            contentHeight,
+            {
+                colorizeImages: renderOptions.colorizeImages,
+                title:
+                    renderModel?.summary?.title ||
+                    renderedSchematic?.sheet?.titleBlock?.title ||
+                    renderModel?.fileName ||
+                    ''
+            }
+        )
+        const nativeFooterTextMarkup = footerPrimitives.texts
+            .map((text, index) =>
+                SchematicSvgRenderer.#buildSchematicTextMarkup(
+                    text,
+                    contentHeight,
+                    contentLines,
+                    pins,
+                    SchematicSvgRenderer.#primitiveIndex(
+                        semanticContext,
+                        'texts',
+                        text,
+                        index
+                    ),
+                    semanticContext
+                )
+            )
+            .join('')
+        const nativeFooterMargin = Math.max(
+            Number(renderedSchematic?.sheet?.marginWidth || 20),
+            10
+        )
+        const nativeFooterOffsetX = partitionedPrimitives.footerBounds
+            ? Math.max(
+                  width -
+                      nativeFooterMargin -
+                      partitionedPrimitives.footerBounds.maxX,
+                  0
+              )
+            : 0
+        const nativeFooterTransform =
+            nativeFooterOffsetX > 0.01
+                ? ' transform="translate(' +
+                  formatNumber(nativeFooterOffsetX) +
+                  ' 0)"'
+                : ''
+        const nativeFooterMarkup =
+            nativeFooterOwnerGeometryMarkup ||
+            nativeFooterImageMarkup ||
+            nativeFooterTextMarkup
+                ? '<g class="schematic-native-footer" stroke-linecap="round"' +
+                  nativeFooterTransform +
+                  '>' +
+                  nativeFooterOwnerGeometryMarkup +
+                  nativeFooterImageMarkup +
+                  nativeFooterTextMarkup +
+                  '</g>'
+                : ''
 
         const componentMarkup = drawableComponents
             .map((component, index) =>
@@ -451,6 +576,15 @@ export class SchematicSvgRenderer {
                 texts,
                 pins
             )
+        const compactExternalNumberLabelSides =
+            SchematicOwnerPinLabelLayout.collectCompactExternalNumberLabelSides(
+                pins
+            )
+        const internalNumberLabelBoxes =
+            SchematicOwnerPinLabelLayout.collectInternalNumberLabelBoxes(
+                pins,
+                contentRectangles
+            )
         const pinMarkup = pins
             .map((pin, index) =>
                 SchematicSvgRenderer.#appendSvgAttributes(
@@ -460,7 +594,9 @@ export class SchematicSvgRenderer {
                         renderedSheet.contentSheet,
                         rotatedVerticalNumberOwners,
                         explicitOwnerPinNameLabels,
-                        explicitOwnerPinLabelOffsets
+                        explicitOwnerPinLabelOffsets,
+                        compactExternalNumberLabelSides,
+                        internalNumberLabelBoxes
                     ),
                     SchematicSvgRenderer.#semanticAttributes(
                         'pin',
@@ -504,10 +640,10 @@ export class SchematicSvgRenderer {
             )
             .join('')
         const junctionMarkup = SchematicJunctionRenderer.buildMarkup(
-            lines,
+            contentLines,
             crosses,
             ports,
-            resolvedTexts.filter((text) => text.recordType === '17'),
+            contentTexts.filter((text) => text.recordType === '17'),
             contentHeight,
             resolvedAuthoredJunctions
         )
@@ -626,6 +762,7 @@ export class SchematicSvgRenderer {
             '</g>' +
             '</g>' +
             frameMarkup +
+            nativeFooterMarkup +
             '<g class="schematic-regions">' +
             regionMarkup +
             '</g>' +
@@ -636,7 +773,7 @@ export class SchematicSvgRenderer {
     /**
      * Normalizes schematic SVG export options.
      * @param {Record<string, unknown>} options Raw render options.
-     * @returns {{ includeViewBox: boolean, documentId: string, documentVersion: string, includeTextGeometrySidecar: boolean, includeRenderOperationsSidecar: boolean, renderOperationProfile: string }}
+     * @returns {{ includeViewBox: boolean, documentId: string, documentVersion: string, colorizeImages: boolean, includeTextGeometrySidecar: boolean, includeRenderOperationsSidecar: boolean, renderOperationProfile: string }}
      */
     static #normalizeRenderOptions(options) {
         const includeViewBox =
@@ -648,6 +785,9 @@ export class SchematicSvgRenderer {
             documentVersion: String(
                 options?.documentVersion || options?.documentVer || ''
             ),
+            colorizeImages:
+                options?.colorizeImages === true ||
+                options?.colorize_images === true,
             includeTextGeometrySidecar:
                 options?.includeTextGeometrySidecar === true ||
                 options?.textGeometry === 'sidecar',
@@ -658,6 +798,97 @@ export class SchematicSvgRenderer {
                 options?.renderOperationProfile || 'default'
             )
         }
+    }
+
+    /**
+     * Removes unresolved simple Altium special-string placeholders from
+     * drawable text while preserving values resolved by project parameters.
+     * @param {object[]} texts Schematic text rows.
+     * @returns {object[]}
+     */
+    static #filterDrawableSchematicTexts(texts) {
+        return (texts || []).filter(
+            (text) =>
+                !SchematicSvgRenderer.#isUnresolvedSimpleSpecialStringText(text)
+        )
+    }
+
+    /**
+     * Uses sheet-frame chrome color for native footer linework so recovered
+     * template cells match the synthesized frame and zone separators.
+     * @param {object[]} lines Schematic line primitives.
+     * @param {{ width?: number, borderOn?: boolean, marginWidth?: number }} sheet Sheet metadata.
+     * @param {number} sheetHeight Rendered sheet height for projection.
+     * @returns {object[]}
+     */
+    static #themeFooterChromeLines(lines, sheet, sheetHeight) {
+        return (lines || []).map((line) =>
+            SchematicSvgRenderer.#isFooterChromeLine(line, sheet, sheetHeight)
+                ? {
+                      ...line,
+                      color: 'var(--schematic-sheet-frame-stroke)'
+                  }
+                : line
+        )
+    }
+
+    /**
+     * Returns true for neutral owner-drawn title-block lines in the bottom
+     * right footer band.
+     * @param {{ x1?: number, y1?: number, x2?: number, y2?: number, color?: string, ownerIndex?: string }} line Schematic line candidate.
+     * @param {{ width?: number, borderOn?: boolean, marginWidth?: number }} sheet Sheet metadata.
+     * @param {number} sheetHeight Rendered sheet height for projection.
+     * @returns {boolean}
+     */
+    static #isFooterChromeLine(line, sheet, sheetHeight) {
+        if (!sheet?.borderOn || !String(line?.ownerIndex || '').trim()) {
+            return false
+        }
+        if (
+            SchematicSvgRenderer.#resolveSchematicLineColor(line) !==
+            'var(--schematic-text-color)'
+        ) {
+            return false
+        }
+
+        const width = Number(sheet?.width || 0)
+        const height = Number(sheetHeight || 0)
+        const x1 = Number(line?.x1)
+        const x2 = Number(line?.x2)
+        const y1 = Number(line?.y1)
+        const y2 = Number(line?.y2)
+
+        if (
+            !Number.isFinite(width) ||
+            !Number.isFinite(height) ||
+            !Number.isFinite(x1) ||
+            !Number.isFinite(x2) ||
+            !Number.isFinite(y1) ||
+            !Number.isFinite(y2) ||
+            width <= 0 ||
+            height <= 0
+        ) {
+            return false
+        }
+
+        const margin = Math.max(Number(sheet?.marginWidth || 20), 10)
+        const footerBandHeight = Math.max(margin * 6, 120)
+        const footerTop = Math.max(height - footerBandHeight, margin)
+        const projectedY1 = projectSchematicY(height, y1)
+        const projectedY2 = projectSchematicY(height, y2)
+        const minProjectedY = Math.min(projectedY1, projectedY2)
+        const maxX = Math.max(x1, x2)
+
+        return minProjectedY >= footerTop && maxX >= width * 0.5
+    }
+
+    /**
+     * Returns true when a text row still contains one bare special string.
+     * @param {object} text Schematic text row.
+     * @returns {boolean}
+     */
+    static #isUnresolvedSimpleSpecialStringText(text) {
+        return /^[.=][A-Za-z_][\w.-]*$/u.test(String(text?.text || '').trim())
     }
 
     /**
@@ -1900,12 +2131,7 @@ export class SchematicSvgRenderer {
             '" y2="' +
             formatNumber(projectSchematicY(sheetHeight, line.y2)) +
             '" stroke="' +
-            escapeHtml(
-                SchematicColorResolver.resolveColor(
-                    line.color,
-                    '--schematic-default-ink-color'
-                )
-            ) +
+            escapeHtml(SchematicSvgRenderer.#resolveSchematicLineColor(line)) +
             '" stroke-width="' +
             formatNumber(
                 SchematicSvgRenderer.#resolveSchematicLineWidth(line)
@@ -1934,6 +2160,26 @@ export class SchematicSvgRenderer {
             return baseWidth
         }
         return Math.max(baseWidth * 3, 3)
+    }
+
+    /**
+     * Resolves line stroke color, treating black electrical wires as themed
+     * schematic connectivity while leaving graphic linework source-colored.
+     * @param {{ color: string, ownerIndex?: string, isBus?: boolean, recordType?: string }} line
+     * @returns {string}
+     */
+    static #resolveSchematicLineColor(line) {
+        if (SchematicSvgRenderer.#isElectricalSchematicLine(line)) {
+            return SchematicColorResolver.resolveNonTextColor(
+                line.color,
+                '--schematic-default-ink-color'
+            )
+        }
+
+        return SchematicColorResolver.resolveColor(
+            line.color,
+            '--schematic-default-ink-color'
+        )
     }
 
     /**
@@ -2287,7 +2533,7 @@ export class SchematicSvgRenderer {
             formatNumber(projectSchematicY(sheetHeight, junction.y)) +
             '" r="2.4" fill="' +
             escapeHtml(
-                SchematicColorResolver.resolveColor(
+                SchematicColorResolver.resolveNonTextColor(
                     junction.color,
                     '--schematic-default-ink-color'
                 )

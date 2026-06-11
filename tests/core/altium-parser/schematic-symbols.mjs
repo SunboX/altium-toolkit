@@ -943,6 +943,80 @@ test('parseAltiumArrayBuffer hides numbered owner-drawn terminal glyph pin label
 })
 
 /**
+ * Verifies compact four-pin dual-gate symbols keep external contact numbers
+ * while suppressing owner-drawn terminal names inside the symbol body.
+ */
+test('parseAltiumArrayBuffer hides dual-gate owner-drawn terminal names only', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=240|CustomY=200|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=2|OwnerIndex=927|OwnerPartId=1|PinConglomerate=51|PinLength=15' +
+            '|Location.X=120|Location.Y=90|Name=S|Designator=1',
+        '|RECORD=2|OwnerIndex=927|OwnerPartId=1|PinConglomerate=49|PinLength=15' +
+            '|Location.X=120|Location.Y=113|Name=D|Designator=2',
+        '|RECORD=2|OwnerIndex=927|OwnerPartId=1|PinConglomerate=50|PinLength=15' +
+            '|Location.X=109|Location.Y=111|Name=G2|Designator=3',
+        '|RECORD=2|OwnerIndex=927|OwnerPartId=1|PinConglomerate=50|PinLength=15' +
+            '|Location.X=109|Location.Y=92|Name=G1|Designator=4',
+        '|RECORD=6|OwnerIndex=927|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=20|LineWidth=1' +
+            '|LocationCount=2|X1=120|Y1=108|X2=110|Y2=108',
+        '|RECORD=6|OwnerIndex=927|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=21|LineWidth=1' +
+            '|LocationCount=2|X1=120|Y1=101|X2=110|Y2=101',
+        '|RECORD=6|OwnerIndex=927|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=22|LineWidth=1' +
+            '|LocationCount=2|X1=120|Y1=94|X2=110|Y2=94',
+        '|RECORD=12|OwnerIndex=927|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=23' +
+            '|Location.X=121|Location.Y=101|Radius=18|LineWidth=1|EndAngle=360.000',
+        '|RECORD=34|OwnerIndex=927|Location.X=140|Location.Y=120|Color=8388608|FontID=1|Text=Q9|Name=Designator',
+        '|RECORD=41|OwnerIndex=927|Location.X=140|Location.Y=112|Color=8388608|FontID=1|Text=DUAL-GATE|Name=Comment'
+    ]
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'dual-gate-terminal-labels.SchDoc',
+        new TextEncoder().encode(records.join('')).buffer
+    )
+    const ownerPins = documentModel.schematic.pins.filter(
+        (pin) => pin.ownerIndex === '927'
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.deepEqual(
+        ownerPins.map((pin) => ({
+            designator: pin.designator,
+            name: pin.name,
+            labelMode: pin.labelMode
+        })),
+        [
+            { designator: '1', name: 'S', labelMode: 'number-only' },
+            { designator: '2', name: 'D', labelMode: 'number-only' },
+            { designator: '3', name: 'G2', labelMode: 'number-only' },
+            { designator: '4', name: 'G1', labelMode: 'number-only' }
+        ]
+    )
+    assert.equal(
+        (markup.match(/class="schematic-pin-number"/g) || []).length,
+        4
+    )
+    assert.match(
+        markup,
+        /class="schematic-pin-number" x="110" y="80"[^>]*transform="rotate\(-90 110 80\)">1</
+    )
+    assert.match(
+        markup,
+        /class="schematic-pin-number" x="110" y="44"[^>]*transform="rotate\(-90 110 44\)">2</
+    )
+    assert.match(
+        markup,
+        /class="schematic-pin-number" x="100" y="51"[^>]*text-anchor="end"[^>]*>3</
+    )
+    assert.match(
+        markup,
+        /class="schematic-pin-number" x="100" y="70"[^>]*text-anchor="end"[^>]*>4</
+    )
+    assert.doesNotMatch(markup, /class="schematic-pin-name"/)
+})
+
+/**
  * Verifies nova-sheet record-14 package bodies are parsed as filled rectangles
  * instead of diagonal line segments.
  */

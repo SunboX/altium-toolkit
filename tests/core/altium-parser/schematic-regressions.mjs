@@ -656,19 +656,19 @@ test('parseAltiumArrayBuffer keeps record-8 symbol circles and avoids duplicate 
     ])
     assert.match(
         markup,
-        /<ellipse class="schematic-ellipse" cx="214" cy="64" rx="24" ry="24" fill="none" stroke="var\(--schematic-accent-ink-color\)" stroke-width="1" \/>/
+        /<ellipse class="schematic-ellipse" cx="214" cy="107" rx="24" ry="24" fill="none" stroke="var\(--schematic-accent-ink-color\)" stroke-width="1" \/>/
     )
     assert.match(
         markup,
-        /<text class="schematic-label" x="200" y="84" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400" transform="rotate\(-90 200 84\)">G</
+        /<text class="schematic-label" x="200" y="127" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400" transform="rotate\(-90 200 127\)">G</
     )
     assert.match(
         markup,
-        /<text class="schematic-label" x="189" y="50" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400" transform="rotate\(-90 189 50\)">S</
+        /<text class="schematic-label" x="189" y="93" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400" transform="rotate\(-90 189 93\)">S</
     )
     assert.match(
         markup,
-        /<text class="schematic-label" x="241" y="47" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400" transform="rotate\(-90 241 47\)">D</
+        /<text class="schematic-label" x="241" y="90" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400" transform="rotate\(-90 241 90\)">D</
     )
     assert.equal((markup.match(/class="schematic-pin-name"/g) || []).length, 0)
     assert.equal((markup.match(/>G<\/text>/g) || []).length, 1)

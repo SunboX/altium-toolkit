@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { unzlibSync } from 'fflate'
 import { OleCompoundDocument } from '../ole/OleCompoundDocument.mjs'
 import { ParserUtils } from './ParserUtils.mjs'
 
@@ -53,11 +54,15 @@ export class SchematicImageParser {
             }
         }
 
+        const packedStorageImages = oleDocument
+            ? SchematicImageParser.#indexPackedStorageImages(oleDocument)
+            : SchematicImageParser.#createPackedStorageImageIndex()
         const images = imageRecords
             .map((record) =>
                 SchematicImageParser.#parseSchematicImageRecord(
                     record,
                     oleDocument,
+                    packedStorageImages,
                     diagnostics
                 )
             )
@@ -79,10 +84,16 @@ export class SchematicImageParser {
      * Normalizes one image placement record.
      * @param {{ fields: Record<string, string | string[]>, recordIndex: number }} record
      * @param {OleCompoundDocument | null} oleDocument
+     * @param {{ byPath: Map<string, Uint8Array>, byBaseName: Map<string, Uint8Array | null> }} packedStorageImages
      * @param {{ severity: 'info' | 'warning', message: string }[]} diagnostics
-     * @returns {{ x: number, y: number, cornerX: number, cornerY: number, fileName: string, embedded: boolean, keepAspect: boolean, mimeType: string, dataBase64: string, renderOrder: number, diagnosticState: string } | null}
+     * @returns {{ x: number, y: number, cornerX: number, cornerY: number, fileName: string, embedded: boolean, keepAspect: boolean, mimeType: string, dataBase64: string, renderOrder: number, diagnosticState: string, ownerIndex?: string } | null}
      */
-    static #parseSchematicImageRecord(record, oleDocument, diagnostics) {
+    static #parseSchematicImageRecord(
+        record,
+        oleDocument,
+        packedStorageImages,
+        diagnostics
+    ) {
         const x = parseNumericField(record.fields, 'Location.X')
         const y = parseNumericField(record.fields, 'Location.Y')
         const cornerX = parseNumericField(record.fields, 'Corner.X')
@@ -110,8 +121,13 @@ export class SchematicImageParser {
         let diagnosticState = embedded ? 'missing-embedded-payload' : 'external'
 
         if (embedded && fileName && oleDocument) {
-            try {
-                const streamBytes = oleDocument.getStream(fileName)
+            const streamBytes = SchematicImageParser.#resolveEmbeddedImageBytes(
+                fileName,
+                oleDocument,
+                packedStorageImages
+            )
+
+            if (streamBytes) {
                 const decoded =
                     SchematicImageParser.#decodeEmbeddedImagePayload(
                         streamBytes,
@@ -123,7 +139,7 @@ export class SchematicImageParser {
                 hasAlpha = decoded.hasAlpha
                 dataBase64 = SchematicImageParser.#encodeBase64(decoded.bytes)
                 diagnosticState = 'embedded'
-            } catch {
+            } else {
                 diagnostics.push({
                     severity: 'warning',
                     message:
@@ -153,7 +169,10 @@ export class SchematicImageParser {
             mimeType,
             dataBase64,
             renderOrder,
-            diagnosticState
+            diagnosticState,
+            ...(getField(record.fields, 'OwnerIndex')
+                ? { ownerIndex: getField(record.fields, 'OwnerIndex') }
+                : {})
         }
 
         if (sourceMimeType && sourceMimeType !== mimeType) {
@@ -167,6 +186,272 @@ export class SchematicImageParser {
         }
 
         return image
+    }
+
+    /**
+     * Resolves an embedded image payload from direct OLE streams or packed
+     * Altium icon storage.
+     * @param {string} fileName Image file name from the schematic record.
+     * @param {OleCompoundDocument} oleDocument Parsed OLE container.
+     * @param {{ byPath: Map<string, Uint8Array>, byBaseName: Map<string, Uint8Array | null> }} packedStorageImages
+     * @returns {Uint8Array | null}
+     */
+    static #resolveEmbeddedImageBytes(
+        fileName,
+        oleDocument,
+        packedStorageImages
+    ) {
+        try {
+            return oleDocument.getStream(fileName)
+        } catch {
+            return SchematicImageParser.#findPackedStorageImage(
+                fileName,
+                packedStorageImages
+            )
+        }
+    }
+
+    /**
+     * Creates an empty packed-storage image index.
+     * @returns {{ byPath: Map<string, Uint8Array>, byBaseName: Map<string, Uint8Array | null> }}
+     */
+    static #createPackedStorageImageIndex() {
+        return {
+            byPath: new Map(),
+            byBaseName: new Map()
+        }
+    }
+
+    /**
+     * Reads Altium's packed schematic image storage stream.
+     * @param {OleCompoundDocument} oleDocument Parsed OLE container.
+     * @returns {{ byPath: Map<string, Uint8Array>, byBaseName: Map<string, Uint8Array | null> }}
+     */
+    static #indexPackedStorageImages(oleDocument) {
+        try {
+            return SchematicImageParser.#parsePackedStorageImages(
+                oleDocument.getStream('Storage')
+            )
+        } catch {
+            return SchematicImageParser.#createPackedStorageImageIndex()
+        }
+    }
+
+    /**
+     * Parses Altium's compact icon-storage records into decoded image bytes.
+     * @param {Uint8Array} bytes Packed storage stream bytes.
+     * @returns {{ byPath: Map<string, Uint8Array>, byBaseName: Map<string, Uint8Array | null> }}
+     */
+    static #parsePackedStorageImages(bytes) {
+        const index = SchematicImageParser.#createPackedStorageImageIndex()
+        if (!(bytes instanceof Uint8Array) || bytes.byteLength < 16) {
+            return index
+        }
+
+        const view = new DataView(
+            bytes.buffer,
+            bytes.byteOffset,
+            bytes.byteLength
+        )
+        const headerLength = view.getUint32(0, true)
+        if (headerLength <= 0 || 4 + headerLength > bytes.byteLength) {
+            return index
+        }
+
+        const headerText = new TextDecoder('windows-1252').decode(
+            bytes.subarray(4, 4 + headerLength)
+        )
+        if (!headerText.includes('Icon storage')) {
+            return index
+        }
+
+        let offset = 4 + headerLength
+        if (bytes[offset] === 0) {
+            offset += 1
+        }
+
+        while (offset + 10 <= bytes.byteLength) {
+            while (offset < bytes.byteLength && bytes[offset] === 0) {
+                offset += 1
+            }
+            if (offset + 10 > bytes.byteLength) {
+                break
+            }
+
+            const entryLength =
+                bytes[offset] |
+                (bytes[offset + 1] << 8) |
+                (bytes[offset + 2] << 16)
+            const parsedEntry =
+                SchematicImageParser.#parsePackedStorageImageEntry(
+                    bytes,
+                    view,
+                    offset
+                )
+
+            if (parsedEntry) {
+                SchematicImageParser.#addPackedStorageImage(
+                    index,
+                    parsedEntry.fileName,
+                    parsedEntry.bytes
+                )
+                offset = parsedEntry.nextOffset
+                continue
+            }
+
+            offset += Math.max(entryLength + 3, 1)
+        }
+
+        return index
+    }
+
+    /**
+     * Parses one packed icon-storage entry.
+     * @param {Uint8Array} bytes Storage stream bytes.
+     * @param {DataView} view Storage stream view.
+     * @param {number} offset Entry offset.
+     * @returns {{ fileName: string, bytes: Uint8Array, nextOffset: number } | null}
+     */
+    static #parsePackedStorageImageEntry(bytes, view, offset) {
+        const entryStart = offset + 3
+        if (entryStart + 3 > bytes.byteLength) {
+            return null
+        }
+
+        const pathLength = bytes[entryStart + 2]
+        const pathOffset = entryStart + 3
+        const compressedLengthOffset = pathOffset + pathLength
+        const compressedOffset = compressedLengthOffset + 4
+
+        if (pathLength <= 0 || compressedLengthOffset + 4 > bytes.byteLength) {
+            return null
+        }
+
+        const compressedLength = view.getUint32(compressedLengthOffset, true)
+        const compressedEnd = compressedOffset + compressedLength
+        if (
+            compressedLength <= 0 ||
+            compressedEnd > bytes.byteLength ||
+            !SchematicImageParser.#looksLikeZlibStream(bytes, compressedOffset)
+        ) {
+            return null
+        }
+
+        try {
+            return {
+                fileName: SchematicImageParser.#decodePackedImagePath(
+                    bytes.subarray(pathOffset, compressedLengthOffset)
+                ),
+                bytes: unzlibSync(
+                    bytes.subarray(compressedOffset, compressedEnd)
+                ),
+                nextOffset: compressedEnd
+            }
+        } catch {
+            return null
+        }
+    }
+
+    /**
+     * Adds one decoded image to path and unique-basename lookup indexes.
+     * @param {{ byPath: Map<string, Uint8Array>, byBaseName: Map<string, Uint8Array | null> }} index Packed-storage index.
+     * @param {string} fileName Image path.
+     * @param {Uint8Array} bytes Image bytes.
+     */
+    static #addPackedStorageImage(index, fileName, bytes) {
+        const normalizedPath =
+            SchematicImageParser.#normalizeImageLookupPath(fileName)
+        if (!normalizedPath) {
+            return
+        }
+
+        index.byPath.set(normalizedPath, bytes)
+
+        const baseName =
+            SchematicImageParser.#imageLookupBaseName(normalizedPath)
+        if (!baseName) {
+            return
+        }
+
+        if (
+            index.byBaseName.has(baseName) &&
+            index.byBaseName.get(baseName) !== bytes
+        ) {
+            index.byBaseName.set(baseName, null)
+            return
+        }
+
+        index.byBaseName.set(baseName, bytes)
+    }
+
+    /**
+     * Finds one packed-storage image by full path or unique basename.
+     * @param {string} fileName Requested image path.
+     * @param {{ byPath: Map<string, Uint8Array>, byBaseName: Map<string, Uint8Array | null> }} index Packed-storage image index.
+     * @returns {Uint8Array | null}
+     */
+    static #findPackedStorageImage(fileName, index) {
+        const normalizedPath =
+            SchematicImageParser.#normalizeImageLookupPath(fileName)
+        if (!normalizedPath) {
+            return null
+        }
+
+        const directMatch = index.byPath.get(normalizedPath)
+        if (directMatch) {
+            return directMatch
+        }
+
+        const baseName =
+            SchematicImageParser.#imageLookupBaseName(normalizedPath)
+        return index.byBaseName.get(baseName) || null
+    }
+
+    /**
+     * Decodes a packed-storage path string.
+     * @param {Uint8Array} bytes Path bytes.
+     * @returns {string}
+     */
+    static #decodePackedImagePath(bytes) {
+        return new TextDecoder('windows-1252')
+            .decode(bytes)
+            .replace(/\0+$/u, '')
+    }
+
+    /**
+     * Checks whether bytes at an offset resemble a zlib stream.
+     * @param {Uint8Array} bytes Source bytes.
+     * @param {number} offset Candidate offset.
+     * @returns {boolean}
+     */
+    static #looksLikeZlibStream(bytes, offset) {
+        if (offset + 2 > bytes.byteLength || bytes[offset] !== 0x78) {
+            return false
+        }
+
+        return ((bytes[offset] << 8) + bytes[offset + 1]) % 31 === 0
+    }
+
+    /**
+     * Normalizes image paths for cross-platform lookup.
+     * @param {string} fileName Image path.
+     * @returns {string}
+     */
+    static #normalizeImageLookupPath(fileName) {
+        return String(fileName || '')
+            .replace(/\\+/gu, '/')
+            .replace(/\/+/gu, '/')
+            .toLowerCase()
+    }
+
+    /**
+     * Returns the final path segment from a normalized image lookup path.
+     * @param {string} normalizedPath Normalized path.
+     * @returns {string}
+     */
+    static #imageLookupBaseName(normalizedPath) {
+        const parts = normalizedPath.split('/')
+        return parts[parts.length - 1] || ''
     }
 
     /**

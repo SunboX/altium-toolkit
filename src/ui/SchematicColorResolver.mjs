@@ -60,6 +60,31 @@ export class SchematicColorResolver {
     }
 
     /**
+     * Resolves one non-text primitive color, using the semantic fallback when
+     * source artwork only supplies the default black text color.
+     * @param {string | undefined} color
+     * @param {string} fallbackVariable
+     * @param {boolean} [preserveUnknown]
+     * @returns {string}
+     */
+    static resolveNonTextColor(
+        color,
+        fallbackVariable,
+        preserveUnknown = false
+    ) {
+        const resolved = SchematicColorResolver.resolveColor(
+            color,
+            fallbackVariable,
+            preserveUnknown
+        )
+
+        return resolved ===
+            SchematicColorResolver.#toVariable('--schematic-text-color')
+            ? SchematicColorResolver.#toVariable(fallbackVariable)
+            : resolved
+    }
+
+    /**
      * Resolves one SVG fill value to a schematic theme variable.
      * @param {string | undefined} fill
      * @param {string} fallbackVariable
@@ -98,6 +123,59 @@ export class SchematicColorResolver {
         return preserveUnknown
             ? normalized
             : SchematicColorResolver.#toVariable(fallbackVariable)
+    }
+
+    /**
+     * Resolves an explicitly authored source stroke color without mapping it to
+     * a semantic theme token.
+     * @param {string | undefined} color
+     * @param {string} fallbackVariable
+     * @returns {string}
+     */
+    static resolveSourceColor(color, fallbackVariable) {
+        return SchematicColorResolver.#resolveSourcePaint(
+            color,
+            fallbackVariable
+        )
+    }
+
+    /**
+     * Resolves an explicitly authored source fill color without mapping it to a
+     * semantic theme token.
+     * @param {string | undefined} fill
+     * @param {string} fallbackVariable
+     * @returns {string}
+     */
+    static resolveSourceFill(fill, fallbackVariable) {
+        return SchematicColorResolver.#resolveSourcePaint(
+            fill,
+            fallbackVariable
+        )
+    }
+
+    /**
+     * Resolves one literal source paint value while preserving SVG control
+     * values and falling back only when no source paint exists.
+     * @param {string | undefined} paint
+     * @param {string} fallbackVariable
+     * @returns {string}
+     */
+    static #resolveSourcePaint(paint, fallbackVariable) {
+        const normalized = SchematicColorResolver.#normalizeColor(paint)
+
+        if (!normalized) {
+            return SchematicColorResolver.#toVariable(fallbackVariable)
+        }
+
+        if (
+            normalized === 'none' ||
+            normalized === 'transparent' ||
+            normalized.startsWith('var(')
+        ) {
+            return normalized
+        }
+
+        return normalized
     }
 
     /**

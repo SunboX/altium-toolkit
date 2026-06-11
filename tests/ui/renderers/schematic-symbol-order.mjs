@@ -72,6 +72,116 @@ test('renderSchematicSvg keeps missing-order owner bodies behind indexed connect
 })
 
 /**
+ * Verifies narrow owner-geometry color strips keep their authored source
+ * colors instead of collapsing through global schematic theme tokens.
+ */
+test('renderSchematicSvg preserves literal colors on owner color strips', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Color strip schematic' },
+        schematic: {
+            sheet: { width: 260, height: 180 },
+            lines: [],
+            texts: [],
+            components: [],
+            pins: [],
+            ports: [],
+            crosses: [],
+            rectangles: [
+                {
+                    ownerIndex: '101',
+                    x: 20,
+                    y: 20,
+                    width: 5,
+                    height: 90,
+                    color: '#000080',
+                    fill: '#800000',
+                    isSolid: true,
+                    transparent: false,
+                    lineWidth: 1,
+                    renderOrder: 1
+                },
+                {
+                    ownerIndex: '102',
+                    x: 40,
+                    y: 20,
+                    width: 5,
+                    height: 90,
+                    color: '#000080',
+                    fill: '#000080',
+                    isSolid: true,
+                    transparent: false,
+                    lineWidth: 1,
+                    renderOrder: 2
+                },
+                {
+                    ownerIndex: '103',
+                    x: 60,
+                    y: 20,
+                    width: 5,
+                    height: 90,
+                    color: '#000080',
+                    fill: '#808000',
+                    isSolid: true,
+                    transparent: false,
+                    lineWidth: 1,
+                    renderOrder: 3
+                },
+                {
+                    ownerIndex: '104',
+                    x: 80,
+                    y: 20,
+                    width: 5,
+                    height: 90,
+                    color: '#000080',
+                    fill: '#fd8300',
+                    isSolid: true,
+                    transparent: false,
+                    lineWidth: 1,
+                    renderOrder: 4
+                },
+                {
+                    ownerIndex: '105',
+                    x: 100,
+                    y: 20,
+                    width: 5,
+                    height: 90,
+                    color: '#000080',
+                    fill: '#008000',
+                    isSolid: true,
+                    transparent: false,
+                    lineWidth: 1,
+                    renderOrder: 5
+                },
+                {
+                    ownerIndex: '106',
+                    x: 120,
+                    y: 20,
+                    width: 5,
+                    height: 90,
+                    color: '#000080',
+                    fill: '#af9b8f',
+                    isSolid: true,
+                    transparent: false,
+                    lineWidth: 1,
+                    renderOrder: 6
+                }
+            ]
+        }
+    })
+
+    for (const fill of [
+        '#800000',
+        '#000080',
+        '#808000',
+        '#fd8300',
+        '#008000',
+        '#af9b8f'
+    ]) {
+        assert.match(markup, new RegExp('fill="' + fill + '" stroke="#000080"'))
+    }
+})
+
+/**
  * Verifies ground power ports attached at a wire tee prefer the downward
  * symbol orientation and contribute a junction branch at the connection point.
  */
