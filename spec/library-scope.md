@@ -31,6 +31,9 @@ rendering primitives.
 - Optional renderer CSS
 - Versioned normalized model schema identifiers and machine-readable schema
   contracts
+- Source component client, source bundle exporter, generated `.SchLib` and
+  `.PcbLib` byte exporters, and batch export orchestration with progress,
+  checkpoint, append-skip, merged output, and retry-friendly client hooks
 
 ## Out Of Scope
 
@@ -40,6 +43,8 @@ rendering primitives.
 - Three.js runtime, OrbitControls, canvas mounting, and picking
 - STEP mesh loading and browser script injection
 - Model ZIP export UI and download orchestration
+- Choosing a hosted component-source provider for applications; hosts inject
+  fetch and endpoint configuration explicitly
 - Server, deployment, and app metadata endpoints
 - Native document authoring, round-trip writing, GUI automation, and compiled
   multi-sheet project netlist generation

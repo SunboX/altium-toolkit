@@ -87,46 +87,136 @@ test('renderSchematicSvg keeps mirrored owner text inside rectangular bodies', (
     })
     assert.match(
         markup,
-        /<text class="schematic-pin-name" x="106"[^>]*text-anchor="middle"[^>]*>6</u
+        /<text class="schematic-label" x="104" y="89"[^>]*>GROUP_A<\/text>/
     )
     assert.match(
         markup,
-        /<text class="schematic-pin-number" x="98"[^>]*text-anchor="end"[^>]*>6</u
+        /<text class="schematic-label" x="130" y="89"[^>]*>GROUP_B<\/text>/
     )
     assert.match(
         markup,
-        /<text class="schematic-pin-name" x="106"[^>]*text-anchor="middle"[^>]*>4</u
+        /<text class="schematic-label" x="125" y="79"[^>]*>1:1<\/text>/
     )
     assert.match(
         markup,
-        /<text class="schematic-pin-number" x="98"[^>]*text-anchor="end"[^>]*>4</u
+        /<text class="schematic-pin-name" x="110" y="103"[^>]*text-anchor="middle"[^>]*>6</u
     )
     assert.match(
         markup,
-        /<text class="schematic-pin-name" x="154"[^>]*text-anchor="middle"[^>]*>3</u
+        /<text class="schematic-pin-number" x="91"[^>]*text-anchor="end"[^>]*>6</u
     )
     assert.match(
         markup,
-        /<text class="schematic-pin-number" x="162"[^>]*text-anchor="start"[^>]*>3</u
+        /<text class="schematic-pin-name" x="110" y="73"[^>]*text-anchor="middle"[^>]*>4</u
     )
     assert.match(
         markup,
-        /<text class="schematic-pin-name" x="154"[^>]*text-anchor="middle"[^>]*>1</u
+        /<text class="schematic-pin-number" x="91"[^>]*text-anchor="end"[^>]*>4</u
     )
     assert.match(
         markup,
-        /<text class="schematic-pin-number" x="162"[^>]*text-anchor="start"[^>]*>1</u
+        /<text class="schematic-pin-name" x="150" y="73"[^>]*text-anchor="middle"[^>]*>3</u
     )
     assert.match(
         markup,
-        /<text class="schematic-pin-name" x="154"[^>]*text-anchor="middle"[^>]*>2</u
+        /<text class="schematic-pin-number" x="169"[^>]*text-anchor="start"[^>]*>3</u
     )
     assert.match(
         markup,
-        /<text class="schematic-pin-number" x="172"[^>]*text-anchor="start"[^>]*>2</u
+        /<text class="schematic-pin-name" x="150" y="103"[^>]*text-anchor="middle"[^>]*>1</u
+    )
+    assert.match(
+        markup,
+        /<text class="schematic-pin-number" x="169"[^>]*text-anchor="start"[^>]*>1</u
+    )
+    assert.match(
+        markup,
+        /<text class="schematic-pin-name" x="150" y="65"[^>]*text-anchor="middle"[^>]*>2</u
+    )
+    assert.match(
+        markup,
+        /<text class="schematic-pin-number" x="169"[^>]*text-anchor="start"[^>]*>2</u
     )
     assert.match(
         markup,
         /<g class="schematic-pin-marker">.*x1="165".*x2="171"/u
+    )
+})
+
+/**
+ * Verifies baseline-oriented owner-local symbol text keeps its authored
+ * baseline inside owner-drawn cells even when the native record is mirrored.
+ */
+test('renderSchematicSvg keeps baseline-oriented owner body letters on authored baselines', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=220|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=24|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=14|OwnerIndex=927|OwnerPartId=1|IndexInSheet=1' +
+            '|Location.X=40|Location.Y=40|Corner.X=180|Corner.Y=160' +
+            '|Color=128|AreaColor=11599871|IsSolid=T',
+        '|RECORD=13|OwnerIndex=927|OwnerPartId=1|IndexInSheet=2' +
+            '|Location.X=80|Location.Y=40|Corner.X=80|Corner.Y=160' +
+            '|LineWidth=1|Color=16711680',
+        '|RECORD=13|OwnerIndex=927|OwnerPartId=1|IndexInSheet=3' +
+            '|Location.X=80|Location.Y=100|Corner.X=180|Corner.Y=100' +
+            '|LineWidth=1|Color=16711680',
+        '|RECORD=4|OwnerIndex=927|OwnerPartId=1|Orientation=0|Justification=0|IsMirrored=T' +
+            '|Location.X=92|Location.Y=112|Color=16711680|FontID=1|Text=A',
+        '|RECORD=4|OwnerIndex=927|OwnerPartId=1|Orientation=0|Justification=0|IsMirrored=T' +
+            '|Location.X=92|Location.Y=72|Color=16711680|FontID=1|Text=B'
+    ]
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'owner-body-letter-cells.SchDoc',
+        new TextEncoder().encode(records.join('')).buffer
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.match(
+        markup,
+        /<text class="schematic-label" x="92" y="88"[^>]*>A<\/text>/
+    )
+    assert.match(
+        markup,
+        /<text class="schematic-label" x="92" y="128"[^>]*>B<\/text>/
+    )
+})
+
+/**
+ * Verifies ownerless free text drawn over a component body is constrained by
+ * the nearby owner rectangle and its internal separator lines.
+ */
+test('renderSchematicSvg keeps ownerless body overlay letters inside inferred cells', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=220|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=14|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=14|OwnerIndex=938|OwnerPartId=1|IndexInSheet=1' +
+            '|Location.X=40|Location.Y=40|Corner.X=120|Corner.Y=120' +
+            '|Color=128|AreaColor=11599871|IsSolid=T',
+        '|RECORD=6|IndexInSheet=2|LineWidth=1|Color=16711680|LocationCount=2' +
+            '|X1=70|Y1=92|X2=120|Y2=92',
+        '|RECORD=6|IndexInSheet=3|LineWidth=1|Color=16711680|LocationCount=2' +
+            '|X1=70|Y1=66|X2=120|Y2=66',
+        '|RECORD=4|IndexInSheet=4|OwnerPartId=-1|Location.X=74|Location.Y=64' +
+            '|Color=16711680|FontID=1|Text=L',
+        '|RECORD=4|IndexInSheet=5|OwnerPartId=-1|Location.X=74|Location.Y=38' +
+            '|Color=16711680|FontID=1|Text=H'
+    ]
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'ownerless-overlay-letter-cells.SchDoc',
+        new TextEncoder().encode(records.join('')).buffer
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.match(
+        markup,
+        /<text class="schematic-label" x="74" y="114"[^>]*>L<\/text>/
+    )
+    assert.match(
+        markup,
+        /<text class="schematic-label" x="74" y="140"[^>]*>H<\/text>/
     )
 })

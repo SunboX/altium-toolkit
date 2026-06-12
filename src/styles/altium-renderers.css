@@ -56,14 +56,14 @@
 }
 
 .schematic-svg {
-    --schematic-default-ink-color: #0091ac;
-    --schematic-accent-ink-color: #14c5e6;
+    --schematic-default-ink-color: #008aa3;
+    --schematic-accent-ink-color: #009bb2;
     --schematic-text-color: #121b22;
     --schematic-sheet-label-color: #405662;
-    --schematic-power-color: #a84a12;
-    --schematic-port-color: #f28724;
-    --schematic-alert-color: #da2f70;
-    --schematic-fill-color: #f4dec7;
+    --schematic-power-color: #a44a1b;
+    --schematic-port-color: #a44a1b;
+    --schematic-alert-color: #c43a68;
+    --schematic-fill-color: #f1d8bd;
     --schematic-note-fill-color: #efe4d1;
     --schematic-fill-light-color: #fffaf5;
     --schematic-pin-marker-fill: #edf4f3;

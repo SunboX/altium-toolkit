@@ -11,7 +11,7 @@ export class SchematicOwnerPinLabelLayout {
      * Resolves one native-facing pin text placement in renderer coordinates
      * before sheet Y projection. The returned `yOffset` is applied after
      * projection, matching SVG text baseline behavior.
-     * @param {{ x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', symbolOuter?: number }} pin
+     * @param {{ x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', symbolOuter?: number, electrical?: number }} pin
      * @param {'name' | 'number'} labelKind
      * @param {{ labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', rotateTopNumber?: boolean }} [options]
      * @returns {{ x: number, yOffset: number, anchor: 'start' | 'middle' | 'end', rotation: number } | null}
@@ -19,7 +19,7 @@ export class SchematicOwnerPinLabelLayout {
     static resolveNativePinTextPlacement(pin, labelKind, options = {}) {
         const labelMode = options.labelMode || 'name-and-number'
         const markerStyle =
-            SchematicOwnerPinLabelLayout.#resolveOuterPinMarkerStyle(pin)
+            SchematicOwnerPinLabelLayout.#resolvePinMarkerStyle(pin)
 
         if (labelKind === 'number') {
             return SchematicOwnerPinLabelLayout.#resolveNumberPlacement(
@@ -198,6 +198,67 @@ export class SchematicOwnerPinLabelLayout {
         }
 
         return boxes
+    }
+
+    /**
+     * Collects internally numbered pins whose external number would overlap a
+     * visible route text label on the same horizontal lane.
+     * @param {{ ownerIndex?: string, name?: string, designator?: string, length?: number, x: number, y: number, orientation: 'left' | 'right' | 'top' | 'bottom', labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', electrical?: number, symbolOuter?: number }[]} pins
+     * @param {{ ownerIndex?: string, text?: string, resolvedText?: string, x?: number, y?: number, anchor?: 'start' | 'middle' | 'end', fontSize?: number, hidden?: boolean, rotation?: number }[]} texts
+     * @param {Map<string, { left: number, right: number }>} internalNumberLabelBoxes
+     * @returns {Set<string>}
+     */
+    static collectOverlappingExternalNumberLabelKeys(
+        pins,
+        texts,
+        internalNumberLabelBoxes
+    ) {
+        const textBounds = (texts || [])
+            .map((text) =>
+                SchematicOwnerPinLabelLayout.#estimateHorizontalTextBounds(text)
+            )
+            .filter(Boolean)
+        const keys = new Set()
+
+        if (textBounds.length === 0) {
+            return keys
+        }
+
+        for (const pin of pins || []) {
+            const ownerIndex = String(pin.ownerIndex || '').trim()
+            if (!ownerIndex || !internalNumberLabelBoxes.has(ownerIndex)) {
+                continue
+            }
+
+            if (!SchematicOwnerPinLabelLayout.#isInternalNumberLabelPin(pin)) {
+                continue
+            }
+
+            const numberBounds =
+                SchematicOwnerPinLabelLayout.#estimateExternalNumberBounds(pin)
+            if (!numberBounds) {
+                continue
+            }
+
+            if (
+                textBounds.some((bounds) =>
+                    SchematicOwnerPinLabelLayout.#boundsOverlap(
+                        numberBounds,
+                        bounds,
+                        1.5
+                    )
+                )
+            ) {
+                keys.add(
+                    SchematicOwnerPinLabelLayout.buildOwnerPinLabelKey(
+                        ownerIndex,
+                        pin.designator
+                    )
+                )
+            }
+        }
+
+        return keys
     }
 
     /**
@@ -456,6 +517,133 @@ export class SchematicOwnerPinLabelLayout {
     }
 
     /**
+     * Estimates a route text label's source-coordinate visual bounds.
+     * @param {{ ownerIndex?: string, text?: string, resolvedText?: string, x?: number, y?: number, anchor?: 'start' | 'middle' | 'end', fontSize?: number, hidden?: boolean, rotation?: number } | null} text
+     * @returns {{ minX: number, maxX: number, minY: number, maxY: number } | null}
+     */
+    static #estimateHorizontalTextBounds(text) {
+        if (!text || text.hidden || text.ownerIndex) return null
+        if (Number(text.rotation || 0) !== 0) return null
+
+        const label = String(text.resolvedText ?? text.text ?? '').trim()
+        const x = Number(text.x)
+        const y = Number(text.y)
+        if (!label || !Number.isFinite(x) || !Number.isFinite(y)) return null
+
+        const fontSize = SchematicOwnerPinLabelLayout.#resolveViewerFontSize(
+            text.fontSize
+        )
+        const width = SchematicOwnerPinLabelLayout.#estimateTextWidth(
+            label,
+            fontSize
+        )
+        const anchor = text.anchor || 'start'
+        const minX =
+            anchor === 'end'
+                ? x - width
+                : anchor === 'middle'
+                  ? x - width / 2
+                  : x
+        const maxX =
+            anchor === 'end'
+                ? x
+                : anchor === 'middle'
+                  ? x + width / 2
+                  : x + width
+
+        return {
+            minX,
+            maxX,
+            minY: y - fontSize * 0.7,
+            maxY: y + fontSize * 0.35
+        }
+    }
+
+    /**
+     * Estimates one external pin number's source-coordinate bounds.
+     * @param {{ designator?: string, length?: number, x: number, y: number, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number }} pin
+     * @returns {{ minX: number, maxX: number, minY: number, maxY: number } | null}
+     */
+    static #estimateExternalNumberBounds(pin) {
+        if (pin.orientation !== 'left' && pin.orientation !== 'right') {
+            return null
+        }
+
+        const label = String(pin.designator || '').trim()
+        const x = Number(pin.x)
+        const y = Number(pin.y)
+        if (!label || !Number.isFinite(x) || !Number.isFinite(y)) return null
+
+        const markerStyle =
+            SchematicOwnerPinLabelLayout.#resolvePinMarkerStyle(pin)
+        const clearance =
+            SchematicOwnerPinLabelLayout.#resolveHorizontalPinNumberClearance(
+                markerStyle,
+                pin
+            )
+        const offset = Math.max(
+            clearance,
+            SchematicOwnerPinLabelLayout.#resolveCompactExternalHorizontalNumberOffset(
+                pin
+            )
+        )
+        const numberX = pin.orientation === 'left' ? x - offset : x + offset
+        const anchor =
+            SchematicOwnerPinLabelLayout.#resolveHorizontalPinNumberAnchor(
+                pin,
+                markerStyle
+            )
+        const fontSize = SchematicOwnerPinLabelLayout.#resolveViewerFontSize()
+        const width = SchematicOwnerPinLabelLayout.#estimateTextWidth(
+            label,
+            fontSize
+        )
+
+        return {
+            minX: anchor === 'end' ? numberX - width : numberX,
+            maxX: anchor === 'end' ? numberX : numberX + width,
+            minY: y - fontSize * 0.7,
+            maxY: y + fontSize * 0.35
+        }
+    }
+
+    /**
+     * Returns the viewer-adjusted schematic font size used for collision
+     * estimates.
+     * @param {number | undefined} fontSize Source font size.
+     * @returns {number}
+     */
+    static #resolveViewerFontSize(fontSize = 10) {
+        return Math.max(Number(fontSize || 10) - 1, 6)
+    }
+
+    /**
+     * Estimates one rendered text run width.
+     * @param {string} text Text content.
+     * @param {number} fontSize Viewer font size.
+     * @returns {number}
+     */
+    static #estimateTextWidth(text, fontSize) {
+        return Math.max(String(text || '').length * fontSize * 0.62, fontSize)
+    }
+
+    /**
+     * Returns true when two source-coordinate boxes overlap.
+     * @param {{ minX: number, maxX: number, minY: number, maxY: number }} first First bounds.
+     * @param {{ minX: number, maxX: number, minY: number, maxY: number }} second Second bounds.
+     * @param {number} tolerance Coordinate tolerance.
+     * @returns {boolean}
+     */
+    static #boundsOverlap(first, second, tolerance) {
+        return (
+            first.minX <= second.maxX + tolerance &&
+            first.maxX >= second.minX - tolerance &&
+            first.minY <= second.maxY + tolerance &&
+            first.maxY >= second.minY - tolerance
+        )
+    }
+
+    /**
      * Moves left/right pin numbers outward by the same horizontal correction
      * already applied to their explicit owner pin-name labels.
      * @param {{ orientation: 'left' | 'right' | 'top' | 'bottom', ownerIndex?: string, name?: string }} pin
@@ -506,7 +694,10 @@ export class SchematicOwnerPinLabelLayout {
                             pin
                         ),
                     yOffset: -1,
-                    anchor: 'end',
+                    anchor: SchematicOwnerPinLabelLayout.#resolveHorizontalPinNumberAnchor(
+                        pin,
+                        markerStyle
+                    ),
                     rotation: 0
                 }
             case 'right':
@@ -518,7 +709,10 @@ export class SchematicOwnerPinLabelLayout {
                             pin
                         ),
                     yOffset: -1,
-                    anchor: 'start',
+                    anchor: SchematicOwnerPinLabelLayout.#resolveHorizontalPinNumberAnchor(
+                        pin,
+                        markerStyle
+                    ),
                     rotation: 0
                 }
             case 'top':
@@ -594,21 +788,43 @@ export class SchematicOwnerPinLabelLayout {
     /**
      * Returns the horizontal pin-number clearance needed by the pin geometry.
      * @param {'single-in' | 'single-out' | 'double' | 'cross' | null} markerStyle
-     * @param {{ length?: number }} pin
+     * @param {{ length?: number, electrical?: number }} pin
      * @returns {number}
      */
     static #resolveHorizontalPinNumberClearance(markerStyle, pin) {
         switch (markerStyle) {
             case 'double':
-                return 17
+                return 21
             case 'cross':
-                return 12
+                return 9
             case 'single-in':
             case 'single-out':
                 return 8
             default:
+                if (Number(pin?.electrical || 0) === 1) {
+                    return 16
+                }
+
                 return SchematicOwnerPinLabelLayout.#resolveLongPinInset(pin, 2)
         }
+    }
+
+    /**
+     * Resolves the text edge used for horizontal pin numbers.
+     * @param {{ orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number }} pin Pin primitive.
+     * @param {'single-in' | 'single-out' | 'double' | 'cross' | null} markerStyle Marker style.
+     * @returns {'start' | 'end'}
+     */
+    static #resolveHorizontalPinNumberAnchor(pin, markerStyle) {
+        const routeFacing =
+            markerStyle === 'double' ||
+            (!markerStyle && Number(pin?.electrical || 0) === 1)
+
+        if (routeFacing) {
+            return pin.orientation === 'left' ? 'start' : 'end'
+        }
+
+        return pin.orientation === 'left' ? 'end' : 'start'
     }
 
     /**
@@ -622,7 +838,7 @@ export class SchematicOwnerPinLabelLayout {
             return 10
         }
 
-        return SchematicOwnerPinLabelLayout.#resolveLongPinInset(pin, 4)
+        return SchematicOwnerPinLabelLayout.#resolveLongPinInset(pin, 7)
     }
 
     /**
@@ -639,6 +855,18 @@ export class SchematicOwnerPinLabelLayout {
         }
 
         return fallback === 2 ? 10 : 8
+    }
+
+    /**
+     * Resolves the stub-side offset used when a pin already has an internal
+     * numeric label in its owner body.
+     * @param {{ length?: number }} pin Pin primitive.
+     * @returns {number}
+     */
+    static #resolveCompactExternalHorizontalNumberOffset(pin) {
+        const length = Math.abs(Number(pin.length || 0))
+
+        return Math.max(8, Math.min(length - 6, 12))
     }
 
     /**
@@ -661,6 +889,39 @@ export class SchematicOwnerPinLabelLayout {
                 return 'cross'
             case 34:
                 return 'double'
+            default:
+                return null
+        }
+    }
+
+    /**
+     * Resolves the marker style that contributes to native text clearance.
+     * @param {{ symbolOuter?: number, electrical?: number, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
+     * @returns {'single-in' | 'single-out' | 'double' | 'cross' | null}
+     */
+    static #resolvePinMarkerStyle(pin) {
+        return (
+            SchematicOwnerPinLabelLayout.#resolveOuterPinMarkerStyle(pin) ||
+            SchematicOwnerPinLabelLayout.#resolveElectricalPinMarkerStyle(pin)
+        )
+    }
+
+    /**
+     * Resolves electrical pin marker styles. Bidirectional pins keep the
+     * existing route-facing number placement through the explicit check.
+     * @param {{ electrical?: number, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
+     * @returns {'single-in' | 'single-out' | null}
+     */
+    static #resolveElectricalPinMarkerStyle(pin) {
+        if (pin.orientation !== 'left' && pin.orientation !== 'right') {
+            return null
+        }
+
+        switch (Number(pin.electrical)) {
+            case 0:
+                return 'single-in'
+            case 2:
+                return 'single-out'
             default:
                 return null
         }

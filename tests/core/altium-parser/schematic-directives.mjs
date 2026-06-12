@@ -12,6 +12,7 @@ const DIRECTIVE_RECORDS = [
         '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
         '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
     '|RECORD=22|IndexInSheet=5|Location.X=40|Location.Y=50|Color=255|Orientation=1|Symbol=2',
+    '|RECORD=22|IndexInSheet=6|Location.X=60|Location.Y=50|Color=255|Symbol=Checkbox',
     '|RECORD=43|IndexInSheet=10|Location.X=120|Location.Y=160|Color=255|Orientation=1|Name=DiffPairRouting',
     '|RECORD=41|OwnerIndex=10|Name=DifferentialPair|Text=True|IsHidden=T',
     '|RECORD=41|OwnerIndex=10|Name=ClassName|Text=PAIR_CLASS|IsHidden=T',
@@ -75,8 +76,29 @@ test('parseAltiumArrayBuffer keeps directive records, port shapes, and electrica
             orientation: 1,
             symbol: 2,
             symbolName: 'cross'
+        },
+        {
+            recordId: 'record-6',
+            recordType: '22',
+            recordIndex: 2,
+            indexInSheet: 6,
+            x: 60,
+            y: 50,
+            color: '#ff0000',
+            orientation: 0,
+            symbol: null,
+            symbolName: 'checkbox'
         }
     ])
+    assert.equal(
+        documentModel.schematic.crosses.some(
+            (cross) =>
+                cross.x === 60 &&
+                cross.y === 50 &&
+                cross.symbolName === 'checkbox'
+        ),
+        true
+    )
     assert.deepEqual(
         documentModel.schematic.directiveSemantics.parameterSets.map(
             (directive) => ({
@@ -160,6 +182,22 @@ test('parseAltiumArrayBuffer keeps directive records, port shapes, and electrica
             }
         ]
     )
+    assert.deepEqual(documentModel.schematic.rectangles, [
+        {
+            x: 260,
+            y: 120,
+            width: 60,
+            height: 50,
+            color: '#800000',
+            fill: '#ffffff',
+            isSolid: true,
+            transparent: false,
+            lineWidth: 1,
+            lineStyle: 1,
+            renderOrder: 30,
+            ownerIndex: undefined
+        }
+    ])
     assert.deepEqual(
         documentModel.schematic.ports.map((port) => ({
             name: port.name,

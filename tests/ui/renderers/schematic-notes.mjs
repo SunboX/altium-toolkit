@@ -145,3 +145,50 @@ test('renderSchematicSvg centers compact marker notes in their note box', () => 
         /<text class="schematic-note-text" x="98" y="76.55" fill="var\(--schematic-alert-color\)" text-anchor="middle" font-size="13" font-family="Times New Roman" font-weight="700" xml:space="preserve">NF</
     )
 })
+
+/**
+ * Verifies single-token borderless text frames retain their authored text size
+ * even when the frame is only slightly taller than the requested font.
+ */
+test('renderSchematicSvg keeps compact symbol text-frame labels at source size', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Symbol label frame schematic' },
+        schematic: {
+            sheet: { width: 180, height: 120 },
+            lines: [],
+            texts: [
+                {
+                    x: 120,
+                    y: 44,
+                    text: 'PORTX',
+                    color: '#000000',
+                    hidden: false,
+                    recordType: '28',
+                    style: 0,
+                    fontSize: 10,
+                    fontFamily: 'Times New Roman',
+                    fontWeight: 700,
+                    rotation: 0,
+                    anchor: 'middle',
+                    cornerX: 153,
+                    cornerY: 58,
+                    fill: '#ffffff',
+                    borderColor: '#000000',
+                    isSolid: false,
+                    showBorder: false,
+                    textMargin: 4,
+                    noteLines: ['PORTX']
+                }
+            ],
+            components: [],
+            pins: [],
+            ports: [],
+            crosses: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /<text class="schematic-note-text" x="136\.50" y="72\.15" fill="var\(--schematic-text-color\)" text-anchor="middle" font-size="9" font-family="Times New Roman" font-weight="700" xml:space="preserve">PORTX</
+    )
+})

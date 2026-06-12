@@ -20,14 +20,16 @@ export class PcbEmbeddedModelExtractor {
      * @returns {{ models: { id: string, checksum: number, name: string, format: string, payloadText: string, sourceStream: string, transform: { rotationDeg: { x: number, y: number, z: number }, dzMil: number } }[], componentBodies: { sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null }[] }}
      */
     static extractFromStreams(streams) {
+        const modelStreamPrefix =
+            PcbEmbeddedModelExtractor.#resolveModelStreamPrefix(streams)
         const modelMetadataRecords =
             PcbEmbeddedModelExtractor.#parseModelMetadataStream(
-                streams.get('Models/Data')
+                streams.get(modelStreamPrefix + '/Data')
             )
         const modelMetadataRows = modelMetadataRecords.map((fields, index) => ({
             fields,
             index,
-            sourceStream: 'Models/' + index,
+            sourceStream: modelStreamPrefix + '/' + index,
             id: PcbEmbeddedModelExtractor.#getField(fields, 'ID'),
             name: PcbEmbeddedModelExtractor.#getField(fields, 'NAME'),
             checksum: PcbEmbeddedModelExtractor.#normalizeChecksum(
@@ -70,7 +72,24 @@ export class PcbEmbeddedModelExtractor {
     }
 
     /**
-     * Parses the length-prefixed `Models/Data` metadata stream.
+     * Resolves the embedded-model stream folder used by the compound document.
+     * @param {Map<string, Uint8Array>} streams
+     * @returns {string}
+     */
+    static #resolveModelStreamPrefix(streams) {
+        if (streams.has('Models/Data')) {
+            return 'Models'
+        }
+
+        if (streams.has('Library/Models/Data')) {
+            return 'Library/Models'
+        }
+
+        return 'Models'
+    }
+
+    /**
+     * Parses the length-prefixed model metadata stream.
      * @param {Uint8Array | undefined} bytes
      * @returns {Record<string, string | string[]>[]}
      */

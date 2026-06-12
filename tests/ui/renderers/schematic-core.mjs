@@ -123,6 +123,45 @@ test('renderSchematicSvg maps imported schematic colors to theme variables', () 
 })
 
 /**
+ * Verifies checkbox no-ERC records render as a square checkmark marker instead
+ * of falling back to the thin-cross glyph.
+ */
+test('renderSchematicSvg draws checkbox no-ERC markers as checkboxes', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Checkbox marker schematic' },
+        schematic: {
+            sheet: { width: 100, height: 100 },
+            lines: [],
+            texts: [],
+            components: [],
+            crosses: [
+                {
+                    x: 50,
+                    y: 40,
+                    size: 6,
+                    color: '#ff0000',
+                    symbolName: 'checkbox'
+                }
+            ]
+        }
+    })
+
+    assert.match(
+        markup,
+        /<g class="schematic-cross schematic-cross--checkbox">/
+    )
+    assert.match(
+        markup,
+        /<rect x="49" y="47" width="6" height="6" fill="none" stroke="var\(--schematic-alert-color\)" \/>/
+    )
+    assert.match(
+        markup,
+        /<polyline points="50\.20,50 52,51\.80 54\.80,48\.20" fill="none" stroke="var\(--schematic-alert-color\)" \/>/
+    )
+    assert.doesNotMatch(markup, /<g class="schematic-cross"><line/)
+})
+
+/**
  * Verifies solid schematic polygons render source fills, mapping known colors
  * to theme variables and preserving unknown normalized hex values.
  */
@@ -587,7 +626,7 @@ test('renderSchematicSvg inverts schematic Y coordinates for SVG', () => {
     )
     assert.match(
         markup,
-        /text class="schematic-pin-name" x="24" y="23" fill="var\(--schematic-text-color\)"[^>]*>EN</
+        /text class="schematic-pin-name" x="27" y="23" fill="var\(--schematic-text-color\)"[^>]*>EN</
     )
     assert.match(
         markup,
@@ -721,7 +760,7 @@ test('renderSchematicSvg rotates top crystal pin numbers for four-pin owners', (
 
 /**
  * Verifies compact number-only pins with authored double markers place their
- * numbers outside the marker glyph instead of overlapping either triangle.
+ * numbers from the route side back toward the marker glyph.
  */
 test('renderSchematicSvg clears double outer pin markers from pin numbers', () => {
     const markup = SchematicSvgRenderer.render({
@@ -777,11 +816,75 @@ test('renderSchematicSvg clears double outer pin markers from pin numbers', () =
 
     assert.match(
         markup,
-        /<polygon points="104,57 104,63 110,60"[\s\S]+<polygon points="101,57 101,63 95,60"[\s\S]+<text class="schematic-pin-number" x="93" y="59" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400">1<\/text>/
+        /<polygon points="104,57 104,63 110,60"[\s\S]+<polygon points="101,57 101,63 95,60"[\s\S]+<text class="schematic-pin-number" x="89" y="59" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">1<\/text>/
     )
     assert.match(
         markup,
-        /<polygon points="156,57 156,63 150,60"[\s\S]+<polygon points="159,57 159,63 165,60"[\s\S]+<text class="schematic-pin-number" x="167" y="59" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">2<\/text>/
+        /<polygon points="156,57 156,63 150,60"[\s\S]+<polygon points="159,57 159,63 165,60"[\s\S]+<text class="schematic-pin-number" x="171" y="59" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400">2<\/text>/
+    )
+})
+
+/**
+ * Verifies default electrical pin marker triangles also anchor numbers back
+ * toward the marker glyph from the route side.
+ */
+test('renderSchematicSvg clears default electrical pin markers from pin numbers', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Electrical marker schematic' },
+        schematic: {
+            sheet: {
+                width: 220,
+                height: 140,
+                fonts: {
+                    1: {
+                        size: 10,
+                        family: 'Times New Roman',
+                        bold: false,
+                        rotation: 0
+                    }
+                }
+            },
+            lines: [],
+            texts: [],
+            components: [],
+            pins: [
+                {
+                    x: 110,
+                    y: 80,
+                    length: 20,
+                    name: 'A',
+                    designator: '1',
+                    orientation: 'left',
+                    electrical: 1,
+                    color: '#0000ff',
+                    labelColor: '#1f1f1f',
+                    labelMode: 'number-only'
+                },
+                {
+                    x: 150,
+                    y: 80,
+                    length: 20,
+                    name: 'B',
+                    designator: '2',
+                    orientation: 'right',
+                    electrical: 1,
+                    color: '#0000ff',
+                    labelColor: '#1f1f1f',
+                    labelMode: 'number-only'
+                }
+            ],
+            ports: [],
+            crosses: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /<polygon points="105,57 105,63 110,60"[\s\S]+<polygon points="102,57 102,63 97,60"[\s\S]+<text class="schematic-pin-number" x="94" y="59" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">1<\/text>/
+    )
+    assert.match(
+        markup,
+        /<polygon points="155,57 155,63 150,60"[\s\S]+<polygon points="158,57 158,63 163,60"[\s\S]+<text class="schematic-pin-number" x="166" y="59" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400">2<\/text>/
     )
 })
 
@@ -997,7 +1100,7 @@ test('renderSchematicSvg uses sheet fonts for synthetic labels and skips duplica
     assert.doesNotMatch(markup, /class="schematic-node"/)
     assert.match(
         markup,
-        /text class="schematic-pin-name" x="24" y="23" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">EN</
+        /text class="schematic-pin-name" x="27" y="23" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">EN</
     )
     assert.match(
         markup,

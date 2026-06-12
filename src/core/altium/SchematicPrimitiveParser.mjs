@@ -99,6 +99,18 @@ export class SchematicPrimitiveParser {
     }
 
     /**
+     * Returns true when one point-listed record carries only an axis-aligned
+     * rectangular point list without authored `Location` and `Corner` fields.
+     * @param {Record<string, string | string[]>} fields
+     * @returns {boolean}
+     */
+    static isPointListedRectangleRecord(fields) {
+        return Boolean(
+            SchematicPrimitiveParser.#pointListedRectangleBounds(fields)
+        )
+    }
+
+    /**
      * Normalizes record-7 polygon primitives into fill-capable polygons.
      * @param {{ fields: Record<string, string | string[]> }[]} records
      * @returns {{ points: { x: number, y: number }[], color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string }[]}
@@ -352,16 +364,32 @@ export class SchematicPrimitiveParser {
     static parseSchematicRectangles(records) {
         return records
             .map((record, index) => {
-                const x1 = parseNumericField(record.fields, 'Location.X')
-                const y1 = parseNumericField(record.fields, 'Location.Y')
-                const x2 = parseNumericField(record.fields, 'Corner.X')
-                const y2 = parseNumericField(record.fields, 'Corner.Y')
+                const pointListedBounds =
+                    SchematicPrimitiveParser.#pointListedRectangleBounds(
+                        record.fields
+                    )
+                const x1 =
+                    parseNumericField(record.fields, 'Location.X') ??
+                    pointListedBounds?.minX ??
+                    null
+                const y1 =
+                    parseNumericField(record.fields, 'Location.Y') ??
+                    pointListedBounds?.minY ??
+                    null
+                const x2 =
+                    parseNumericField(record.fields, 'Corner.X') ??
+                    pointListedBounds?.maxX ??
+                    null
+                const y2 =
+                    parseNumericField(record.fields, 'Corner.Y') ??
+                    pointListedBounds?.maxY ??
+                    null
                 const isRectangleRecord =
                     SchematicPrimitiveParser.isRectangleRecord(record.fields)
                 const isListedRectangle =
                     SchematicPrimitiveParser.isListedRectangleRecord(
                         record.fields
-                    )
+                    ) || Boolean(pointListedBounds)
                 const usesFrameFallback =
                     SchematicPrimitiveParser.#shouldUseFrameFallback(
                         record.fields,
@@ -402,9 +430,15 @@ export class SchematicPrimitiveParser {
                         : parseBoolean(record.fields.Transparent),
                     lineWidth:
                         parseNumericField(record.fields, 'LineWidth') || 1,
-                    lineStyle: usesFrameFallback
-                        ? 1
-                        : parseNumericField(record.fields, 'LineStyle') || 0,
+                    lineStyle:
+                        usesFrameFallback ||
+                        SchematicPrimitiveParser.#shouldDefaultBlanketDash(
+                            record.fields,
+                            pointListedBounds
+                        )
+                            ? 1
+                            : parseNumericField(record.fields, 'LineStyle') ||
+                              0,
                     renderOrder: SchematicPrimitiveParser.#resolveRenderOrder(
                         record.fields,
                         index
@@ -987,6 +1021,80 @@ export class SchematicPrimitiveParser {
             getField(fields, 'LineStyle') === '' ||
             !/^-?\d+$/.test(getField(fields, 'Color'))
         )
+    }
+
+    /**
+     * Returns true when a point-listed blanket should use Altium's dashed frame
+     * style even when the printable record omits `LineStyle`.
+     * @param {Record<string, string | string[]>} fields Record fields.
+     * @param {{ minX: number, minY: number, maxX: number, maxY: number } | null} pointListedBounds Point-listed bounds.
+     * @returns {boolean}
+     */
+    static #shouldDefaultBlanketDash(fields, pointListedBounds) {
+        return (
+            Boolean(pointListedBounds) &&
+            getField(fields, 'RECORD') === '225' &&
+            getField(fields, 'LineStyle') === ''
+        )
+    }
+
+    /**
+     * Resolves rectangle bounds from a point-listed axis-aligned frame.
+     * @param {Record<string, string | string[]>} fields Record fields.
+     * @returns {{ minX: number, minY: number, maxX: number, maxY: number } | null}
+     */
+    static #pointListedRectangleBounds(fields) {
+        const points = SchematicPrimitiveParser.#normalizeClosedPointList(
+            SchematicPrimitiveParser.#collectPolygonPoints(fields)
+        )
+
+        if (points.length !== 4) {
+            return null
+        }
+
+        const xs = [...new Set(points.map((point) => point.x))]
+        const ys = [...new Set(points.map((point) => point.y))]
+
+        if (xs.length !== 2 || ys.length !== 2) {
+            return null
+        }
+
+        const minX = Math.min(...xs)
+        const maxX = Math.max(...xs)
+        const minY = Math.min(...ys)
+        const maxY = Math.max(...ys)
+        const corners = new Set([
+            minX + ':' + minY,
+            minX + ':' + maxY,
+            maxX + ':' + minY,
+            maxX + ':' + maxY
+        ])
+
+        if (!points.every((point) => corners.has(point.x + ':' + point.y))) {
+            return null
+        }
+
+        return { minX, minY, maxX, maxY }
+    }
+
+    /**
+     * Removes an optional repeated closing point from one source point list.
+     * @param {{ x: number, y: number }[]} points Source points.
+     * @returns {{ x: number, y: number }[]}
+     */
+    static #normalizeClosedPointList(points) {
+        if (points.length < 2) {
+            return points
+        }
+
+        const first = points[0]
+        const last = points.at(-1)
+
+        if (first.x === last.x && first.y === last.y) {
+            return points.slice(0, -1)
+        }
+
+        return points
     }
 
     /**

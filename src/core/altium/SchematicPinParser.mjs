@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { ParserUtils } from './ParserUtils.mjs'
+import { SchematicNoErcSymbolResolver } from './SchematicNoErcSymbolResolver.mjs'
 import { SchematicPinDesignatorInferer } from './SchematicPinDesignatorInferer.mjs'
 
 /**
@@ -66,11 +67,9 @@ export class SchematicPinParser {
                 ),
                 designator: ParserUtils.getField(record.fields, 'Designator'),
                 orientation,
-                electrical:
-                    ParserUtils.parseNumericField(
-                        record.fields,
-                        'Electrical'
-                    ) || undefined,
+                electrical: SchematicPinParser.#parseSchematicPinElectrical(
+                    record.fields
+                ),
                 symbolOuter:
                     ParserUtils.parseNumericField(
                         record.fields,
@@ -92,6 +91,30 @@ export class SchematicPinParser {
                 numericEndpointLabelOwners
             )
         )
+    }
+
+    /**
+     * Parses Altium's pin electrical type, including its omitted-field default.
+     * Formal schematic pin records omit Electrical for input pins and serialize
+     * passive pins explicitly as Electrical=4.
+     * @param {Record<string, string | string[]>} fields Pin record fields.
+     * @returns {number | undefined}
+     */
+    static #parseSchematicPinElectrical(fields) {
+        const explicitElectrical = ParserUtils.parseNumericField(
+            fields,
+            'Electrical'
+        )
+
+        if (explicitElectrical !== null) {
+            return explicitElectrical
+        }
+
+        if (ParserUtils.parseNumericField(fields, 'FormalType') !== null) {
+            return 0
+        }
+
+        return undefined
     }
 
     /**
@@ -386,24 +409,36 @@ export class SchematicPinParser {
     /**
      * Normalizes no-connect crosses from schematic records.
      * @param {{ fields: Record<string, string | string[]> }[]} records
-     * @returns {{ x: number, y: number, size: number, color: string }[]}
+     * @returns {{ x: number, y: number, size: number, color: string, symbol: number | null, symbolName: string }[]}
      */
     static parseSchematicCrosses(records) {
         return records
-            .map((record) => ({
-                x:
-                    ParserUtils.parseNumericField(
-                        record.fields,
-                        'Location.X'
-                    ) || 0,
-                y:
-                    ParserUtils.parseNumericField(
-                        record.fields,
-                        'Location.Y'
-                    ) || 0,
-                size: 6,
-                color: ParserUtils.toColor(record.fields.Color, '#ff0000')
-            }))
+            .map((record) => {
+                const rawSymbol = ParserUtils.getField(record.fields, 'Symbol')
+                const symbol = ParserUtils.parseNumericField(
+                    record.fields,
+                    'Symbol'
+                )
+
+                return {
+                    x:
+                        ParserUtils.parseNumericField(
+                            record.fields,
+                            'Location.X'
+                        ) || 0,
+                    y:
+                        ParserUtils.parseNumericField(
+                            record.fields,
+                            'Location.Y'
+                        ) || 0,
+                    size: 6,
+                    color: ParserUtils.toColor(record.fields.Color, '#ff0000'),
+                    symbol,
+                    symbolName: SchematicNoErcSymbolResolver.resolveSymbolName(
+                        rawSymbol || symbol
+                    )
+                }
+            })
             .filter((cross) => cross.x || cross.y)
     }
 
@@ -816,6 +851,13 @@ export class SchematicPinParser {
             SchematicPinParser.#isTwoPinNumericEndpointGroup(normalizedPins)
         ) {
             labelMode = 'number-only'
+        } else if (
+            SchematicPinParser.#isCompactSinglePinMarkerGroup(
+                normalizedPins,
+                names
+            )
+        ) {
+            labelMode = 'hidden'
         } else if (allPassive && normalizedPins.length <= 2) {
             labelMode = SchematicPinParser.#isCanonicalPassiveTwoPinGroup(
                 normalizedPins
@@ -873,6 +915,31 @@ export class SchematicPinParser {
             labelColor: pin.labelColor || '#1f1f1f',
             labelMode
         }))
+    }
+
+    /**
+     * Returns true when a single owner pin belongs to compact marker artwork
+     * rather than to a visibly numbered electrical contact.
+     * @param {{ designator: string, name: string, length: number, electrical?: number }[]} pins
+     * @param {string[]} names
+     * @returns {boolean}
+     */
+    static #isCompactSinglePinMarkerGroup(pins, names) {
+        if (pins.length !== 1 || names.length !== 0) {
+            return false
+        }
+
+        const pin = pins[0]
+        const designator = String(pin.designator || '').trim()
+        const length = Math.abs(Number(pin.length || 0))
+        const electrical = Number(pin.electrical)
+
+        return (
+            /^\d+$/.test(designator) &&
+            length > 0 &&
+            length <= 15 &&
+            (!Number.isFinite(electrical) || electrical === 4)
+        )
     }
 
     /**

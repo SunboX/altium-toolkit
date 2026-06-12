@@ -216,6 +216,43 @@ test('parseAltiumArrayBuffer hides compact two-pin internal terminal names', () 
 })
 
 /**
+ * Verifies compact single-pin owner marker glyphs keep connectivity without
+ * adding a generated contact number over the marker artwork.
+ */
+test('parseAltiumArrayBuffer hides compact single-pin marker numbers', () => {
+    const documentModel = parseSchematicRecords([
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=260|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=1|IndexInSheet=640|Location.X=130|Location.Y=90|LibReference=FAKE/MARKER-CELL|UniqueID=CMP-J',
+        '|RECORD=13|OwnerIndex=640|OwnerPartId=1|Location.X=130|Location.Y=100|Corner.X=132|Corner.Y=96|LineWidth=1|Color=16711680',
+        '|RECORD=13|OwnerIndex=640|OwnerPartId=1|Location.X=128|Location.Y=96|Corner.X=130|Corner.Y=100|LineWidth=1|Color=16711680',
+        '|RECORD=6|OwnerIndex=640|OwnerPartId=1|Location.X=128|Location.Y=96|Corner.X=132|Corner.Y=96|LineWidth=1|Color=0',
+        '|RECORD=2|OwnerIndex=640|OwnerPartId=1|Electrical=4|PinConglomerate=35|PinLength=10' +
+            '|Location.X=130|Location.Y=100|Name=|Designator=1',
+        '|RECORD=34|OwnerIndex=640|Location.X=120|Location.Y=75|Color=0|FontID=1|Text=FD7|Name=Designator'
+    ])
+    const ownerPins = documentModel.schematic.pins.filter(
+        (pin) => pin.ownerIndex === '640'
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.deepEqual(
+        ownerPins.map((pin) => ({
+            name: pin.name,
+            designator: pin.designator,
+            labelMode: pin.labelMode
+        })),
+        [{ name: '', designator: '1', labelMode: 'hidden' }]
+    )
+    assert.equal(
+        (markup.match(/class="schematic-pin-number"/g) || []).length,
+        0
+    )
+})
+
+/**
  * Verifies single-pin owner names do not duplicate a connected power-port
  * label that already names the same net.
  */

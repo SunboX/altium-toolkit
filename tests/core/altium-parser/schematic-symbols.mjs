@@ -1134,6 +1134,36 @@ test('parseAltiumArrayBuffer defaults omitted pin colors to symbol ink', () => {
     )
     assert.match(
         markup,
-        /<line class="schematic-pin-line" x1="100" y1="40" x2="70" y2="40" stroke="var\(--schematic-text-color\)" \/>/
+        /<line class="schematic-pin-line" x1="100" y1="40" x2="70" y2="40" stroke="var\(--schematic-accent-ink-color\)" \/>/
     )
+})
+
+/**
+ * Verifies native pin records that omit Electrical keep Altium's default input
+ * type instead of being treated as passive markerless contacts.
+ */
+test('parseAltiumArrayBuffer defaults omitted formal pin electrical type to input', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=180|CustomY=120|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=2|OwnerIndex=700|OwnerPartId=1|FormalType=1|PinConglomerate=58' +
+            '|PinLength=20|Location.X=100|Location.Y=80|Name=IN_A|Designator=1',
+        '|RECORD=2|OwnerIndex=700|OwnerPartId=1|FormalType=1|Electrical=4' +
+            '|PinConglomerate=58|PinLength=20|Location.X=100|Location.Y=60|Name=PASS_A|Designator=2'
+    ]
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'default-pin-electrical.SchDoc',
+        new TextEncoder().encode(records.join('')).buffer
+    )
+    const inputPin = documentModel.schematic.pins.find(
+        (pin) => pin.designator === '1'
+    )
+    const passivePin = documentModel.schematic.pins.find(
+        (pin) => pin.designator === '2'
+    )
+
+    assert.equal(inputPin.electrical, 0)
+    assert.equal(passivePin.electrical, 4)
 })

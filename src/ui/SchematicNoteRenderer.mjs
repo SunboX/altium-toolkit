@@ -8,6 +8,7 @@ import { SchematicTypography } from './SchematicTypography.mjs'
 
 const { escapeHtml, formatNumber, projectSchematicY } = SchematicSvgUtils
 const MINIMUM_NOTE_TEXT_SIZE = 4
+const COMPACT_SINGLE_LINE_HEIGHT_RATIO = 1.6
 
 /**
  * Renders boxed schematic notes recovered from Altium note records.
@@ -328,7 +329,10 @@ export class SchematicNoteRenderer {
             String(line || '').trim()
         ).length
 
-        return visibleLineCount === 1 && height <= requestedTextSize * 1.5
+        return (
+            visibleLineCount === 1 &&
+            height <= requestedTextSize * COMPACT_SINGLE_LINE_HEIGHT_RATIO
+        )
     }
 
     /**

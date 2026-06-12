@@ -24,6 +24,8 @@ export class PcbOutlineRecovery {
 
     static #MAX_DIRECT_RENDER_ARC_SWEEP_DEGREES = 120
 
+    static #MAX_MECHANICAL_FRAME_TO_AUTHORED_AREA_RATIO = 16
+
     /**
      * Selects a recoverable board outline from mechanical track layers.
      * @param {{ fallbackOutline: { minX: number, minY: number, widthMil: number, heightMil: number, segments: Array<Record<string, number | string>> }, components: { x: number, y: number }[], tracks: { x1: number, y1: number, x2: number, y2: number, width: number, layerId?: number }[] }} options
@@ -69,6 +71,20 @@ export class PcbOutlineRecovery {
         )
 
         if (!boundaryLayer) {
+            return {
+                source: 'fallback',
+                layerId: null,
+                outline: fallbackOutline
+            }
+        }
+
+        if (
+            PcbOutlineRecovery.#shouldKeepAuthoredOutline(
+                fallbackOutline,
+                boundaryLayer.bounds,
+                componentBounds
+            )
+        ) {
             return {
                 source: 'fallback',
                 layerId: null,
@@ -164,6 +180,84 @@ export class PcbOutlineRecovery {
         candidates.sort((left, right) => left.area - right.area)
 
         return candidates[0] || null
+    }
+
+    /**
+     * Returns true when the mechanical candidate is likely a drawing frame
+     * around an otherwise plausible authored board route.
+     * @param {{ minX: number, minY: number, widthMil: number, heightMil: number, segments?: Array<Record<string, number | string>> }} authoredOutline Authored board-route outline.
+     * @param {{ widthMil: number, heightMil: number }} mechanicalBounds Mechanical track-layer bounds.
+     * @param {{ centerX: number, centerY: number }} componentBounds Component placement envelope.
+     * @returns {boolean}
+     */
+    static #shouldKeepAuthoredOutline(
+        authoredOutline,
+        mechanicalBounds,
+        componentBounds
+    ) {
+        if (
+            !PcbOutlineRecovery.#isClosedOutlinePath(
+                authoredOutline?.segments || []
+            )
+        ) {
+            return false
+        }
+
+        const authoredArea =
+            Number(authoredOutline?.widthMil || 0) *
+            Number(authoredOutline?.heightMil || 0)
+        const mechanicalArea =
+            Number(mechanicalBounds?.widthMil || 0) *
+            Number(mechanicalBounds?.heightMil || 0)
+
+        if (!authoredArea || !mechanicalArea) {
+            return false
+        }
+
+        if (
+            mechanicalArea / authoredArea <=
+            PcbOutlineRecovery.#MAX_MECHANICAL_FRAME_TO_AUTHORED_AREA_RATIO
+        ) {
+            return false
+        }
+
+        return PcbOutlineRecovery.#outlineEnvelopeContainsPoint(
+            authoredOutline,
+            componentBounds?.centerX,
+            componentBounds?.centerY
+        )
+    }
+
+    /**
+     * Returns true when one point falls within an outline's bounding envelope.
+     * @param {{ minX?: number, minY?: number, widthMil?: number, heightMil?: number }} outline Outline bounds.
+     * @param {number} x Point X coordinate.
+     * @param {number} y Point Y coordinate.
+     * @returns {boolean}
+     */
+    static #outlineEnvelopeContainsPoint(outline, x, y) {
+        const minX = Number(outline?.minX)
+        const minY = Number(outline?.minY)
+        const widthMil = Number(outline?.widthMil)
+        const heightMil = Number(outline?.heightMil)
+
+        if (
+            !Number.isFinite(minX) ||
+            !Number.isFinite(minY) ||
+            !Number.isFinite(widthMil) ||
+            !Number.isFinite(heightMil) ||
+            !Number.isFinite(x) ||
+            !Number.isFinite(y)
+        ) {
+            return false
+        }
+
+        return (
+            x >= minX &&
+            x <= minX + widthMil &&
+            y >= minY &&
+            y <= minY + heightMil
+        )
     }
 
     /**

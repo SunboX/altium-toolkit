@@ -71,9 +71,16 @@ export class PcbScene3dBuilder {
                 ? boardOutline.segments
                 : []
         }
+        const componentBodyModels = componentBodies.map((componentBody) =>
+            PcbScene3dBuilder.#resolveComponentBodyModel(
+                componentBody,
+                modelRegistry
+            )
+        )
         const bodyMatches = PcbScene3dBuilder.#resolveComponentBodyMatches(
             componentBodies,
-            components
+            components,
+            componentBodyModels
         )
         const topSilkscreen = PcbScene3dBuilder.#buildSilkscreenSide(
             primitiveLayers,
@@ -127,11 +134,11 @@ export class PcbScene3dBuilder {
                     PcbScene3dBuilder.#buildExternalPlacement(
                         componentBody,
                         bodyMatches[index],
+                        componentBodyModels[index],
                         components,
                         pads,
                         board,
-                        thicknessMil,
-                        modelRegistry
+                        thicknessMil
                     )
                 )
                 .filter(Boolean),
@@ -211,28 +218,36 @@ export class PcbScene3dBuilder {
     }
 
     /**
+     * Resolves one component-body model through the active registry.
+     * @param {{ modelId?: string, checksum?: number | null, name?: string }} componentBody Component body metadata.
+     * @param {{ resolveComponentBodyModel?: (componentBody: any) => { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } | null } | null} modelRegistry Model registry.
+     * @returns {{ origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } | null}
+     */
+    static #resolveComponentBodyModel(componentBody, modelRegistry) {
+        return modelRegistry?.resolveComponentBodyModel?.(componentBody) || null
+    }
+
+    /**
      * Builds one explicit external-model placement from normalized component
      * body metadata.
      * @param {{ modelId?: string, checksum?: number | null, embedded?: boolean, name?: string, identifier?: string, layer?: string, positionMil?: { x?: number, y?: number }, rotationDeg?: number, modelRotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number }} componentBody
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null } | null} matchedComponent
+     * @param {{ origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } | null} resolvedModel
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string }[]} components
      * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[]} pads
      * @param {{ centerX: number, centerY: number }} board
      * @param {number} thicknessMil
-     * @param {{ resolveComponentBodyModel?: (componentBody: any) => { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } | null } | null} modelRegistry
      * @returns {{ designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, bodyRotationDeg: number, modelTransform: { rotationDeg: { x: number, y: number, z: number }, dzMil: number }, externalModel: { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } } | null}
      */
     static #buildExternalPlacement(
         componentBody,
         matchedComponent,
+        resolvedModel,
         components,
         pads,
         board,
-        thicknessMil,
-        modelRegistry
+        thicknessMil
     ) {
-        const resolvedModel =
-            modelRegistry?.resolveComponentBodyModel?.(componentBody) || null
         if (!resolvedModel) {
             return null
         }
@@ -247,7 +262,8 @@ export class PcbScene3dBuilder {
         const mountSide = PcbScene3dPlacementSideResolver.resolvePlacementSide(
             componentBody,
             matchedComponent,
-            components
+            components,
+            board
         )
         const halfBoardThickness = thicknessMil / 2
         const sourcePosition =
@@ -283,7 +299,9 @@ export class PcbScene3dBuilder {
             bodyRotationDeg: Number(componentBody.rotationDeg || 0),
             modelTransform: {
                 rotationDeg: modelRotation,
-                dzMil: Number(componentBody.dzMil || 0)
+                dzMil: PcbScene3dBuilder.#resolveComponentBodyVerticalOffset(
+                    componentBody
+                )
             },
             projection: PcbScene3dBuilder.#resolveProjectionDiagnostics(
                 componentBody,
@@ -293,6 +311,22 @@ export class PcbScene3dBuilder {
             ),
             externalModel: resolvedModel
         }
+    }
+
+    /**
+     * Resolves the vertical offset that should remain after the viewer seats
+     * raw model bounds on the board face.
+     * @param {{ dzMil?: number, standoffHeightMil?: number | null }} componentBody Component-body placement metadata.
+     * @returns {number}
+     */
+    static #resolveComponentBodyVerticalOffset(componentBody) {
+        const standoffHeightMil = Number(componentBody?.standoffHeightMil)
+        if (Number.isFinite(standoffHeightMil)) {
+            return standoffHeightMil < 0 ? standoffHeightMil : 0
+        }
+
+        const dzMil = Number(componentBody?.dzMil)
+        return Number.isFinite(dzMil) && dzMil < 0 ? dzMil : 0
     }
 
     /**
@@ -420,19 +454,34 @@ export class PcbScene3dBuilder {
      * components.
      * @param {{ modelId?: string, name?: string, identifier?: string, positionMil?: { x?: number, y?: number } }[]} componentBodies
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string }[]} components
+     * @param {({ origin: string, name: string, format: string } | null)[]} resolvedBodyModels
      * @returns {({ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string } | null)[]}
      */
-    static #resolveComponentBodyMatches(componentBodies, components) {
+    static #resolveComponentBodyMatches(
+        componentBodies,
+        components,
+        resolvedBodyModels
+    ) {
         const matches = new Array(componentBodies.length).fill(null)
         const assignedBodyIndexes = new Set()
         const assignedComponentIndexes = new Set()
         const closeCandidates = []
         const matchContext = PcbScene3dBuilder.#buildBodyMatchContext(
             componentBodies,
-            components
+            components,
+            resolvedBodyModels
         )
 
         componentBodies.forEach((componentBody, bodyIndex) => {
+            if (
+                !PcbScene3dBuilder.#isResolvableComponentBody(
+                    resolvedBodyModels,
+                    bodyIndex
+                )
+            ) {
+                return
+            }
+
             components.forEach((component, componentIndex) => {
                 const distance =
                     PcbScene3dBuilder.#distanceBetweenBodyAndComponent(
@@ -449,9 +498,31 @@ export class PcbScene3dBuilder {
                         distance
                     )
                 ) {
+                    const affinityScore =
+                        PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
+                            componentBody,
+                            component
+                        )
+                    const sideCompatible =
+                        PcbScene3dBuilder.#isBodyComponentSideCompatible(
+                            componentBody,
+                            component
+                        )
+                    const precise =
+                        PcbScene3dBuilder.#isPreciseBodyComponentDistance(
+                            distance
+                        )
+
                     closeCandidates.push({
                         bodyIndex,
                         componentIndex,
+                        affinityScore,
+                        preciseOwnerScore:
+                            precise && (sideCompatible || affinityScore > 0)
+                                ? 1
+                                : 0,
+                        sideAffinityScore:
+                            sideCompatible && affinityScore > 0 ? 1 : 0,
                         distance
                     })
                 }
@@ -459,7 +530,13 @@ export class PcbScene3dBuilder {
         })
 
         closeCandidates
-            .sort((left, right) => left.distance - right.distance)
+            .sort(
+                (left, right) =>
+                    right.preciseOwnerScore - left.preciseOwnerScore ||
+                    right.sideAffinityScore - left.sideAffinityScore ||
+                    right.affinityScore - left.affinityScore ||
+                    left.distance - right.distance
+            )
             .forEach(({ bodyIndex, componentIndex }) => {
                 if (
                     assignedBodyIndexes.has(bodyIndex) ||
@@ -475,6 +552,15 @@ export class PcbScene3dBuilder {
 
         const groupedBodyIndexes = new Map()
         componentBodies.forEach((componentBody, bodyIndex) => {
+            if (
+                !PcbScene3dBuilder.#isResolvableComponentBody(
+                    resolvedBodyModels,
+                    bodyIndex
+                )
+            ) {
+                return
+            }
+
             const groupKey =
                 PcbScene3dPlacementSideResolver.resolveBodyGroupKey(
                     componentBody
@@ -543,14 +629,28 @@ export class PcbScene3dBuilder {
      * Builds reusable identity statistics for body/component matching.
      * @param {{ modelId?: string, name?: string, identifier?: string }[]} componentBodies
      * @param {{ pattern?: string, source?: string, modelPath?: string }[]} components
+     * @param {({ origin: string, name: string, format: string } | null)[]} resolvedBodyModels
      * @returns {{ bodyGroupCounts: Map<string, number>, candidateComponentCounts: Map<string, number> }}
      */
-    static #buildBodyMatchContext(componentBodies, components) {
+    static #buildBodyMatchContext(
+        componentBodies,
+        components,
+        resolvedBodyModels
+    ) {
         const bodyGroupCounts = new Map()
         const bodyByGroup = new Map()
         const candidateComponentCounts = new Map()
 
-        for (const componentBody of componentBodies) {
+        componentBodies.forEach((componentBody, bodyIndex) => {
+            if (
+                !PcbScene3dBuilder.#isResolvableComponentBody(
+                    resolvedBodyModels,
+                    bodyIndex
+                )
+            ) {
+                return
+            }
+
             const groupKey =
                 PcbScene3dPlacementSideResolver.resolveBodyGroupKey(
                     componentBody
@@ -562,7 +662,7 @@ export class PcbScene3dBuilder {
             if (!bodyByGroup.has(groupKey)) {
                 bodyByGroup.set(groupKey, componentBody)
             }
-        }
+        })
 
         bodyByGroup.forEach((componentBody, groupKey) => {
             candidateComponentCounts.set(
@@ -581,6 +681,91 @@ export class PcbScene3dBuilder {
     }
 
     /**
+     * Returns true when one body row can produce a renderable external model.
+     * @param {unknown[]} resolvedBodyModels Resolved body-model entries.
+     * @param {number} bodyIndex Body index.
+     * @returns {boolean}
+     */
+    static #isResolvableComponentBody(resolvedBodyModels, bodyIndex) {
+        return Boolean(
+            Array.isArray(resolvedBodyModels)
+                ? resolvedBodyModels[bodyIndex]
+                : true
+        )
+    }
+
+    /**
+     * Returns true when the body/component anchors are close enough to be
+     * considered an explicit placement match.
+     * @param {number} distanceMil Body/component anchor distance in mil.
+     * @returns {boolean}
+     */
+    static #isPreciseBodyComponentDistance(distanceMil) {
+        return (
+            Number(distanceMil) <=
+            PcbScene3dBuilder.#PRECISE_BODY_MATCH_TOLERANCE_MIL
+        )
+    }
+
+    /**
+     * Checks whether the authored mechanical layer agrees with the component
+     * layer. Unknown sides remain neutral so generic mechanical bodies can
+     * still match from distance and identity.
+     * @param {{ layer?: string }} componentBody Component-body record.
+     * @param {{ layer?: string }} component Component record.
+     * @returns {boolean}
+     */
+    static #isBodyComponentSideCompatible(componentBody, component) {
+        const bodySide = PcbScene3dBuilder.#resolveMechanicalLayerSide(
+            componentBody?.layer
+        )
+        const componentSide = PcbScene3dBuilder.#resolveComponentLayerSide(
+            component?.layer
+        )
+
+        return !bodySide || !componentSide || bodySide === componentSide
+    }
+
+    /**
+     * Resolves a component layer to a board side.
+     * @param {string | undefined} layer Component layer.
+     * @returns {'top' | 'bottom' | null}
+     */
+    static #resolveComponentLayerSide(layer) {
+        const normalized = String(layer || '')
+            .trim()
+            .toUpperCase()
+
+        if (!normalized) {
+            return null
+        }
+
+        if (normalized.includes('BOTTOM') || normalized === 'BOT') {
+            return 'bottom'
+        }
+
+        if (normalized.includes('TOP')) {
+            return 'top'
+        }
+
+        return null
+    }
+
+    /**
+     * Resolves common paired Altium mechanical layer numbers to a board side.
+     * @param {string | undefined} layer Mechanical layer.
+     * @returns {'top' | 'bottom' | null}
+     */
+    static #resolveMechanicalLayerSide(layer) {
+        const match = String(layer || '').match(/^MECHANICAL\s*(\d+)$/i)
+        if (!match) {
+            return null
+        }
+
+        return Number(match[1]) % 2 === 0 ? 'bottom' : 'top'
+    }
+
+    /**
      * Returns true when a close body/component pair is identity-compatible and
      * the body group can be matched one-to-one to component anchors.
      * @param {{ modelId?: string, name?: string, identifier?: string }} componentBody
@@ -595,10 +780,7 @@ export class PcbScene3dBuilder {
         matchContext,
         distanceMil
     ) {
-        if (
-            Number(distanceMil) <=
-            PcbScene3dBuilder.#PRECISE_BODY_MATCH_TOLERANCE_MIL
-        ) {
+        if (PcbScene3dBuilder.#isPreciseBodyComponentDistance(distanceMil)) {
             return true
         }
 

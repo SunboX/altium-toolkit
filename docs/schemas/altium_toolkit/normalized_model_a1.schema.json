@@ -1548,7 +1548,7 @@
                 "displayName",
                 "includeInBom",
                 "includeInNetlist",
-                "includeInPnp"
+                "includeInPlacement"
             ],
             "properties": {
                 "value": {
@@ -1566,7 +1566,7 @@
                 "includeInNetlist": {
                     "type": "boolean"
                 },
-                "includeInPnp": {
+                "includeInPlacement": {
                     "type": "boolean"
                 }
             },

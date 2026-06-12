@@ -124,3 +124,21 @@ test('PcbScene3dModelRegistry resolves exact board assembly model matches', () =
     assert.equal(assemblyMatch?.format, 'step')
     assert.equal(missingMatch, null)
 })
+
+test('PcbScene3dModelRegistry preserves session model source metadata', () => {
+    const registry = PcbScene3dModelRegistry.create([
+        {
+            name: 'QFN32.step',
+            relativePath: 'Models/QFN32.step',
+            source: 'model-search'
+        }
+    ])
+
+    const match = registry.resolveComponentModel({
+        designator: 'U1',
+        pattern: 'QFN32'
+    })
+
+    assert.equal(match?.origin, 'session')
+    assert.equal(match?.source, 'model-search')
+})

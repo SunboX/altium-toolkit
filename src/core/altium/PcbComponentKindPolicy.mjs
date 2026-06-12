@@ -12,49 +12,49 @@ const KIND_BY_VALUE = {
         displayName: 'Standard',
         includeInBom: true,
         includeInNetlist: true,
-        includeInPnp: true
+        includeInPlacement: true
     },
     1: {
         name: 'mechanical',
         displayName: 'Mechanical',
         includeInBom: true,
         includeInNetlist: true,
-        includeInPnp: true
+        includeInPlacement: true
     },
     2: {
         name: 'graphical',
         displayName: 'Graphical',
         includeInBom: false,
         includeInNetlist: false,
-        includeInPnp: false
+        includeInPlacement: false
     },
     3: {
         name: 'net-tie-bom',
         displayName: 'Net Tie BOM',
         includeInBom: true,
         includeInNetlist: true,
-        includeInPnp: true
+        includeInPlacement: true
     },
     4: {
         name: 'net-tie-no-bom',
         displayName: 'Net Tie No BOM',
         includeInBom: false,
         includeInNetlist: true,
-        includeInPnp: true
+        includeInPlacement: true
     },
     5: {
         name: 'standard-no-bom',
         displayName: 'Standard No BOM',
         includeInBom: false,
         includeInNetlist: true,
-        includeInPnp: true
+        includeInPlacement: true
     },
     6: {
         name: 'jumper',
         displayName: 'Jumper',
         includeInBom: true,
         includeInNetlist: true,
-        includeInPnp: true
+        includeInPlacement: true
     }
 }
 
@@ -65,7 +65,7 @@ export class PcbComponentKindPolicy {
     /**
      * Parses native versioned component-kind fields.
      * @param {Record<string, string | string[]>} fields Native component row.
-     * @returns {{ value: number, name: string, displayName: string, includeInBom: boolean, includeInNetlist: boolean, includeInPnp: boolean } | undefined}
+     * @returns {{ value: number, name: string, displayName: string, includeInBom: boolean, includeInNetlist: boolean, includeInPlacement: boolean } | undefined}
      */
     static parse(fields) {
         if (!PcbComponentKindPolicy.#hasKindField(fields)) return undefined
@@ -76,7 +76,7 @@ export class PcbComponentKindPolicy {
             displayName: 'Unknown',
             includeInBom: true,
             includeInNetlist: true,
-            includeInPnp: true
+            includeInPlacement: true
         }
 
         return {

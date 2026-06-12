@@ -111,6 +111,43 @@ helpers. `PcbStatisticsBuilder` emits board QA summaries used by `.PcbDoc`
 models. `SchematicProjectParameterResolver` resolves dot-prefixed and
 equals-prefixed schematic special strings for parser and SVG integrations.
 
+## Library Exporters
+
+```js
+import {
+    SourceComponentClient,
+    SourceComponentBundleNormalizer,
+    SourceBundleExporter,
+    AltiumSchLibExporter,
+    AltiumPcbLibExporter,
+    AltiumLibraryBatchExporter
+} from 'altium-toolkit/parser'
+```
+
+The exporter surface is local-first and host-controlled:
+
+- `SourceComponentClient` performs component search, component fetch, model
+  asset fetch, retry, and response validation through an injected `fetcher`.
+  It does not use global `fetch` implicitly.
+- `SourceComponentBundleNormalizer.normalize(raw)` converts provider-specific
+  component responses into a deterministic bundle with `symbol`, `footprint`,
+  `models`, `metadata`, `sourceJson`, and diagnostics fields.
+- `SourceBundleExporter.export(bundle)` emits deterministic raw source bundle
+  entries: `manifest.json`, `source/source.json`, and optional `models/*`
+  assets.
+- `AltiumSchLibExporter.export(bundles)` and
+  `AltiumPcbLibExporter.export(bundles)` write compact OLE-backed `.SchLib`
+  and `.PcbLib` byte arrays. The `.PcbLib` writer includes generated library
+  streams plus STEP/WRL model payload streams when the normalized bundle
+  contains model assets.
+- `AltiumLibraryBatchExporter` orchestrates id lists, search-and-export,
+  per-component source/SchLib/PcbLib outputs, merged library outputs,
+  append/skip manifests, progress events, continue-on-error diagnostics, and
+  checkpoint state.
+
+Hosts are responsible for choosing and configuring any outbound component
+source. Tests use repo-owned fake responses only.
+
 ## Netlist Query
 
 ```js

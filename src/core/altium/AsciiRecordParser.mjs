@@ -146,17 +146,11 @@ export class AsciiRecordParser {
             const rawKey = AsciiRecordParser.#trimAscii(
                 segment.slice(0, separatorIndex)
             )
-            const value = PrintableTextDecoder.decodeBytes(
-                AsciiRecordParser.#binaryStringToBytes(
-                    AsciiRecordParser.#trimAscii(
-                        segment.slice(separatorIndex + 1)
-                    )
-                ),
-                {
-                    encoding: rawKey.startsWith('%UTF8%') ? 'utf-8' : undefined
-                }
-            )
             const isUtf8Field = rawKey.startsWith('%UTF8%')
+            const value = AsciiRecordParser.#decodeFieldValue(
+                AsciiRecordParser.#trimAscii(segment.slice(separatorIndex + 1)),
+                isUtf8Field ? 'utf-8' : ''
+            )
             const key = rawKey.replace(/^%UTF8%/, '')
             if (!key) continue
 
@@ -229,12 +223,50 @@ export class AsciiRecordParser {
     }
 
     /**
+     * Decodes one pipe-delimited field value from the byte-preserving run
+     * string. Plain ASCII is already decoded by construction and can avoid
+     * byte-array allocation plus TextDecoder fallback probing.
+     * @param {string} value Byte-preserving field value.
+     * @param {string} preferredEncoding Optional preferred decoder encoding.
+     * @returns {string}
+     */
+    static #decodeFieldValue(value, preferredEncoding) {
+        if (!AsciiRecordParser.#hasExtendedByte(value)) {
+            return value
+        }
+
+        return PrintableTextDecoder.decodeBytes(
+            AsciiRecordParser.#binaryStringToBytes(value),
+            { encoding: preferredEncoding || undefined }
+        )
+    }
+
+    /**
      * Converts one binary string into bytes without altering byte values.
      * @param {string} value
      * @returns {Uint8Array}
      */
     static #binaryStringToBytes(value) {
-        return Uint8Array.from(value, (character) => character.charCodeAt(0))
+        const bytes = new Uint8Array(value.length)
+
+        for (let index = 0; index < value.length; index += 1) {
+            bytes[index] = value.charCodeAt(index) & 0xff
+        }
+
+        return bytes
+    }
+
+    /**
+     * Returns true when the byte-preserving string contains non-ASCII bytes.
+     * @param {string} value Field value.
+     * @returns {boolean}
+     */
+    static #hasExtendedByte(value) {
+        for (let index = 0; index < value.length; index += 1) {
+            if (value.charCodeAt(index) > 0x7f) return true
+        }
+
+        return false
     }
 
     /**

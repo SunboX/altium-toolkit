@@ -34,6 +34,24 @@ Circuit JSON array. `JSON.stringify(result)` serializes only the Circuit JSON
 elements, including custom `altium_toolkit_*` sidecar elements; compatibility
 fields are intentionally omitted from serialized JSON.
 
+## Source Export Bundle
+
+`SourceComponentBundleNormalizer` produces the exporter input contract used by
+the source bundle, `.SchLib`, and `.PcbLib` writers:
+
+- `id` and `name`: stable component identity
+- `metadata`: provider metadata copied into deterministic plain-object form
+- `symbol`: schematic symbol name, pins, primitives, and raw source object
+- `footprint`: PCB footprint name, primitive families, and raw source object
+- `models`: model id, file name, format, bytes/text, and optional source URL
+- `sourceJson`: the original raw response retained for reproducible exports
+- `diagnostics`: warnings for incomplete source data
+
+`SourceBundleExporter.export()` serializes the original source response and a
+manifest that lists included model assets. It does not fetch network resources;
+callers provide already-normalized model bytes or use `SourceComponentClient`
+before exporting.
+
 ## Renderer Compatibility Fields
 
 For compatibility, `AltiumParser.parseArrayBuffer()` attaches the previous

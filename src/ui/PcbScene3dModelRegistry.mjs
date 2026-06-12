@@ -6,14 +6,14 @@
  * Indexes session companion assets for 3D model lookup.
  */
 export class PcbScene3dModelRegistry {
-    /** @type {{ file?: File | Blob | null, name: string, relativePath: string, format: string, normalizedPath: string, normalizedBaseName: string }[]} */
+    /** @type {{ file?: File | Blob | null, name: string, relativePath: string, format: string, source: string, normalizedPath: string, normalizedBaseName: string }[]} */
     #modelFiles
 
     /** @type {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string }[]} */
     #embeddedModels
 
     /**
-     * @param {{ file?: File | Blob | null, name: string, relativePath: string, format: string, normalizedPath: string, normalizedBaseName: string }[]} modelFiles
+     * @param {{ file?: File | Blob | null, name: string, relativePath: string, format: string, source: string, normalizedPath: string, normalizedBaseName: string }[]} modelFiles
      * @param {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string }[]} embeddedModels
      */
     constructor(modelFiles, embeddedModels) {
@@ -23,7 +23,7 @@ export class PcbScene3dModelRegistry {
 
     /**
      * Creates one model registry from session files.
-     * @param {{ name?: string, relativePath?: string }[]} sessionFiles
+     * @param {{ name?: string, relativePath?: string, source?: string }[]} sessionFiles
      * @param {{ id?: string, checksum?: number | null, name?: string, format?: string, payloadText?: string, sourceStream?: string }[]} [embeddedModels]
      * @returns {PcbScene3dModelRegistry}
      */
@@ -63,8 +63,8 @@ export class PcbScene3dModelRegistry {
 
     /**
      * Normalizes one session file into registry metadata.
-     * @param {{ name?: string, relativePath?: string }} file
-     * @returns {{ file?: File | Blob | null, name: string, relativePath: string, format: string, normalizedPath: string, normalizedBaseName: string } | null}
+     * @param {{ name?: string, relativePath?: string, source?: string }} file
+     * @returns {{ file?: File | Blob | null, name: string, relativePath: string, format: string, source: string, normalizedPath: string, normalizedBaseName: string } | null}
      */
     static #normalizeFile(file) {
         const relativePath = String(file?.relativePath || file?.name || '')
@@ -80,6 +80,7 @@ export class PcbScene3dModelRegistry {
             name,
             relativePath,
             format,
+            source: String(file?.source || ''),
             normalizedPath:
                 PcbScene3dModelRegistry.#normalizeToken(relativePath),
             normalizedBaseName: PcbScene3dModelRegistry.#normalizeToken(
@@ -122,13 +123,7 @@ export class PcbScene3dModelRegistry {
             (file) => file.normalizedPath === normalizedPath
         )
         if (byPath) {
-            return {
-                origin: 'session',
-                file: byPath.file,
-                name: byPath.name,
-                relativePath: byPath.relativePath,
-                format: byPath.format
-            }
+            return PcbScene3dModelRegistry.#sessionModelFromFile(byPath)
         }
 
         const fileName =
@@ -165,7 +160,7 @@ export class PcbScene3dModelRegistry {
     /**
      * Resolves one indexed file by normalized basename and format priority.
      * @param {string} normalizedBaseName
-     * @returns {{ file?: File | Blob | null, name: string, relativePath: string, format: string } | null}
+     * @returns {{ file?: File | Blob | null, name: string, relativePath: string, format: string, source?: string } | null}
      */
     #resolveByBaseName(normalizedBaseName) {
         if (!normalizedBaseName) {
@@ -184,13 +179,28 @@ export class PcbScene3dModelRegistry {
             return null
         }
 
-        return {
+        return PcbScene3dModelRegistry.#sessionModelFromFile(rankedMatches[0])
+    }
+
+    /**
+     * Builds public session model metadata from one indexed file row.
+     * @param {{ file?: File | Blob | null, name: string, relativePath: string, format: string, source?: string }} file Indexed model file.
+     * @returns {{ origin: 'session', file?: File | Blob | null, name: string, relativePath: string, format: string, source?: string }}
+     */
+    static #sessionModelFromFile(file) {
+        const model = {
             origin: 'session',
-            file: rankedMatches[0].file,
-            name: rankedMatches[0].name,
-            relativePath: rankedMatches[0].relativePath,
-            format: rankedMatches[0].format
+            file: file.file,
+            name: file.name,
+            relativePath: file.relativePath,
+            format: file.format
         }
+        const source = String(file.source || '').trim()
+        if (source) {
+            model.source = source
+        }
+
+        return model
     }
 
     /**

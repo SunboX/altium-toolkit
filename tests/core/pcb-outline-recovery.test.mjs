@@ -135,6 +135,43 @@ test('PcbOutlineRecovery selects the enclosing mechanical boundary layer', () =>
 })
 
 /**
+ * Verifies unrelated mechanical drawing frames do not replace a plausible
+ * authored board route.
+ */
+test('PcbOutlineRecovery keeps authored outline when mechanical frame is unrelated', () => {
+    const recovered = PcbOutlineRecovery.recoverOutline({
+        fallbackOutline: {
+            minX: 1000,
+            minY: 1000,
+            widthMil: 2000,
+            heightMil: 1200,
+            segments: [
+                { type: 'line', x1: 1000, y1: 1000, x2: 3000, y2: 1000 },
+                { type: 'line', x1: 3000, y1: 1000, x2: 3000, y2: 2200 },
+                { type: 'line', x1: 3000, y1: 2200, x2: 1000, y2: 2200 },
+                { type: 'line', x1: 1000, y1: 2200, x2: 1000, y2: 1000 }
+            ]
+        },
+        components: [
+            { x: 1280, y: 1320 },
+            { x: 2140, y: 1660 },
+            { x: 2840, y: 1980 }
+        ],
+        tracks: [
+            { x1: 0, y1: 0, x2: 18000, y2: 0, width: 10, layerId: 57 },
+            { x1: 18000, y1: 0, x2: 18000, y2: 13000, width: 10, layerId: 57 },
+            { x1: 18000, y1: 13000, x2: 0, y2: 13000, width: 10, layerId: 57 },
+            { x1: 0, y1: 13000, x2: 0, y2: 0, width: 10, layerId: 57 }
+        ]
+    })
+
+    assert.equal(recovered.source, 'fallback')
+    assert.equal(recovered.layerId, null)
+    assert.equal(recovered.outline.widthMil, 2000)
+    assert.equal(recovered.outline.heightMil, 1200)
+})
+
+/**
  * Verifies board-route closure fills small routed hole bites without inflating
  * the overall board silhouette into an unrelated envelope.
  */

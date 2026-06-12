@@ -238,8 +238,11 @@ export class AltiumParser {
         const rectangleRecords = drawableRecords.filter(
             (record) =>
                 SchematicPrimitiveParser.isRectangleRecord(record.fields) &&
-                AltiumParser.#hasCoordinatePair(record.fields, 'Location') &&
-                AltiumParser.#hasCoordinatePair(record.fields, 'Corner')
+                ((AltiumParser.#hasCoordinatePair(record.fields, 'Location') &&
+                    AltiumParser.#hasCoordinatePair(record.fields, 'Corner')) ||
+                    SchematicPrimitiveParser.isPointListedRectangleRecord(
+                        record.fields
+                    ))
         )
         const roundedRectangleRecords = drawableRecords.filter(
             (record) =>

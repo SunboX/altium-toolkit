@@ -12,15 +12,17 @@ export class PcbScene3dPlacementSideResolver {
 
     /**
      * Resolves which board side one explicit model should mount on.
-     * @param {{ layer?: string, standoffHeightMil?: number | null, overallHeightMil?: number | null }} componentBody
+     * @param {{ layer?: string, positionMil?: { x?: number, y?: number }, standoffHeightMil?: number | null, overallHeightMil?: number | null }} componentBody
      * @param {{ layer?: string } | null} matchedComponent
      * @param {{ layer?: string, pattern?: string, source?: string, modelPath?: string, x?: number, y?: number }[]} components
+     * @param {{ minX?: number, minY?: number, widthMil?: number, heightMil?: number } | null} board
      * @returns {'top' | 'bottom'}
      */
     static resolvePlacementSide(
         componentBody,
         matchedComponent,
-        components = []
+        components = [],
+        board = null
     ) {
         const matchedSide =
             PcbScene3dPlacementSideResolver.#resolveComponentLayerSide(
@@ -32,7 +34,13 @@ export class PcbScene3dPlacementSideResolver {
 
         const standoffSide =
             PcbScene3dPlacementSideResolver.#resolveStandoffSide(componentBody)
-        if (standoffSide) {
+        if (
+            standoffSide &&
+            PcbScene3dPlacementSideResolver.#isBodyAnchorInsideBoard(
+                componentBody,
+                board
+            )
+        ) {
             return standoffSide
         }
 
@@ -45,11 +53,15 @@ export class PcbScene3dPlacementSideResolver {
             return nearbySide
         }
 
-        return (
+        const mechanicalSide =
             PcbScene3dPlacementSideResolver.#resolveMechanicalLayerSide(
                 componentBody?.layer
-            ) || 'top'
-        )
+            )
+        if (mechanicalSide) {
+            return mechanicalSide
+        }
+
+        return standoffSide || 'top'
     }
 
     /**
@@ -146,6 +158,36 @@ export class PcbScene3dPlacementSideResolver {
                       .#MIN_NEGATIVE_STANDOFF_SIDE_MIL
 
         return Math.abs(standoff) >= threshold ? 'bottom' : null
+    }
+
+    /**
+     * Returns true when one body anchor sits inside the normalized board bounds.
+     * @param {{ positionMil?: { x?: number, y?: number } } | null} componentBody
+     * @param {{ minX?: number, minY?: number, widthMil?: number, heightMil?: number } | null} board
+     * @returns {boolean}
+     */
+    static #isBodyAnchorInsideBoard(componentBody, board) {
+        const x = Number(componentBody?.positionMil?.x)
+        const y = Number(componentBody?.positionMil?.y)
+        const minX = Number(board?.minX)
+        const minY = Number(board?.minY)
+        const width = Number(board?.widthMil)
+        const height = Number(board?.heightMil)
+
+        if (
+            !Number.isFinite(x) ||
+            !Number.isFinite(y) ||
+            !Number.isFinite(minX) ||
+            !Number.isFinite(minY) ||
+            !Number.isFinite(width) ||
+            !Number.isFinite(height) ||
+            width <= 0 ||
+            height <= 0
+        ) {
+            return false
+        }
+
+        return x >= minX && x <= minX + width && y >= minY && y <= minY + height
     }
 
     /**

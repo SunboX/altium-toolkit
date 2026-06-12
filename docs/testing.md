@@ -6,6 +6,11 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 # Testing
 
+Exporter tests use only synthetic component responses and generated OLE
+streams. Do not add native customer files or provider-derived raw fixtures.
+When exercising source lookup, inject a fake fetcher/client and assert emitted
+entries, progress events, checkpoints, diagnostics, and OLE round trips.
+
 Run the complete suite:
 
 ```bash

@@ -6,6 +6,40 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AsciiRecordParser } from '../../src/core/altium/AsciiRecordParser.mjs'
 
+test('AsciiRecordParser keeps ASCII-only field parsing on the byte-string fast path', (t) => {
+    const originalTextDecoder = globalThis.TextDecoder
+
+    class ThrowingTextDecoder {
+        /**
+         * Fails when plain ASCII fields take the legacy decoder path.
+         */
+        constructor() {
+            throw new Error('unexpected decoder use for ASCII field')
+        }
+    }
+
+    t.after(() => {
+        globalThis.TextDecoder = originalTextDecoder
+    })
+    globalThis.TextDecoder = ThrowingTextDecoder
+
+    const payload = Buffer.from(
+        'noise\u0000|RECORD=1|NAME=R1|VALUE=10K|COMMENT= pullup |\u0000tail',
+        'latin1'
+    )
+    const arrayBuffer = payload.buffer.slice(
+        payload.byteOffset,
+        payload.byteOffset + payload.byteLength
+    )
+
+    const records = AsciiRecordParser.parse(arrayBuffer)
+
+    assert.equal(records.length, 1)
+    assert.equal(records[0].fields.NAME, 'R1')
+    assert.equal(records[0].fields.VALUE, '10K')
+    assert.equal(records[0].fields.COMMENT, 'pullup')
+})
+
 test('AsciiRecordParser decodes GBK-encoded printable PCB field values', () => {
     const prefix = Buffer.from(
         '|RECORD=1|PATTERN=0402|SOURCEDESIGNATOR=C1|SOURCELIBREFERENCE=CAP/0402|SOURCEDESCRIPTION=',

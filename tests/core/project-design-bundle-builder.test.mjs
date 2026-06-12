@@ -395,7 +395,7 @@ test('ProjectDesignBundleBuilder reports BOM and PnP reconciliation gaps', () =>
                         componentKind: {
                             name: 'standard-no-bom',
                             includeInBom: false,
-                            includeInPnp: true
+                            includeInPlacement: true
                         }
                     }
                 ]

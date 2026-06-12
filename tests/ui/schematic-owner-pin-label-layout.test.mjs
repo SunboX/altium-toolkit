@@ -23,7 +23,43 @@ test('SchematicOwnerPinLabelLayout resolves horizontal native pin text placement
             'number'
         ),
         {
-            x: 83,
+            x: 79,
+            yOffset: -1,
+            anchor: 'start',
+            rotation: 0
+        }
+    )
+    assert.deepEqual(
+        SchematicOwnerPinLabelLayout.resolveNativePinTextPlacement(
+            {
+                x: 100,
+                y: 50,
+                length: 40,
+                orientation: 'left',
+                electrical: 0
+            },
+            'number'
+        ),
+        {
+            x: 92,
+            yOffset: -1,
+            anchor: 'end',
+            rotation: 0
+        }
+    )
+    assert.deepEqual(
+        SchematicOwnerPinLabelLayout.resolveNativePinTextPlacement(
+            {
+                x: 100,
+                y: 50,
+                length: 40,
+                orientation: 'right',
+                electrical: 1
+            },
+            'number'
+        ),
+        {
+            x: 116,
             yOffset: -1,
             anchor: 'end',
             rotation: 0
@@ -43,6 +79,23 @@ test('SchematicOwnerPinLabelLayout resolves horizontal native pin text placement
             x: 92,
             yOffset: 3,
             anchor: 'end',
+            rotation: 0
+        }
+    )
+    assert.deepEqual(
+        SchematicOwnerPinLabelLayout.resolveNativePinTextPlacement(
+            {
+                x: 100,
+                y: 50,
+                length: 7,
+                orientation: 'left'
+            },
+            'name'
+        ),
+        {
+            x: 107,
+            yOffset: 3,
+            anchor: 'start',
             rotation: 0
         }
     )

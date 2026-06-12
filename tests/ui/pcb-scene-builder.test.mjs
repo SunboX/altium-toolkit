@@ -289,7 +289,7 @@ test('PcbScene3dBuilder emits embedded external placements from normalized body 
         bodyRotationDeg: 315,
         modelTransform: {
             rotationDeg: { x: -0, y: -0, z: 0 },
-            dzMil: 11.811
+            dzMil: -0.0684
         },
         projection: {
             source: 'pad-fallback',

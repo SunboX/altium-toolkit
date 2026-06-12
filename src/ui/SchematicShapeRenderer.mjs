@@ -231,10 +231,12 @@ export class SchematicShapeRenderer {
      * @returns {string}
      */
     static buildRectangleMarkup(rectangle, sheetHeight) {
-        const fill =
-            SchematicShapeRenderer.#resolveSchematicRectangleFill(rectangle)
         const preserveSourceColors =
             SchematicShapeRenderer.#isOwnerColorStrip(rectangle)
+        const fill = SchematicShapeRenderer.#resolveSchematicRectangleFill(
+            rectangle,
+            preserveSourceColors
+        )
 
         return (
             '<rect class="schematic-rectangle" x="' +
@@ -250,7 +252,7 @@ export class SchematicShapeRenderer {
             '" fill="' +
             escapeHtml(
                 preserveSourceColors
-                    ? SchematicColorResolver.resolveSourceFill(
+                    ? SchematicColorResolver.resolveMutedSourceFill(
                           fill,
                           '--schematic-fill-color'
                       )
@@ -262,7 +264,7 @@ export class SchematicShapeRenderer {
             '" stroke="' +
             escapeHtml(
                 preserveSourceColors
-                    ? SchematicColorResolver.resolveSourceColor(
+                    ? SchematicColorResolver.resolveMutedSourceColor(
                           rectangle.color,
                           '--schematic-default-ink-color'
                       )
@@ -290,10 +292,12 @@ export class SchematicShapeRenderer {
      */
     static buildRoundedRectangleMarkup(rectangle, sheetHeight) {
         const radius = Math.max(Number(rectangle.radius || 0), 0)
-        const fill =
-            SchematicShapeRenderer.#resolveSchematicRectangleFill(rectangle)
         const preserveSourceColors =
             SchematicShapeRenderer.#isOwnerColorStrip(rectangle)
+        const fill = SchematicShapeRenderer.#resolveSchematicRectangleFill(
+            rectangle,
+            preserveSourceColors
+        )
 
         return (
             '<rect class="schematic-rounded-rectangle" x="' +
@@ -313,7 +317,7 @@ export class SchematicShapeRenderer {
             '" fill="' +
             escapeHtml(
                 preserveSourceColors
-                    ? SchematicColorResolver.resolveSourceFill(
+                    ? SchematicColorResolver.resolveMutedSourceFill(
                           fill,
                           '--schematic-fill-color'
                       )
@@ -325,7 +329,7 @@ export class SchematicShapeRenderer {
             '" stroke="' +
             escapeHtml(
                 preserveSourceColors
-                    ? SchematicColorResolver.resolveSourceColor(
+                    ? SchematicColorResolver.resolveMutedSourceColor(
                           rectangle.color,
                           '--schematic-default-ink-color'
                       )
@@ -470,10 +474,18 @@ export class SchematicShapeRenderer {
     /**
      * Resolves the visible fill for one schematic rectangle primitive.
      * @param {{ fill: string, isSolid: boolean, transparent: boolean }} rectangle
+     * @param {boolean} preserveSourceFill
      * @returns {string}
      */
-    static #resolveSchematicRectangleFill(rectangle) {
+    static #resolveSchematicRectangleFill(rectangle, preserveSourceFill) {
         if (rectangle.transparent || !rectangle.isSolid) {
+            if (
+                preserveSourceFill &&
+                SchematicShapeRenderer.#hasVisibleSourceFill(rectangle)
+            ) {
+                return rectangle.fill
+            }
+
             return 'none'
         }
 
@@ -481,8 +493,22 @@ export class SchematicShapeRenderer {
     }
 
     /**
+     * Returns true when a transparent owner color strip still carries an
+     * authored fill color that encodes symbol-side rail intent.
+     * @param {{ fill?: string }} rectangle
+     * @returns {boolean}
+     */
+    static #hasVisibleSourceFill(rectangle) {
+        const fill = String(rectangle?.fill || '')
+            .trim()
+            .toLowerCase()
+
+        return Boolean(fill) && fill !== 'none' && fill !== 'transparent'
+    }
+
+    /**
      * Returns true for narrow symbol-owned color swatches such as per-section
-     * strips that carry literal source palette meaning.
+     * strips that carry source palette meaning.
      * @param {{ width: number, height: number, ownerIndex?: string }} rectangle
      * @returns {boolean}
      */
@@ -496,7 +522,7 @@ export class SchematicShapeRenderer {
         const shortSide = Math.min(width, height)
         const longSide = Math.max(width, height)
 
-        return shortSide > 0 && shortSide <= 8 && longSide >= 40
+        return shortSide > 0 && shortSide <= 8 && longSide >= 20
     }
 
     /**

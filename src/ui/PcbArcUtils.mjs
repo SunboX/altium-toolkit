@@ -10,6 +10,8 @@ import { SchematicSvgUtils } from './SchematicSvgUtils.mjs'
 export class PcbArcUtils {
     static #FULL_CIRCLE_EPSILON = 0.001
 
+    static #CROSS_PRODUCT_EPSILON = 1e-9
+
     /**
      * Builds one PCB arc or authored circle as SVG markup.
      * @param {{ x: number, y: number, radius: number, startAngle: number, endAngle: number, width?: number }} arc
@@ -174,7 +176,7 @@ export class PcbArcUtils {
     /**
      * Resolves the short SVG sweep direction for one arc from its authored
      * center and endpoint geometry.
-     * @param {{ x1?: number, y1?: number, x2?: number, y2?: number, cx?: number, cy?: number }} segment
+     * @param {{ x1?: number, y1?: number, x2?: number, y2?: number, cx?: number, cy?: number, startAngle?: number, endAngle?: number }} segment
      * @returns {0 | 1}
      */
     static resolveShortSweepFromCenter(segment) {
@@ -184,6 +186,21 @@ export class PcbArcUtils {
         const endDeltaY = Number(segment.y2 || 0) - Number(segment.cy || 0)
         const crossProduct = startDeltaX * endDeltaY - startDeltaY * endDeltaX
 
-        return crossProduct >= 0 ? 1 : 0
+        if (Math.abs(crossProduct) > PcbArcUtils.#CROSS_PRODUCT_EPSILON) {
+            return crossProduct > 0 ? 1 : 0
+        }
+
+        const startAngle = Number(segment.startAngle)
+        const endAngle = Number(segment.endAngle)
+        if (Number.isFinite(startAngle) && Number.isFinite(endAngle)) {
+            // Board-outline segment angles come from board-space arc records;
+            // after the endpoints are in SVG space, exact half-circles need
+            // the opposite SVG sweep to select the authored side.
+            return PcbArcUtils.resolveSweepDelta(startAngle, endAngle) >= 0
+                ? 0
+                : 1
+        }
+
+        return 1
     }
 }

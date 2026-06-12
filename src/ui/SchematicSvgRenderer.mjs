@@ -12,6 +12,7 @@ import { SchematicDirectiveRenderer } from './SchematicDirectiveRenderer.mjs'
 import { SchematicShapeRenderer } from './SchematicShapeRenderer.mjs'
 import { SchematicPinSvgRenderer } from './SchematicPinSvgRenderer.mjs'
 import { SchematicColorResolver } from './SchematicColorResolver.mjs'
+import { SchematicLineColorResolver } from './SchematicLineColorResolver.mjs'
 import { SchematicSheetChromeRenderer } from './SchematicSheetChromeRenderer.mjs'
 import { SchematicContentLayout } from './SchematicContentLayout.mjs'
 import { SchematicOwnerPinLabelLayout } from './SchematicOwnerPinLabelLayout.mjs'
@@ -19,6 +20,7 @@ import { SchematicRegionRenderer } from './SchematicRegionRenderer.mjs'
 import { SchematicSheetSymbolRenderer } from './SchematicSheetSymbolRenderer.mjs'
 import { SchematicImageRenderer } from './SchematicImageRenderer.mjs'
 import { SchematicNativeFooterPartitioner } from './SchematicNativeFooterPartitioner.mjs'
+import { SchematicOwnerPinMarkerLineThemer } from './SchematicOwnerPinMarkerLineThemer.mjs'
 import { TextGeometrySidecarBuilder } from './TextGeometrySidecarBuilder.mjs'
 import { SchematicRenderOpsSidecarBuilder } from './SchematicRenderOpsSidecarBuilder.mjs'
 import { SchematicProjectParameterResolver } from '../core/altium/SchematicProjectParameterResolver.mjs'
@@ -29,6 +31,11 @@ const SECTION_HEADING_MIN_FONT_SIZE = 18
 const SECTION_HEADING_BASELINE_LIFT_RATIO = 0.36
 const SECTION_HEADING_LINE_Y_TOLERANCE = 0.75
 const SECTION_HEADING_LINE_X_PADDING = 15
+const BODY_TEXT_ASCENT_RATIO = 0.72
+const BODY_TEXT_DESCENT_RATIO = 0.14
+const BODY_TEXT_FLAT_DESCENT_RATIO = 0
+const BODY_TEXT_MIN_SEPARATOR_SPAN_RATIO = 0.3
+const BODY_TEXT_DESCENDER_PATTERN = /[gjpqyQ_,;]/
 
 /**
  * Renders normalized schematic models into presentational SVG.
@@ -179,8 +186,13 @@ export class SchematicSvgRenderer {
                 },
                 renderedSchematic.sheet
             )
+        const contentMarkerThemedLines =
+            SchematicOwnerPinMarkerLineThemer.theme(
+                partitionedPrimitives.content.lines,
+                pins
+            )
         const contentLines = SchematicSvgRenderer.#themeFooterChromeLines(
-            partitionedPrimitives.content.lines,
+            contentMarkerThemedLines,
             renderedSheet.sheet,
             contentHeight
         )
@@ -196,7 +208,18 @@ export class SchematicSvgRenderer {
         const contentTexts = partitionedPrimitives.content.texts
         const contentImages = partitionedPrimitives.content.images
         const footerPrimitives = partitionedPrimitives.footer
-        const ownerlessLines = contentLines.filter((line) => !line.ownerIndex)
+        const foregroundOwnerlessLines =
+            SchematicSvgRenderer.#collectForegroundOwnerlessLines(
+                contentLines,
+                contentPolygons,
+                contentRectangles,
+                contentRoundedRectangles,
+                contentEllipses,
+                contentPies
+            )
+        const ownerlessLines = contentLines.filter(
+            (line) => !line.ownerIndex && !foregroundOwnerlessLines.has(line)
+        )
         const ownerlessPolygons = contentPolygons.filter(
             (polygon) => !polygon.ownerIndex
         )
@@ -408,6 +431,21 @@ export class SchematicSvgRenderer {
                 contentHeight,
                 semanticContext
             )
+        const foregroundLineMarkup = [...foregroundOwnerlessLines]
+            .map((line, index) =>
+                SchematicSvgRenderer.#buildSchematicLineMarkup(
+                    line,
+                    contentHeight,
+                    SchematicSvgRenderer.#primitiveIndex(
+                        semanticContext,
+                        'lines',
+                        line,
+                        index
+                    ),
+                    semanticContext
+                )
+            )
+            .join('')
         const sheetSymbolMarkup =
             SchematicSheetSymbolRenderer.buildSheetSymbolMarkup(
                 sheetSymbols,
@@ -453,6 +491,16 @@ export class SchematicSvgRenderer {
         )
         const markerDefsMarkup =
             SchematicSvgRenderer.#buildSchematicLineMarkerDefs(contentLines)
+        const ownerTextBodyBounds =
+            SchematicSvgRenderer.#collectOwnerTextBodyBounds(
+                contentLines,
+                contentPolygons,
+                contentRectangles,
+                contentRoundedRectangles,
+                contentEllipses,
+                contentArcs,
+                contentPies
+            )
 
         const textMarkup = contentTexts
             .map((text, index) =>
@@ -467,7 +515,8 @@ export class SchematicSvgRenderer {
                         text,
                         index
                     ),
-                    semanticContext
+                    semanticContext,
+                    ownerTextBodyBounds
                 )
             )
             .join('')
@@ -585,6 +634,12 @@ export class SchematicSvgRenderer {
                 pins,
                 contentRectangles
             )
+        const overlappingExternalNumberLabelKeys =
+            SchematicOwnerPinLabelLayout.collectOverlappingExternalNumberLabelKeys(
+                pins,
+                contentTexts,
+                internalNumberLabelBoxes
+            )
         const pinMarkup = pins
             .map((pin, index) =>
                 SchematicSvgRenderer.#appendSvgAttributes(
@@ -596,7 +651,8 @@ export class SchematicSvgRenderer {
                         explicitOwnerPinNameLabels,
                         explicitOwnerPinLabelOffsets,
                         compactExternalNumberLabelSides,
-                        internalNumberLabelBoxes
+                        internalNumberLabelBoxes,
+                        overlappingExternalNumberLabelKeys
                     ),
                     SchematicSvgRenderer.#semanticAttributes(
                         'pin',
@@ -726,6 +782,9 @@ export class SchematicSvgRenderer {
             '<g class="schematic-owner-geometry" stroke-linecap="round">' +
             ownerGeometryMarkup +
             '</g>' +
+            '<g class="schematic-foreground-lines" stroke-linecap="round">' +
+            foregroundLineMarkup +
+            '</g>' +
             '<g class="schematic-sheet-symbols">' +
             sheetSymbolMarkup +
             '</g>' +
@@ -845,8 +904,10 @@ export class SchematicSvgRenderer {
             return false
         }
         if (
-            SchematicSvgRenderer.#resolveSchematicLineColor(line) !==
-            'var(--schematic-text-color)'
+            SchematicColorResolver.resolveColor(
+                line.color,
+                '--schematic-default-ink-color'
+            ) !== 'var(--schematic-text-color)'
         ) {
             return false
         }
@@ -872,6 +933,13 @@ export class SchematicSvgRenderer {
         }
 
         const margin = Math.max(Number(sheet?.marginWidth || 20), 10)
+        const lineLength = Math.hypot(x2 - x1, y2 - y1)
+        const minChromeLineLength = Math.max(margin * 0.6, 12)
+
+        if (lineLength < minChromeLineLength) {
+            return false
+        }
+
         const footerBandHeight = Math.max(margin * 6, 120)
         const footerTop = Math.max(height - footerBandHeight, margin)
         const projectedY1 = projectSchematicY(height, y1)
@@ -1792,6 +1860,311 @@ export class SchematicSvgRenderer {
     }
 
     /**
+     * Collects ownerless line primitives that were authored after an
+     * owner-linked fill they overlap. These are symbol decoration strokes
+     * stored outside the owner group and must paint above the body fill.
+     * @param {{ ownerIndex?: string, renderOrder?: number, x1: number, y1: number, x2: number, y2: number }[]} lines Line primitives.
+     * @param {{ ownerIndex?: string, renderOrder?: number, points?: { x: number, y: number }[] }[]} polygons Polygon primitives.
+     * @param {{ ownerIndex?: string, renderOrder?: number, x: number, y: number, width: number, height: number }[]} rectangles Rectangle primitives.
+     * @param {{ ownerIndex?: string, renderOrder?: number, x: number, y: number, width: number, height: number }[]} roundedRectangles Rounded rectangle primitives.
+     * @param {{ ownerIndex?: string, renderOrder?: number, x: number, y: number, radiusX: number, radiusY: number }[]} ellipses Ellipse primitives.
+     * @param {{ ownerIndex?: string, renderOrder?: number, x: number, y: number, radius: number, radiusY?: number }[]} pies Pie primitives.
+     * @returns {Set<object>}
+     */
+    static #collectForegroundOwnerlessLines(
+        lines,
+        polygons,
+        rectangles,
+        roundedRectangles,
+        ellipses,
+        pies
+    ) {
+        const ownerFillBounds = SchematicSvgRenderer.#collectOwnerFillBounds(
+            polygons,
+            rectangles,
+            roundedRectangles,
+            ellipses,
+            pies
+        )
+
+        if (!ownerFillBounds.length) {
+            return new Set()
+        }
+
+        return new Set(
+            (lines || []).filter((line) =>
+                SchematicSvgRenderer.#isForegroundOwnerlessLine(
+                    line,
+                    ownerFillBounds
+                )
+            )
+        )
+    }
+
+    /**
+     * Collects sortable bounds for owner-linked fill primitives.
+     * @param {object[]} polygons Polygon primitives.
+     * @param {object[]} rectangles Rectangle primitives.
+     * @param {object[]} roundedRectangles Rounded rectangle primitives.
+     * @param {object[]} ellipses Ellipse primitives.
+     * @param {object[]} pies Pie primitives.
+     * @returns {{ bounds: { minX: number, minY: number, maxX: number, maxY: number }, renderOrder: number }[]}
+     */
+    static #collectOwnerFillBounds(
+        polygons,
+        rectangles,
+        roundedRectangles,
+        ellipses,
+        pies
+    ) {
+        return [
+            ...(polygons || []),
+            ...(rectangles || []),
+            ...(roundedRectangles || []),
+            ...(ellipses || []),
+            ...(pies || [])
+        ]
+            .filter((primitive) => primitive?.ownerIndex)
+            .map((primitive) => ({
+                bounds: SchematicSvgRenderer.#primitiveBounds(primitive),
+                renderOrder:
+                    SchematicSvgRenderer.#resolvePrimitiveRenderOrder(primitive)
+            }))
+            .filter(
+                (entry) =>
+                    entry.bounds &&
+                    Number.isFinite(entry.renderOrder) &&
+                    entry.renderOrder < Number.MAX_SAFE_INTEGER
+            )
+    }
+
+    /**
+     * Collects unprojected owner body envelopes used to identify text that is
+     * drawn inside a component body instead of on surrounding wires or sheet
+     * chrome.
+     * @param {object[]} lines Line primitives.
+     * @param {object[]} polygons Polygon primitives.
+     * @param {object[]} rectangles Rectangle primitives.
+     * @param {object[]} roundedRectangles Rounded rectangle primitives.
+     * @param {object[]} ellipses Ellipse primitives.
+     * @param {object[]} arcs Arc primitives.
+     * @param {object[]} pies Pie primitives.
+     * @returns {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>}
+     */
+    static #collectOwnerTextBodyBounds(
+        lines,
+        polygons,
+        rectangles,
+        roundedRectangles,
+        ellipses,
+        arcs,
+        pies
+    ) {
+        const ownerBounds = new Map()
+
+        for (const primitive of [
+            ...(lines || []),
+            ...(polygons || []),
+            ...(rectangles || []),
+            ...(roundedRectangles || []),
+            ...(ellipses || []),
+            ...(arcs || []),
+            ...(pies || [])
+        ]) {
+            SchematicSvgRenderer.#extendOwnerTextBodyBounds(
+                ownerBounds,
+                primitive
+            )
+        }
+
+        return ownerBounds
+    }
+
+    /**
+     * Extends the body-bounds map with one owner-linked primitive.
+     * @param {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>} ownerBounds Owner bounds map.
+     * @param {object} primitive Primitive candidate.
+     * @returns {void}
+     */
+    static #extendOwnerTextBodyBounds(ownerBounds, primitive) {
+        const ownerIndex = String(primitive?.ownerIndex || '').trim()
+        const bounds = SchematicSvgRenderer.#primitiveBounds(primitive)
+
+        if (!ownerIndex || !bounds) {
+            return
+        }
+
+        const current = ownerBounds.get(ownerIndex)
+
+        if (!current) {
+            ownerBounds.set(ownerIndex, { ...bounds })
+            return
+        }
+
+        current.minX = Math.min(current.minX, bounds.minX)
+        current.minY = Math.min(current.minY, bounds.minY)
+        current.maxX = Math.max(current.maxX, bounds.maxX)
+        current.maxY = Math.max(current.maxY, bounds.maxY)
+    }
+
+    /**
+     * Returns true when one ownerless line should paint above an overlapping
+     * owner fill because the native stream authored it later.
+     * @param {{ ownerIndex?: string, renderOrder?: number, x1: number, y1: number, x2: number, y2: number }} line Line primitive.
+     * @param {{ bounds: { minX: number, minY: number, maxX: number, maxY: number }, renderOrder: number }[]} ownerFillBounds Fill bounds.
+     * @returns {boolean}
+     */
+    static #isForegroundOwnerlessLine(line, ownerFillBounds) {
+        if (line?.ownerIndex) {
+            return false
+        }
+
+        const renderOrder = Number(line?.renderOrder)
+        if (!Number.isFinite(renderOrder)) {
+            return false
+        }
+
+        const lineBounds = SchematicSvgRenderer.#primitiveBounds(line)
+        if (!lineBounds) {
+            return false
+        }
+
+        return ownerFillBounds.some(
+            (fill) =>
+                renderOrder > fill.renderOrder &&
+                SchematicSvgRenderer.#boundsIntersect(
+                    lineBounds,
+                    fill.bounds,
+                    0.5
+                )
+        )
+    }
+
+    /**
+     * Resolves an unprojected coordinate envelope for one schematic primitive.
+     * @param {object} primitive Primitive.
+     * @returns {{ minX: number, minY: number, maxX: number, maxY: number } | null}
+     */
+    static #primitiveBounds(primitive) {
+        if (Array.isArray(primitive?.points) && primitive.points.length > 0) {
+            return SchematicSvgRenderer.#pointBounds(primitive.points)
+        }
+
+        if (
+            Number.isFinite(Number(primitive?.x1)) &&
+            Number.isFinite(Number(primitive?.y1)) &&
+            Number.isFinite(Number(primitive?.x2)) &&
+            Number.isFinite(Number(primitive?.y2))
+        ) {
+            return SchematicSvgRenderer.#pointBounds([
+                { x: Number(primitive.x1), y: Number(primitive.y1) },
+                { x: Number(primitive.x2), y: Number(primitive.y2) }
+            ])
+        }
+
+        if (
+            Number.isFinite(Number(primitive?.x)) &&
+            Number.isFinite(Number(primitive?.y)) &&
+            Number.isFinite(Number(primitive?.width)) &&
+            Number.isFinite(Number(primitive?.height))
+        ) {
+            const x = Number(primitive.x)
+            const y = Number(primitive.y)
+            const x2 = x + Number(primitive.width)
+            const y2 = y + Number(primitive.height)
+
+            return {
+                minX: Math.min(x, x2),
+                minY: Math.min(y, y2),
+                maxX: Math.max(x, x2),
+                maxY: Math.max(y, y2)
+            }
+        }
+
+        if (
+            Number.isFinite(Number(primitive?.x)) &&
+            Number.isFinite(Number(primitive?.y)) &&
+            Number.isFinite(Number(primitive?.radiusX)) &&
+            Number.isFinite(Number(primitive?.radiusY))
+        ) {
+            const x = Number(primitive.x)
+            const y = Number(primitive.y)
+            const radiusX = Math.abs(Number(primitive.radiusX))
+            const radiusY = Math.abs(Number(primitive.radiusY))
+
+            return {
+                minX: x - radiusX,
+                minY: y - radiusY,
+                maxX: x + radiusX,
+                maxY: y + radiusY
+            }
+        }
+
+        if (
+            Number.isFinite(Number(primitive?.x)) &&
+            Number.isFinite(Number(primitive?.y)) &&
+            Number.isFinite(Number(primitive?.radius))
+        ) {
+            const x = Number(primitive.x)
+            const y = Number(primitive.y)
+            const radiusX = Math.abs(Number(primitive.radius))
+            const radiusY = Math.abs(Number(primitive.radiusY ?? radiusX))
+
+            return {
+                minX: x - radiusX,
+                minY: y - radiusY,
+                maxX: x + radiusX,
+                maxY: y + radiusY
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Resolves bounds for a point list.
+     * @param {{ x: number, y: number }[]} points Points.
+     * @returns {{ minX: number, minY: number, maxX: number, maxY: number } | null}
+     */
+    static #pointBounds(points) {
+        const numericPoints = (points || [])
+            .map((point) => ({
+                x: Number(point?.x),
+                y: Number(point?.y)
+            }))
+            .filter(
+                (point) => Number.isFinite(point.x) && Number.isFinite(point.y)
+            )
+
+        if (!numericPoints.length) {
+            return null
+        }
+
+        return {
+            minX: Math.min(...numericPoints.map((point) => point.x)),
+            minY: Math.min(...numericPoints.map((point) => point.y)),
+            maxX: Math.max(...numericPoints.map((point) => point.x)),
+            maxY: Math.max(...numericPoints.map((point) => point.y))
+        }
+    }
+
+    /**
+     * Returns true when two unprojected coordinate bounds overlap.
+     * @param {{ minX: number, minY: number, maxX: number, maxY: number }} left Left bounds.
+     * @param {{ minX: number, minY: number, maxX: number, maxY: number }} right Right bounds.
+     * @param {number} tolerance Coordinate tolerance.
+     * @returns {boolean}
+     */
+    static #boundsIntersect(left, right, tolerance = 0) {
+        return (
+            left.maxX >= right.minX - tolerance &&
+            left.minX <= right.maxX + tolerance &&
+            left.maxY >= right.minY - tolerance &&
+            left.minY <= right.maxY + tolerance
+        )
+    }
+
+    /**
      * Builds interleaved owner geometry so symbol-internal primitives preserve
      * their recovered Altium paint order instead of batching fills ahead of all
      * linework.
@@ -2131,7 +2504,7 @@ export class SchematicSvgRenderer {
             '" y2="' +
             formatNumber(projectSchematicY(sheetHeight, line.y2)) +
             '" stroke="' +
-            escapeHtml(SchematicSvgRenderer.#resolveSchematicLineColor(line)) +
+            escapeHtml(SchematicLineColorResolver.resolveColor(line)) +
             '" stroke-width="' +
             formatNumber(
                 SchematicSvgRenderer.#resolveSchematicLineWidth(line)
@@ -2160,26 +2533,6 @@ export class SchematicSvgRenderer {
             return baseWidth
         }
         return Math.max(baseWidth * 3, 3)
-    }
-
-    /**
-     * Resolves line stroke color, treating black electrical wires as themed
-     * schematic connectivity while leaving graphic linework source-colored.
-     * @param {{ color: string, ownerIndex?: string, isBus?: boolean, recordType?: string }} line
-     * @returns {string}
-     */
-    static #resolveSchematicLineColor(line) {
-        if (SchematicSvgRenderer.#isElectricalSchematicLine(line)) {
-            return SchematicColorResolver.resolveNonTextColor(
-                line.color,
-                '--schematic-default-ink-color'
-            )
-        }
-
-        return SchematicColorResolver.resolveColor(
-            line.color,
-            '--schematic-default-ink-color'
-        )
     }
 
     /**
@@ -2261,6 +2614,7 @@ export class SchematicSvgRenderer {
      * @param {{ x: number, y: number, length: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
      * @param {number} index Stable primitive index.
      * @param {object | undefined} semanticContext Semantic lookup context.
+     * @param {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>} ownerTextBodyBounds Owner body bounds keyed by owner index.
      * @returns {string}
      */
     static #buildSchematicTextMarkup(
@@ -2269,7 +2623,8 @@ export class SchematicSvgRenderer {
         lines,
         pins,
         index = 0,
-        semanticContext = undefined
+        semanticContext = undefined,
+        ownerTextBodyBounds = new Map()
     ) {
         const matchedOwnerPin =
             SchematicOwnerPinLabelLayout.findExplicitOwnerPinLabelMatch(
@@ -2309,7 +2664,8 @@ export class SchematicSvgRenderer {
             text,
             sheetHeight,
             lines,
-            matchedOwnerPin
+            matchedOwnerPin,
+            ownerTextBodyBounds
         )
 
         return SchematicSvgRenderer.#appendSvgAttributes(
@@ -2344,13 +2700,15 @@ export class SchematicSvgRenderer {
      * @param {number} sheetHeight
      * @param {{ x1: number, y1: number, x2: number, y2: number, lineStyle?: number }[]} lines
      * @param {{ x: number, y: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' } | null} matchedOwnerPin
+     * @param {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>} ownerTextBodyBounds Owner body bounds keyed by owner index.
      * @returns {{ x: number, y: number, anchor: 'start' | 'middle' | 'end' }}
      */
     static #resolveSchematicTextPlacement(
         text,
         sheetHeight,
         lines,
-        matchedOwnerPin
+        matchedOwnerPin,
+        ownerTextBodyBounds
     ) {
         const mirroredOwnerPinPlacement =
             SchematicOwnerPinLabelLayout.resolveMirroredOwnerPinLabelPlacement(
@@ -2358,6 +2716,7 @@ export class SchematicSvgRenderer {
                 matchedOwnerPin
             )
         const sourceY = mirroredOwnerPinPlacement?.y ?? text.y
+        const x = mirroredOwnerPinPlacement?.x ?? text.x
         const projectedY = projectSchematicY(sheetHeight, sourceY)
         const fontSize =
             SchematicTypography.resolveViewerFontSize(text.fontSize) || 0
@@ -2369,12 +2728,498 @@ export class SchematicSvgRenderer {
                 fontSize,
                 matchedOwnerPin
             )
+        const ownerBodyBaselineOffset =
+            SchematicSvgRenderer.#resolveOwnerBodyTextBaselineOffset(
+                text,
+                x,
+                sourceY,
+                fontSize,
+                matchedOwnerPin,
+                ownerTextBodyBounds
+            )
+
+        const unclampedY = projectedY - baselineLift + ownerBodyBaselineOffset
 
         return {
-            x: mirroredOwnerPinPlacement?.x ?? text.x,
-            y: projectedY - baselineLift,
+            x,
+            y: SchematicSvgRenderer.#clampOwnerBodyTextBaseline(
+                text,
+                x,
+                sourceY,
+                unclampedY,
+                sheetHeight,
+                fontSize,
+                matchedOwnerPin,
+                ownerTextBodyBounds,
+                lines
+            ),
             anchor: text.anchor || 'start'
         }
+    }
+
+    /**
+     * Keeps free schematic body annotations inside the owner body cell they
+     * were authored over, including ownerless overlay text used by some
+     * symbols for truth-table and switch-state labels.
+     * @param {{ x: number, y: number, text: string, ownerIndex?: string, recordType?: string, rotation?: number }} text Text primitive.
+     * @param {number} x Render X coordinate.
+     * @param {number} sourceY Unprojected source Y coordinate.
+     * @param {number} projectedY Candidate SVG baseline.
+     * @param {number} sheetHeight Rendered sheet height.
+     * @param {number} fontSize Viewer font size.
+     * @param {{ x: number, y: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' } | null} matchedOwnerPin Matched pin label, if any.
+     * @param {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>} ownerTextBodyBounds Owner body bounds keyed by owner index.
+     * @param {{ x1: number, y1: number, x2: number, y2: number, lineStyle?: number }[]} lines Line primitives.
+     * @returns {number}
+     */
+    static #clampOwnerBodyTextBaseline(
+        text,
+        x,
+        sourceY,
+        projectedY,
+        sheetHeight,
+        fontSize,
+        matchedOwnerPin,
+        ownerTextBodyBounds,
+        lines
+    ) {
+        const bounds = SchematicSvgRenderer.#resolveOwnerBodyTextCellBounds(
+            text,
+            x,
+            sourceY,
+            fontSize,
+            matchedOwnerPin,
+            ownerTextBodyBounds,
+            lines
+        )
+
+        if (!bounds) {
+            return projectedY
+        }
+
+        return SchematicSvgRenderer.#clampTextBaselineToBounds(
+            text,
+            projectedY,
+            bounds,
+            sheetHeight,
+            fontSize
+        )
+    }
+
+    /**
+     * Resolves the owner body or internal owner body cell containing text.
+     * @param {{ ownerIndex?: string, recordType?: string, rotation?: number }} text Text primitive.
+     * @param {number} x Render X coordinate.
+     * @param {number} sourceY Unprojected source Y coordinate.
+     * @param {number} fontSize Viewer font size.
+     * @param {{ x: number, y: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' } | null} matchedOwnerPin Matched pin label, if any.
+     * @param {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>} ownerTextBodyBounds Owner body bounds keyed by owner index.
+     * @param {{ x1: number, y1: number, x2: number, y2: number, lineStyle?: number }[]} lines Line primitives.
+     * @returns {{ minX: number, minY: number, maxX: number, maxY: number } | null}
+     */
+    static #resolveOwnerBodyTextCellBounds(
+        text,
+        x,
+        sourceY,
+        fontSize,
+        matchedOwnerPin,
+        ownerTextBodyBounds,
+        lines
+    ) {
+        const bounds = SchematicSvgRenderer.#resolveOwnerBodyTextBounds(
+            text,
+            x,
+            sourceY,
+            fontSize,
+            matchedOwnerPin,
+            ownerTextBodyBounds
+        )
+
+        if (!bounds) {
+            return null
+        }
+
+        return (
+            SchematicSvgRenderer.#resolveOwnerBodyTextLineCellBounds(
+                text,
+                x,
+                sourceY,
+                fontSize,
+                bounds,
+                lines
+            ) || bounds
+        )
+    }
+
+    /**
+     * Resolves the owner body containing one free text primitive.
+     * @param {{ ownerIndex?: string, recordType?: string, rotation?: number }} text Text primitive.
+     * @param {number} x Render X coordinate.
+     * @param {number} sourceY Unprojected source Y coordinate.
+     * @param {number} fontSize Viewer font size.
+     * @param {{ x: number, y: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' } | null} matchedOwnerPin Matched pin label, if any.
+     * @param {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>} ownerTextBodyBounds Owner body bounds keyed by owner index.
+     * @returns {{ minX: number, minY: number, maxX: number, maxY: number } | null}
+     */
+    static #resolveOwnerBodyTextBounds(
+        text,
+        x,
+        sourceY,
+        fontSize,
+        matchedOwnerPin,
+        ownerTextBodyBounds
+    ) {
+        if (matchedOwnerPin) return null
+        if (text.recordType !== '4') return null
+        if (SchematicSvgRenderer.#normalizeDegrees(text.rotation) !== 0) {
+            return null
+        }
+        if (!Number.isFinite(fontSize) || fontSize <= 0) return null
+
+        const ownerIndex = String(text.ownerIndex || '').trim()
+        const tolerance = Math.max(fontSize * 0.4, 1)
+        const explicitBounds = ownerIndex
+            ? ownerTextBodyBounds.get(ownerIndex)
+            : null
+
+        if (
+            explicitBounds &&
+            SchematicSvgRenderer.#containsPointWithTolerance(
+                explicitBounds,
+                x,
+                sourceY,
+                tolerance
+            )
+        ) {
+            return explicitBounds
+        }
+
+        if (ownerIndex) {
+            return null
+        }
+
+        return SchematicSvgRenderer.#findContainingOwnerBodyBounds(
+            ownerTextBodyBounds,
+            x,
+            sourceY,
+            tolerance
+        )
+    }
+
+    /**
+     * Finds the smallest owner body containing one ownerless overlay label.
+     * @param {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>} ownerTextBodyBounds Owner body bounds keyed by owner index.
+     * @param {number} x Text X coordinate.
+     * @param {number} y Text baseline Y coordinate.
+     * @param {number} tolerance Coordinate tolerance.
+     * @returns {{ minX: number, minY: number, maxX: number, maxY: number } | null}
+     */
+    static #findContainingOwnerBodyBounds(
+        ownerTextBodyBounds,
+        x,
+        y,
+        tolerance
+    ) {
+        let bestBounds = null
+        let bestArea = Number.POSITIVE_INFINITY
+
+        for (const bounds of ownerTextBodyBounds.values()) {
+            if (
+                !SchematicSvgRenderer.#containsPointWithTolerance(
+                    bounds,
+                    x,
+                    y,
+                    tolerance
+                )
+            ) {
+                continue
+            }
+
+            const area =
+                Math.max(Number(bounds.maxX) - Number(bounds.minX), 0) *
+                Math.max(Number(bounds.maxY) - Number(bounds.minY), 0)
+
+            if (area < bestArea) {
+                bestArea = area
+                bestBounds = bounds
+            }
+        }
+
+        return bestBounds
+    }
+
+    /**
+     * Resolves the internal horizontal-line cell containing one text label.
+     * @param {number} x Text X coordinate.
+     * @param {number} y Text Y coordinate.
+     * @param {number} fontSize Viewer font size.
+     * @param {{ minX: number, minY: number, maxX: number, maxY: number }} bounds Owner body bounds.
+     * @param {{ x1: number, y1: number, x2: number, y2: number, lineStyle?: number }[]} lines Line primitives.
+     * @returns {{ minX: number, minY: number, maxX: number, maxY: number } | null}
+     */
+    static #resolveOwnerBodyTextLineCellBounds(
+        text,
+        x,
+        y,
+        fontSize,
+        bounds,
+        lines
+    ) {
+        const separators =
+            SchematicSvgRenderer.#collectOwnerBodyHorizontalSeparators(
+                x,
+                fontSize,
+                bounds,
+                lines
+            )
+
+        if (separators.length === 0) {
+            return null
+        }
+
+        const edges = [
+            Number(bounds.minY),
+            ...separators,
+            Number(bounds.maxY)
+        ].sort((left, right) => left - right)
+        const tolerance = Math.max(fontSize * 0.4, 1)
+        const descent =
+            fontSize * SchematicSvgRenderer.#resolveBodyTextDescentRatio(text)
+        const sampleY = y + (fontSize * BODY_TEXT_ASCENT_RATIO - descent) / 2
+
+        for (let index = 0; index < edges.length - 1; index += 1) {
+            const minY = edges[index]
+            const maxY = edges[index + 1]
+
+            if (sampleY >= minY && sampleY <= maxY) {
+                return {
+                    minX: bounds.minX,
+                    maxX: bounds.maxX,
+                    minY,
+                    maxY
+                }
+            }
+        }
+
+        for (let index = 0; index < edges.length - 1; index += 1) {
+            const minY = edges[index]
+            const maxY = edges[index + 1]
+
+            if (sampleY >= minY - tolerance && sampleY <= maxY + tolerance) {
+                return {
+                    minX: bounds.minX,
+                    maxX: bounds.maxX,
+                    minY,
+                    maxY
+                }
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Collects horizontal separators that behave like internal body cell rows.
+     * @param {number} x Text X coordinate.
+     * @param {number} fontSize Viewer font size.
+     * @param {{ minX: number, minY: number, maxX: number, maxY: number }} bounds Owner body bounds.
+     * @param {{ x1: number, y1: number, x2: number, y2: number, lineStyle?: number }[]} lines Line primitives.
+     * @returns {number[]}
+     */
+    static #collectOwnerBodyHorizontalSeparators(x, fontSize, bounds, lines) {
+        const tolerance = Math.max(fontSize * 0.4, 1)
+        const bodyWidth = Math.max(Number(bounds.maxX) - Number(bounds.minX), 0)
+        const minSpan = Math.max(
+            bodyWidth * BODY_TEXT_MIN_SEPARATOR_SPAN_RATIO,
+            fontSize * 1.5
+        )
+        const separators = new Set()
+
+        for (const line of lines || []) {
+            const y1 = Number(line?.y1)
+            const y2 = Number(line?.y2)
+            const x1 = Number(line?.x1)
+            const x2 = Number(line?.x2)
+
+            if (
+                !Number.isFinite(x1) ||
+                !Number.isFinite(x2) ||
+                !Number.isFinite(y1) ||
+                !Number.isFinite(y2) ||
+                Math.abs(y1 - y2) > tolerance
+            ) {
+                continue
+            }
+
+            const minX = Math.min(x1, x2)
+            const maxX = Math.max(x1, x2)
+            const span = maxX - minX
+
+            if (span < minSpan) continue
+            if (y1 <= bounds.minY + tolerance) continue
+            if (y1 >= bounds.maxY - tolerance) continue
+            if (minX < bounds.minX - tolerance) continue
+            if (maxX > bounds.maxX + tolerance) continue
+            if (x < minX - tolerance || x > maxX + tolerance) continue
+
+            separators.add(Number(formatNumber(y1)))
+        }
+
+        return [...separators].sort((left, right) => left - right)
+    }
+
+    /**
+     * Clamps a projected SVG text baseline so its visual box stays in bounds.
+     * @param {{ text?: string, resolvedText?: string }} text Text primitive.
+     * @param {number} y Candidate SVG baseline.
+     * @param {{ minY: number, maxY: number }} bounds Unprojected source bounds.
+     * @param {number} sheetHeight Rendered sheet height.
+     * @param {number} fontSize Viewer font size.
+     * @returns {number}
+     */
+    static #clampTextBaselineToBounds(text, y, bounds, sheetHeight, fontSize) {
+        const top = projectSchematicY(sheetHeight, bounds.maxY)
+        const bottom = projectSchematicY(sheetHeight, bounds.minY)
+        const ascent = fontSize * BODY_TEXT_ASCENT_RATIO
+        const descent =
+            fontSize * SchematicSvgRenderer.#resolveBodyTextDescentRatio(text)
+        const visualHeight = ascent + descent
+
+        if (bottom - top < visualHeight) {
+            return (top + bottom) / 2 + (ascent - descent) / 2
+        }
+
+        let resolvedY = y
+        const visualTop = resolvedY - ascent
+        if (visualTop < top) {
+            resolvedY += top - visualTop
+        }
+
+        const visualBottom = resolvedY + descent
+        if (visualBottom > bottom) {
+            resolvedY -= visualBottom - bottom
+        }
+
+        return resolvedY
+    }
+
+    /**
+     * Estimates the descent needed for body-cell text clamping.
+     * @param {{ text?: string, resolvedText?: string }} text Text primitive.
+     * @returns {number}
+     */
+    static #resolveBodyTextDescentRatio(text) {
+        const value = String(text?.resolvedText ?? text?.text ?? '')
+
+        return BODY_TEXT_DESCENDER_PATTERN.test(value)
+            ? BODY_TEXT_DESCENT_RATIO
+            : BODY_TEXT_FLAT_DESCENT_RATIO
+    }
+
+    /**
+     * Returns true when a point falls inside bounds with tolerance.
+     * @param {{ minX: number, minY: number, maxX: number, maxY: number }} bounds Bounds.
+     * @param {number} x X coordinate.
+     * @param {number} y Y coordinate.
+     * @param {number} tolerance Coordinate tolerance.
+     * @returns {boolean}
+     */
+    static #containsPointWithTolerance(bounds, x, y, tolerance) {
+        const numericX = Number(x)
+        const numericY = Number(y)
+
+        return (
+            Number.isFinite(numericX) &&
+            Number.isFinite(numericY) &&
+            numericX >= bounds.minX - tolerance &&
+            numericX <= bounds.maxX + tolerance &&
+            numericY >= bounds.minY - tolerance &&
+            numericY <= bounds.maxY + tolerance
+        )
+    }
+
+    /**
+     * Adds the SVG baseline correction for mirrored owner-local symbol text
+     * authored with the native orientation that stores the top of the text run.
+     * Baseline-oriented mirrored labels already use SVG-like y coordinates.
+     * @param {{ ownerIndex?: string, recordType?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean }} text Text primitive.
+     * @param {number} x Render X coordinate.
+     * @param {number} sourceY Unprojected source Y coordinate.
+     * @param {number} fontSize Viewer font size.
+     * @param {{ x: number, y: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' } | null} matchedOwnerPin Matched pin label, if any.
+     * @param {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>} ownerTextBodyBounds Owner body bounds keyed by owner index.
+     * @returns {number}
+     */
+    static #resolveOwnerBodyTextBaselineOffset(
+        text,
+        x,
+        sourceY,
+        fontSize,
+        matchedOwnerPin,
+        ownerTextBodyBounds
+    ) {
+        if (
+            !SchematicSvgRenderer.#isOwnerBodyBaselineText(
+                text,
+                x,
+                sourceY,
+                fontSize,
+                matchedOwnerPin,
+                ownerTextBodyBounds
+            )
+        ) {
+            return 0
+        }
+
+        return fontSize
+    }
+
+    /**
+     * Returns true when one text primitive is a top-origin mirrored owner-local
+     * symbol annotation sitting inside its owner's drawable body.
+     * @param {{ ownerIndex?: string, recordType?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean }} text Text primitive.
+     * @param {number} x Render X coordinate.
+     * @param {number} sourceY Unprojected source Y coordinate.
+     * @param {number} fontSize Viewer font size.
+     * @param {{ x: number, y: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' } | null} matchedOwnerPin Matched pin label, if any.
+     * @param {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>} ownerTextBodyBounds Owner body bounds keyed by owner index.
+     * @returns {boolean}
+     */
+    static #isOwnerBodyBaselineText(
+        text,
+        x,
+        sourceY,
+        fontSize,
+        matchedOwnerPin,
+        ownerTextBodyBounds
+    ) {
+        if (matchedOwnerPin) return false
+        if (text.recordType !== '4') return false
+        if (!text.isMirrored) return false
+        if (Number(text.sourceOrientation ?? 0) !== 2) return false
+        if (SchematicSvgRenderer.#normalizeDegrees(text.rotation) !== 0) {
+            return false
+        }
+        if (!Number.isFinite(fontSize) || fontSize <= 0) return false
+
+        const ownerIndex = String(text.ownerIndex || '').trim()
+        if (!ownerIndex) return false
+
+        const bounds = ownerTextBodyBounds.get(ownerIndex)
+        if (!bounds) return false
+
+        const numericX = Number(x)
+        const numericY = Number(sourceY)
+        const tolerance = Math.max(fontSize * 0.4, 1)
+
+        return (
+            Number.isFinite(numericX) &&
+            Number.isFinite(numericY) &&
+            numericX >= bounds.minX - tolerance &&
+            numericX <= bounds.maxX + tolerance &&
+            numericY >= bounds.minY - tolerance &&
+            numericY <= bounds.maxY + tolerance
+        )
     }
 
     /**
@@ -2475,11 +3320,18 @@ export class SchematicSvgRenderer {
 
     /**
      * Builds one schematic cross marker.
-     * @param {{ x: number, y: number, size: number, color: string }} cross
+     * @param {{ x: number, y: number, size: number, color: string, symbolName?: string }} cross
      * @param {number} sheetHeight
      * @returns {string}
      */
     static #buildSchematicCrossMarkup(cross, sheetHeight) {
+        if (String(cross.symbolName || '').toLowerCase() === 'checkbox') {
+            return SchematicSvgRenderer.#buildSchematicCheckboxMarkup(
+                cross,
+                sheetHeight
+            )
+        }
+
         const x = cross.x
         const y = projectSchematicY(sheetHeight, cross.y)
         const half = Math.max(Number(cross.size || 6), 4) / 2
@@ -2515,6 +3367,64 @@ export class SchematicSvgRenderer {
                     '--schematic-alert-color'
                 )
             ) +
+            '" /></g>'
+        )
+    }
+
+    /**
+     * Builds one checkbox-shaped no-ERC marker.
+     * @param {{ x: number, y: number, size: number, color: string }} cross
+     * @param {number} sheetHeight
+     * @returns {string}
+     */
+    static #buildSchematicCheckboxMarkup(cross, sheetHeight) {
+        const x = Number(cross.x)
+        const y = projectSchematicY(sheetHeight, cross.y)
+        const size = Math.max(Number(cross.size || 6), 4)
+        const left = x - 1
+        const top = y - size - 7
+        const color = escapeHtml(
+            SchematicColorResolver.resolveColor(
+                cross.color,
+                '--schematic-alert-color'
+            )
+        )
+
+        return (
+            '<g class="schematic-cross schematic-cross--checkbox"><line x1="' +
+            formatNumber(x) +
+            '" y1="' +
+            formatNumber(y) +
+            '" x2="' +
+            formatNumber(left) +
+            '" y2="' +
+            formatNumber(top + size) +
+            '" stroke="' +
+            color +
+            '" /><rect x="' +
+            formatNumber(left) +
+            '" y="' +
+            formatNumber(top) +
+            '" width="' +
+            formatNumber(size) +
+            '" height="' +
+            formatNumber(size) +
+            '" fill="none" stroke="' +
+            color +
+            '" /><polyline points="' +
+            formatNumber(left + size * 0.2) +
+            ',' +
+            formatNumber(top + size * 0.5) +
+            ' ' +
+            formatNumber(left + size * 0.5) +
+            ',' +
+            formatNumber(top + size * 0.8) +
+            ' ' +
+            formatNumber(left + size * 0.9666666667) +
+            ',' +
+            formatNumber(top + size * 0.2) +
+            '" fill="none" stroke="' +
+            color +
             '" /></g>'
         )
     }
@@ -2567,28 +3477,11 @@ export class SchematicSvgRenderer {
     static #resolveAuthoredSchematicJunctionColor(junction, lines) {
         const connectedLine = lines.find(
             (line) =>
-                SchematicSvgRenderer.#isElectricalSchematicLine(line) &&
+                SchematicLineColorResolver.isElectricalLine(line) &&
                 SchematicSvgRenderer.#schematicLineContainsPoint(line, junction)
         )
 
         return connectedLine?.color || junction.color
-    }
-
-    /**
-     * Returns true when one normalized line can carry schematic net color.
-     * @param {{ ownerIndex?: string, isBus?: boolean, recordType?: string } | null | undefined} line
-     * @returns {boolean}
-     */
-    static #isElectricalSchematicLine(line) {
-        if (line?.ownerIndex || line?.isBus === true) {
-            return false
-        }
-
-        if (!Object.prototype.hasOwnProperty.call(line || {}, 'recordType')) {
-            return true
-        }
-
-        return !['6', '7', '26'].includes(String(line.recordType || ''))
     }
 
     /**

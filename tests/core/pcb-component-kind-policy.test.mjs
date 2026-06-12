@@ -75,7 +75,7 @@ test('PcbModelParser exposes native component kind policy fields', () => {
                     displayName: 'Graphical',
                     includeInBom: false,
                     includeInNetlist: false,
-                    includeInPnp: false
+                    includeInPlacement: false
                 }
             },
             {
@@ -86,7 +86,7 @@ test('PcbModelParser exposes native component kind policy fields', () => {
                     displayName: 'Jumper',
                     includeInBom: true,
                     includeInNetlist: true,
-                    includeInPnp: true
+                    includeInPlacement: true
                 }
             },
             {
@@ -97,7 +97,7 @@ test('PcbModelParser exposes native component kind policy fields', () => {
                     displayName: 'Standard No BOM',
                     includeInBom: false,
                     includeInNetlist: true,
-                    includeInPnp: true
+                    includeInPlacement: true
                 }
             },
             {
@@ -108,7 +108,7 @@ test('PcbModelParser exposes native component kind policy fields', () => {
                     displayName: 'Standard',
                     includeInBom: true,
                     includeInNetlist: true,
-                    includeInPnp: true
+                    includeInPlacement: true
                 }
             }
         ]
@@ -120,13 +120,13 @@ test('PcbModelParser exposes native component kind policy fields', () => {
     assert.deepEqual(
         model.pnp.entries.map((entry) => ({
             designator: entry.designator,
-            includeInPnp: entry.componentKind.includeInPnp
+            includeInPlacement: entry.componentKind.includeInPlacement
         })),
         [
-            { designator: 'G1', includeInPnp: false },
-            { designator: 'JMP1', includeInPnp: true },
-            { designator: 'TP1', includeInPnp: true },
-            { designator: 'U1', includeInPnp: true }
+            { designator: 'G1', includeInPlacement: false },
+            { designator: 'JMP1', includeInPlacement: true },
+            { designator: 'TP1', includeInPlacement: true },
+            { designator: 'U1', includeInPlacement: true }
         ]
     )
 })

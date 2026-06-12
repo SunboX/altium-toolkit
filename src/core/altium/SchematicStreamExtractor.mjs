@@ -12,6 +12,8 @@ import { OleConstants } from '../ole/OleConstants.mjs'
  * containers.
  */
 export class SchematicStreamExtractor {
+    static #AUXILIARY_PRINTABLE_STREAMS = new Set(['Additional'])
+
     /**
      * Returns true when one buffer starts with the OLE compound-document
      * signature.
@@ -38,9 +40,10 @@ export class SchematicStreamExtractor {
     }
 
     /**
-     * Extracts schematic records from the logical `FileHeader` stream.
+     * Extracts schematic records from the logical `FileHeader` stream and
+     * Altium's auxiliary printable schematic streams.
      * @param {ArrayBuffer} arrayBuffer
-     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[] } | null}
+     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, streamNames: string[], embeddedFiles?: object } | null}
      */
     static extractFromArrayBuffer(arrayBuffer) {
         if (!SchematicStreamExtractor.isCompoundDocument(arrayBuffer)) {
@@ -55,20 +58,28 @@ export class SchematicStreamExtractor {
             return null
         }
 
-        let fileHeaderBytes
+        let fileHeaderRecords
 
         try {
-            fileHeaderBytes = compoundDocument.getStream('FileHeader')
+            fileHeaderRecords = SchematicStreamExtractor.#parseStreamRecords(
+                compoundDocument,
+                'FileHeader'
+            )
         } catch {
             return null
         }
 
-        const records = AsciiRecordParser.parse(
-            SchematicStreamExtractor.#toArrayBuffer(fileHeaderBytes)
-        ).map((record) => ({
-            ...record,
-            sourceStream: 'FileHeader'
-        }))
+        const streamNames = compoundDocument.listStreams()
+        const auxiliaryStreamNames = streamNames.filter((streamName) =>
+            SchematicStreamExtractor.#isAuxiliaryPrintableStream(streamName)
+        )
+        const auxiliaryRecords = auxiliaryStreamNames.flatMap((streamName) =>
+            SchematicStreamExtractor.#parseStreamRecords(
+                compoundDocument,
+                streamName
+            )
+        )
+        const records = [...fileHeaderRecords, ...auxiliaryRecords]
 
         if (!records.length) {
             return null
@@ -76,16 +87,52 @@ export class SchematicStreamExtractor {
 
         return {
             records,
-            streamNames: compoundDocument.listStreams(),
+            streamNames,
             embeddedFiles: EmbeddedFileInventoryBuilder.buildFromStreams(
                 new Map(
-                    compoundDocument
-                        .listStreams()
-                        .map((name) => [name, compoundDocument.getStream(name)])
+                    streamNames.map((name) => [
+                        name,
+                        compoundDocument.getStream(name)
+                    ])
                 ),
-                { skipStreamNames: ['FileHeader'] }
+                {
+                    skipStreamNames: ['FileHeader', ...auxiliaryStreamNames]
+                }
             )
         }
+    }
+
+    /**
+     * Parses printable records from one compound-document stream.
+     * @param {OleCompoundDocument} compoundDocument
+     * @param {string} streamName
+     * @returns {Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>}
+     */
+    static #parseStreamRecords(compoundDocument, streamName) {
+        return AsciiRecordParser.parse(
+            SchematicStreamExtractor.#toArrayBuffer(
+                compoundDocument.getStream(streamName)
+            )
+        ).map((record) => ({
+            ...record,
+            sourceStream: streamName
+        }))
+    }
+
+    /**
+     * Returns true for known non-embedded schematic streams with printable
+     * primitive records.
+     * @param {string} streamName
+     * @returns {boolean}
+     */
+    static #isAuxiliaryPrintableStream(streamName) {
+        const leafName = String(streamName || '')
+            .split('/')
+            .at(-1)
+
+        return SchematicStreamExtractor.#AUXILIARY_PRINTABLE_STREAMS.has(
+            leafName
+        )
     }
 
     /**

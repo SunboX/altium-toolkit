@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import assert from 'node:assert/strict'
+import { deflateSync } from 'node:zlib'
 import test from 'node:test'
 
 import { PcbLibModelParser } from '../../src/core/altium/PcbLibModelParser.mjs'
@@ -98,6 +99,35 @@ class PcbLibStreamTestFactory {
                 PcbLibStreamTestFactory.#createLengthPrefixedViaRecord(),
                 PcbBinaryPrimitiveTestFactory.createRegionStream().dataBytes
             ])
+        )
+
+        return streams
+    }
+
+    /**
+     * Creates one stream map with PcbLib-scoped embedded model storage.
+     * @returns {Map<string, Uint8Array>}
+     */
+    static createStreamMapWithLibraryModels() {
+        const streams = PcbLibStreamTestFactory.createStreamMap()
+        const stepText = [
+            'ISO-10303-21;',
+            'HEADER;',
+            'ENDSEC;',
+            'DATA;',
+            'ENDSEC;',
+            'END-ISO-10303-21;'
+        ].join('\n')
+
+        streams.set(
+            'Library/Models/Data',
+            PcbLibStreamTestFactory.#createLengthPrefixedAscii(
+                'EMBED=TRUE|MODELSOURCE=Undefined|ID={11111111-2222-3333-4444-555555555555}|ROTX=0.000|ROTY=0.000|ROTZ=90.000|DZ=50000|CHECKSUM=123456789|NAME=SYNTHETIC_BODY.step\u0000'
+            )
+        )
+        streams.set(
+            'Library/Models/0',
+            Uint8Array.from(deflateSync(new TextEncoder().encode(stepText)))
         )
 
         return streams
@@ -355,6 +385,33 @@ test('PcbLibStreamExtractor extracts declared footprint storages', () => {
     assert.equal(extraction.diagnostics.footprintCount, 2)
     assert.equal(extraction.diagnostics.primitiveCount, 6)
     assert.equal(extraction.diagnostics.rawRecordCount, 7)
+})
+
+/**
+ * Verifies PcbLib-specific model streams are included in embedded model
+ * recovery.
+ */
+test('PcbLibStreamExtractor extracts library-scoped embedded models', () => {
+    const extraction = PcbLibStreamExtractor.extractFromStreams(
+        PcbLibStreamTestFactory.createStreamMapWithLibraryModels()
+    )
+
+    assert.deepEqual(
+        extraction.embeddedModels.models.map((model) => ({
+            name: model.name,
+            format: model.format,
+            sourceStream: model.sourceStream
+        })),
+        [
+            {
+                name: 'SYNTHETIC_BODY.step',
+                format: 'step',
+                sourceStream: 'Library/Models/0'
+            }
+        ]
+    )
+    assert.equal(extraction.diagnostics.embeddedModelCount, 1)
+    assert.ok(extraction.streamNames.includes('Library/Models/0'))
 })
 
 /**

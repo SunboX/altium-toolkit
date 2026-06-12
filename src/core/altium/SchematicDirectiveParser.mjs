@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { ParserUtils } from './ParserUtils.mjs'
+import { SchematicNoErcSymbolResolver } from './SchematicNoErcSymbolResolver.mjs'
 
 /**
  * Helpers for normalized schematic directive primitives.
@@ -144,6 +145,7 @@ export class SchematicDirectiveParser {
         const x = ParserUtils.parseNumericField(record.fields, 'Location.X')
         const y = ParserUtils.parseNumericField(record.fields, 'Location.Y')
         if (x === null || y === null) return null
+        const rawSymbol = ParserUtils.getField(record.fields, 'Symbol')
         const symbol = ParserUtils.parseNumericField(record.fields, 'Symbol')
 
         return {
@@ -160,7 +162,9 @@ export class SchematicDirectiveParser {
                 ParserUtils.parseNumericField(record.fields, 'Orientation') ||
                 0,
             symbol,
-            symbolName: SchematicDirectiveParser.#noErcSymbolName(symbol)
+            symbolName: SchematicNoErcSymbolResolver.resolveSymbolName(
+                rawSymbol || symbol
+            )
         }
     }
 
@@ -330,22 +334,6 @@ export class SchematicDirectiveParser {
         )
         if (indexInSheet !== null) return 'record-' + indexInSheet
         return 'record-' + String(record.recordIndex ?? 0)
-    }
-
-    /**
-     * Converts common No ERC symbol ids into public labels.
-     * @param {number | null} symbol Symbol id.
-     * @returns {string}
-     */
-    static #noErcSymbolName(symbol) {
-        return (
-            {
-                0: 'generic',
-                1: 'box',
-                2: 'cross',
-                3: 'triangle'
-            }[Number(symbol)] || 'unknown'
-        )
     }
 
     /**

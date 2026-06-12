@@ -72,10 +72,40 @@ test('renderSchematicSvg keeps missing-order owner bodies behind indexed connect
 })
 
 /**
- * Verifies narrow owner-geometry color strips keep their authored source
- * colors instead of collapsing through global schematic theme tokens.
+ * Verifies ownerless decorative symbol linework that is authored after a
+ * filled owner body remains visible above that fill.
  */
-test('renderSchematicSvg preserves literal colors on owner color strips', () => {
+test('renderSchematicSvg layers later ownerless symbol strokes above owner fills', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=200|CustomY=140|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=14|OwnerIndex=300|IndexInSheet=2|OwnerPartId=1|Location.X=50|Location.Y=40|Corner.X=130|Corner.Y=100' +
+            '|LineWidth=1|Color=128|AreaColor=11599871|IsSolid=T',
+        '|RECORD=6|IndexInSheet=3|OwnerPartId=-1|LineWidth=1|EndLineShape=2|EndLineShapeSize=8|Color=16711680' +
+            '|LocationCount=2|X1=70|Y1=72|X2=115|Y2=72'
+    ]
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'late-ownerless-symbol-stroke.SchDoc',
+        new TextEncoder().encode(records.join('')).buffer
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+    const bodySnippet =
+        '<rect class="schematic-rectangle" x="50" y="40" width="80" height="60"'
+    const lineSnippet =
+        '<line x1="70" y1="68" x2="115" y2="68" stroke="var(--schematic-accent-ink-color)" stroke-width="1" marker-end="url(#schematic-marker-filled-arrow-8)" />'
+
+    assert.notEqual(markup.indexOf(bodySnippet), -1)
+    assert.notEqual(markup.indexOf(lineSnippet), -1)
+    assert.ok(markup.indexOf(bodySnippet) < markup.indexOf(lineSnippet))
+})
+
+/**
+ * Verifies narrow owner-geometry color strips keep their authored color intent
+ * through a muted palette instead of collapsing through global theme tokens.
+ */
+test('renderSchematicSvg preserves muted color intent on owner color strips', () => {
     const markup = SchematicSvgRenderer.render({
         summary: { title: 'Color strip schematic' },
         schematic: {
@@ -164,21 +194,122 @@ test('renderSchematicSvg preserves literal colors on owner color strips', () => 
                     transparent: false,
                     lineWidth: 1,
                     renderOrder: 6
+                },
+                {
+                    ownerIndex: '107',
+                    x: 140,
+                    y: 20,
+                    width: 5,
+                    height: 25,
+                    color: '#000080',
+                    fill: '#0000bf',
+                    isSolid: true,
+                    transparent: true,
+                    lineWidth: 1,
+                    renderOrder: 7
+                },
+                {
+                    x: 160,
+                    y: 20,
+                    width: 5,
+                    height: 90,
+                    color: '#000080',
+                    fill: '#0000bf',
+                    isSolid: true,
+                    transparent: true,
+                    lineWidth: 1,
+                    renderOrder: 8
+                }
+            ],
+            roundedRectangles: [
+                {
+                    ownerIndex: '108',
+                    x: 180,
+                    y: 60,
+                    width: 5,
+                    height: 25,
+                    radius: 1,
+                    color: '#0000bf',
+                    fill: '#ff0000',
+                    isSolid: true,
+                    transparent: true,
+                    lineWidth: 1,
+                    renderOrder: 9
                 }
             ]
         }
     })
 
     for (const fill of [
-        '#800000',
-        '#000080',
-        '#808000',
-        '#fd8300',
-        '#008000',
-        '#af9b8f'
+        '#6f2a2a',
+        '#2a2a6f',
+        '#6f6f2a',
+        '#b78146',
+        '#2a6f2a',
+        '#af9b8f',
+        '#35358a'
     ]) {
-        assert.match(markup, new RegExp('fill="' + fill + '" stroke="#000080"'))
+        assert.match(markup, new RegExp('fill="' + fill + '" stroke="#2a2a6f"'))
     }
+    assert.match(
+        markup,
+        /<rect class="schematic-rectangle" x="160" y="70" width="5" height="90" fill="none" stroke="var\(--schematic-default-ink-color\)" stroke-width="1" \/>/
+    )
+    assert.match(
+        markup,
+        /<rect class="schematic-rounded-rectangle" x="180" y="95" width="5" height="25" rx="1" ry="1" fill="#b94646" stroke="#35358a" stroke-width="1" \/>/
+    )
+})
+
+/**
+ * Verifies vertical owner line strips keep their schematic color intent when a
+ * library symbol encodes the same visual side rail as line primitives.
+ */
+test('renderSchematicSvg preserves color intent on owner vertical line strips', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Line strip schematic' },
+        schematic: {
+            sheet: { width: 180, height: 150 },
+            lines: [
+                {
+                    ownerIndex: '201',
+                    x1: 40,
+                    y1: 20,
+                    x2: 40,
+                    y2: 120,
+                    color: '#000000',
+                    width: 1,
+                    recordType: '6',
+                    renderOrder: 1
+                },
+                {
+                    ownerIndex: '202',
+                    x1: 70,
+                    y1: 20,
+                    x2: 70,
+                    y2: 120,
+                    color: '#5f74e2',
+                    width: 1,
+                    recordType: '6',
+                    renderOrder: 2
+                }
+            ],
+            texts: [],
+            components: [],
+            pins: [],
+            ports: [],
+            crosses: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /<line x1="40" y1="130" x2="40" y2="30" stroke="var\(--schematic-default-ink-color\)" stroke-width="1" \/>/
+    )
+    assert.match(
+        markup,
+        /<line x1="70" y1="130" x2="70" y2="30" stroke="#7684cb" stroke-width="1" \/>/
+    )
 })
 
 /**

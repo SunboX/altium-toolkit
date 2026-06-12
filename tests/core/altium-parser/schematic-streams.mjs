@@ -41,6 +41,35 @@ class SplitSchematicOleFactory {
     }
 
     /**
+     * Creates one OLE document with schematic blanket records in Altium's
+     * auxiliary printable stream.
+     * @returns {ArrayBuffer}
+     */
+    static createDocumentBufferWithAdditionalStream() {
+        const { prefix, suffix } =
+            SplitSchematicOleFactory.#buildSplitFileHeaderParts()
+        const additional = SplitSchematicOleFactory.#buildAdditionalStream()
+        const totalSectorCount = 5
+        const bytes = new Uint8Array(
+            SECTOR_BYTE_LENGTH * (totalSectorCount + 1)
+        )
+        const dataView = new DataView(bytes.buffer)
+
+        SplitSchematicOleFactory.#writeHeader(dataView)
+        SplitSchematicOleFactory.#writeFatSector(dataView)
+        SplitSchematicOleFactory.#writeDirectorySector(
+            dataView,
+            prefix.length + suffix.length,
+            additional.length
+        )
+        bytes.set(new TextEncoder().encode(prefix), SECTOR_BYTE_LENGTH * 3)
+        bytes.set(new TextEncoder().encode(additional), SECTOR_BYTE_LENGTH * 4)
+        bytes.set(new TextEncoder().encode(suffix), SECTOR_BYTE_LENGTH * 5)
+
+        return bytes.buffer
+    }
+
+    /**
      * Builds two stream parts with the first part ending at the `C` in
      * `COLOR`, matching sector-boundary splits seen in native containers.
      * @returns {{ prefix: string, suffix: string }}
@@ -66,6 +95,18 @@ class SplitSchematicOleFactory {
             prefix: beforeFiller + 'A'.repeat(fillerLength) + afterFiller,
             suffix: 'OLOR=8388608|Location.Y=115|FontID=2'
         }
+    }
+
+    /**
+     * Builds one auxiliary blanket frame stream.
+     * @returns {string}
+     */
+    static #buildAdditionalStream() {
+        return (
+            '|RECORD=225|IndexInSheet=8|OwnerPartId=-1|Location.X=40|Location.Y=30' +
+            '|Corner.X=160|Corner.Y=110|Color=255|AreaColor=16777215|LineStyle=1' +
+            '|LocationCount=4|X1=40|Y1=110|X2=160|Y2=110|X3=160|Y3=30|X4=40|Y4=30'
+        )
     }
 
     /**
@@ -113,7 +154,11 @@ class SplitSchematicOleFactory {
      * @param {DataView} dataView
      * @param {number} fileHeaderByteLength
      */
-    static #writeDirectorySector(dataView, fileHeaderByteLength) {
+    static #writeDirectorySector(
+        dataView,
+        fileHeaderByteLength,
+        additionalByteLength = 0
+    ) {
         const offset = SECTOR_BYTE_LENGTH * 2
         const entries = [
             SplitSchematicOleFactory.#createDirectoryEntryBytes({
@@ -127,9 +172,17 @@ class SplitSchematicOleFactory {
                 name: 'FileHeader',
                 type: 2,
                 startSector: 2,
-                streamSize: fileHeaderByteLength
+                streamSize: fileHeaderByteLength,
+                rightSibling: additionalByteLength ? 2 : -1
             }),
-            new Uint8Array(128),
+            additionalByteLength
+                ? SplitSchematicOleFactory.#createDirectoryEntryBytes({
+                      name: 'Additional',
+                      type: 2,
+                      startSector: 3,
+                      streamSize: additionalByteLength
+                  })
+                : new Uint8Array(128),
             new Uint8Array(128)
         ]
 
@@ -142,7 +195,7 @@ class SplitSchematicOleFactory {
 
     /**
      * Builds one OLE directory entry.
-     * @param {{ name: string, type: number, startSector: number, streamSize: number, child?: number }} options
+     * @param {{ name: string, type: number, startSector: number, streamSize: number, child?: number, leftSibling?: number, rightSibling?: number }} options
      * @returns {Uint8Array}
      */
     static #createDirectoryEntryBytes(options) {
@@ -163,8 +216,8 @@ class SplitSchematicOleFactory {
         )
         dataView.setUint8(66, options.type)
         dataView.setUint8(67, 1)
-        dataView.setInt32(68, -1, true)
-        dataView.setInt32(72, -1, true)
+        dataView.setInt32(68, options.leftSibling ?? -1, true)
+        dataView.setInt32(72, options.rightSibling ?? -1, true)
         dataView.setInt32(76, options.child ?? -1, true)
         dataView.setInt32(116, options.startSector, true)
         dataView.setBigUint64(120, BigInt(options.streamSize), true)
@@ -205,4 +258,49 @@ test('parseAltiumArrayBuffer reads schematic records from the FileHeader stream'
     assert.equal(recoveredText.color, '#000080')
     assert.equal(recoveredText.fontSize, 15)
     assert.equal(recoveredText.fontWeight, 700)
+})
+
+/**
+ * Verifies OLE-backed schematics merge Altium's auxiliary printable stream so
+ * blanket directive frames are not dropped when they live outside FileHeader.
+ */
+test('parseAltiumArrayBuffer reads schematic blankets from the Additional stream', () => {
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'stream-additional.SchDoc',
+        SplitSchematicOleFactory.createDocumentBufferWithAdditionalStream()
+    )
+
+    assert.deepEqual(documentModel.schematic.directiveSemantics.blankets, [
+        {
+            recordId: 'record-8',
+            recordType: '225',
+            recordIndex: 3,
+            indexInSheet: 8,
+            points: [
+                { x: 40, y: 110 },
+                { x: 160, y: 110 },
+                { x: 160, y: 30 },
+                { x: 40, y: 30 }
+            ],
+            color: '#ff0000',
+            fillColor: '#ffffff',
+            isSolid: false
+        }
+    ])
+    assert.deepEqual(documentModel.schematic.rectangles, [
+        {
+            x: 40,
+            y: 30,
+            width: 120,
+            height: 80,
+            color: '#ff0000',
+            fill: '#ffffff',
+            isSolid: true,
+            transparent: false,
+            lineWidth: 1,
+            lineStyle: 1,
+            renderOrder: 8,
+            ownerIndex: undefined
+        }
+    ])
 })

@@ -50,32 +50,45 @@ export class SchematicDirectiveRenderer {
                 return SchematicDirectiveRenderer.#buildRouteMarkup(
                     directive,
                     sheetHeight,
-                    sheet
+                    sheet,
+                    'route'
                 )
             default:
-                return ''
+                return directive?.name
+                    ? SchematicDirectiveRenderer.#buildRouteMarkup(
+                          directive,
+                          sheetHeight,
+                          sheet,
+                          'parameter-set'
+                      )
+                    : ''
         }
     }
 
     /**
-     * Builds the labeled route-callout marker for one differential-pair
-     * routing directive.
-     * @param {{ x: number, y: number, color: string, orientation?: number }} directive
+     * Builds the labeled info-callout marker for one parameter-set directive.
+     * @param {{ x: number, y: number, color: string, name: string, orientation?: number }} directive
      * @param {number} sheetHeight
      * @param {{ fonts?: Record<string, { size: number, family: string, bold: boolean }> }} sheet
+     * @param {string} classModifier
      * @returns {string}
      */
-    static #buildRouteMarkup(directive, sheetHeight, sheet) {
+    static #buildRouteMarkup(directive, sheetHeight, sheet, classModifier) {
         const color = SchematicColorResolver.resolveColor(
             directive.color,
             '--schematic-alert-color'
         )
         const projectedY = projectSchematicY(sheetHeight, directive.y)
-        const verticalDirection =
-            Number(directive.orientation || 0) === 3 ? 1 : -1
+        const direction = SchematicDirectiveRenderer.#resolveCalloutDirection(
+            directive.orientation
+        )
         const circleRadius = 7
-        const circleCenterY = projectedY + verticalDirection * 18
-        const leaderEndY = circleCenterY - verticalDirection * circleRadius
+        const calloutDistance =
+            SchematicDirectiveRenderer.#resolveCalloutDistance(direction)
+        const circleCenterX = directive.x + direction.x * calloutDistance
+        const circleCenterY = projectedY + direction.y * calloutDistance
+        const leaderEndX = circleCenterX - direction.x * circleRadius
+        const leaderEndY = circleCenterY - direction.y * circleRadius
         const labelOptions =
             SchematicTypography.buildViewerSchematicFontOptions(sheet)
         const infoOptions = {
@@ -83,26 +96,32 @@ export class SchematicDirectiveRenderer {
             fontSize: Math.max(Number(labelOptions.fontSize || 9) - 1, 6),
             fontWeight: 700
         }
-        const labelY =
-            circleCenterY +
-            verticalDirection *
-                (circleRadius + Number(labelOptions.fontSize || 9))
+        const labelPlacement =
+            SchematicDirectiveRenderer.#resolveLabelPlacement(
+                circleCenterX,
+                circleCenterY,
+                direction,
+                circleRadius,
+                Number(labelOptions.fontSize || 9)
+            )
 
         return (
-            '<g class="schematic-directive schematic-directive--route">' +
+            '<g class="schematic-directive schematic-directive--' +
+            escapeHtml(classModifier) +
+            '">' +
             '<line x1="' +
             formatNumber(directive.x) +
             '" y1="' +
             formatNumber(projectedY) +
             '" x2="' +
-            formatNumber(directive.x) +
+            formatNumber(leaderEndX) +
             '" y2="' +
             formatNumber(leaderEndY) +
             '" stroke="' +
             escapeHtml(color) +
             '" stroke-width="1" />' +
             '<circle cx="' +
-            formatNumber(directive.x) +
+            formatNumber(circleCenterX) +
             '" cy="' +
             formatNumber(circleCenterY) +
             '" r="' +
@@ -112,17 +131,20 @@ export class SchematicDirectiveRenderer {
             '" stroke-width="1" />' +
             createSvgText(
                 'schematic-directive-label',
-                directive.x,
-                labelY,
+                labelPlacement.x,
+                labelPlacement.y,
                 String(directive.name || ''),
                 color,
-                'middle',
+                labelPlacement.anchor,
                 labelOptions
             ) +
             createSvgText(
                 'schematic-directive-info',
-                directive.x,
-                circleCenterY + Number(infoOptions.fontSize || 8) * 0.34,
+                circleCenterX,
+                circleCenterY +
+                    SchematicDirectiveRenderer.#baselineOffset(
+                        Number(infoOptions.fontSize || 8)
+                    ),
                 'i',
                 color,
                 'middle',
@@ -130,6 +152,95 @@ export class SchematicDirectiveRenderer {
             ) +
             '</g>'
         )
+    }
+
+    /**
+     * Resolves Altium's four-way callout orientation into an outward vector.
+     * @param {number | undefined} orientation
+     * @returns {{ x: number, y: number }}
+     */
+    static #resolveCalloutDirection(orientation) {
+        switch (Number(orientation || 0)) {
+            case 1:
+                return { x: 0, y: -1 }
+            case 2:
+                return { x: -1, y: 0 }
+            case 3:
+                return { x: 0, y: 1 }
+            default:
+                return { x: 1, y: 0 }
+        }
+    }
+
+    /**
+     * Resolves the distance from a directive anchor to its info marker center.
+     * @param {{ x: number, y: number }} direction
+     * @returns {number}
+     */
+    static #resolveCalloutDistance(direction) {
+        return direction.y < 0 ? 12 : 18
+    }
+
+    /**
+     * Resolves label placement outside one directive info marker.
+     * @param {number} circleCenterX
+     * @param {number} circleCenterY
+     * @param {{ x: number, y: number }} direction
+     * @param {number} circleRadius
+     * @param {number} fontSize
+     * @returns {{ x: number, y: number, anchor: 'start' | 'middle' | 'end' }}
+     */
+    static #resolveLabelPlacement(
+        circleCenterX,
+        circleCenterY,
+        direction,
+        circleRadius,
+        fontSize
+    ) {
+        const labelDistance = circleRadius + fontSize
+
+        if (direction.x < 0) {
+            return {
+                x: circleCenterX - labelDistance,
+                y:
+                    circleCenterY +
+                    SchematicDirectiveRenderer.#baselineOffset(fontSize),
+                anchor: 'end'
+            }
+        }
+
+        if (direction.x > 0) {
+            return {
+                x: circleCenterX + labelDistance,
+                y:
+                    circleCenterY +
+                    SchematicDirectiveRenderer.#baselineOffset(fontSize),
+                anchor: 'start'
+            }
+        }
+
+        if (direction.y < 0) {
+            return {
+                x: circleCenterX,
+                y: circleCenterY - circleRadius - 2,
+                anchor: 'middle'
+            }
+        }
+
+        return {
+            x: circleCenterX,
+            y: circleCenterY + direction.y * labelDistance,
+            anchor: 'middle'
+        }
+    }
+
+    /**
+     * Returns a baseline offset that visually centers text around a marker.
+     * @param {number} fontSize
+     * @returns {number}
+     */
+    static #baselineOffset(fontSize) {
+        return fontSize * 0.34
     }
 
     /**

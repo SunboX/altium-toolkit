@@ -25,27 +25,27 @@ test('renderSchematicSvg aligns moon-sheet pin number and name columns', async (
     )
     assert.match(
         markup,
-        /text class="schematic-pin-name" x="459" y="265" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">GND</
+        /text class="schematic-pin-name" x="462" y="265" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">GND</
     )
     assert.match(
         markup,
-        /text class="schematic-pin-name" x="601" y="265" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400">GND</
+        /text class="schematic-pin-name" x="598" y="265" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400">GND</
     )
     assert.match(
         markup,
-        /text class="schematic-pin-name" x="379" y="615" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">A</
+        /text class="schematic-pin-name" x="382" y="615" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">A</
     )
     assert.match(
         markup,
-        /text class="schematic-pin-name" x="431" y="615" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400">VCC</
+        /text class="schematic-pin-name" x="428" y="615" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400">VCC</
     )
     assert.match(
         markup,
-        /text class="schematic-pin-name" x="624" y="625" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">A</
+        /text class="schematic-pin-name" x="627" y="625" fill="var\(--schematic-text-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">A</
     )
     assert.match(
         markup,
-        /text class="schematic-pin-name" x="676" y="625" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400">VCC</
+        /text class="schematic-pin-name" x="673" y="625" fill="var\(--schematic-text-color\)" text-anchor="end" font-size="9" font-family="Times New Roman" font-weight="400">VCC</
     )
     assert.match(
         markup,
