@@ -70,6 +70,34 @@ class SplitSchematicOleFactory {
     }
 
     /**
+     * Creates one OLE document whose FileHeader stream uses native
+     * length-prefixed property records.
+     * @returns {ArrayBuffer}
+     */
+    static createDocumentBufferWithFramedRecords() {
+        const fileHeader = SplitSchematicOleFactory.#buildFramedFileHeader()
+        const totalSectorCount = 5
+        const bytes = new Uint8Array(
+            SECTOR_BYTE_LENGTH * (totalSectorCount + 1)
+        )
+        const dataView = new DataView(bytes.buffer)
+
+        SplitSchematicOleFactory.#writeHeader(dataView)
+        SplitSchematicOleFactory.#writeFatSector(dataView)
+        SplitSchematicOleFactory.#writeDirectorySector(
+            dataView,
+            fileHeader.byteLength
+        )
+        bytes.set(
+            fileHeader.slice(0, SECTOR_BYTE_LENGTH),
+            SECTOR_BYTE_LENGTH * 3
+        )
+        bytes.set(fileHeader.slice(SECTOR_BYTE_LENGTH), SECTOR_BYTE_LENGTH * 5)
+
+        return bytes.buffer
+    }
+
+    /**
      * Builds two stream parts with the first part ending at the `C` in
      * `COLOR`, matching sector-boundary splits seen in native containers.
      * @returns {{ prefix: string, suffix: string }}
@@ -107,6 +135,87 @@ class SplitSchematicOleFactory {
             '|Corner.X=160|Corner.Y=110|Color=255|AreaColor=16777215|LineStyle=1' +
             '|LocationCount=4|X1=40|Y1=110|X2=160|Y2=110|X3=160|Y3=30|X4=40|Y4=30'
         )
+    }
+
+    /**
+     * Builds a FileHeader stream with one unprefixed text-frame property list.
+     * @returns {Uint8Array}
+     */
+    static #buildFramedFileHeader() {
+        return SplitSchematicOleFactory.#concatBytes([
+            SplitSchematicOleFactory.#propertyRecordBytes(
+                '|HEADER=Protel for Windows - Schematic Capture Binary File Version 5.0|WEIGHT=2'
+            ),
+            SplitSchematicOleFactory.#opaqueRecordBytes(
+                new Uint8Array([1, 2, 3])
+            ),
+            SplitSchematicOleFactory.#propertyRecordBytes(
+                '|RECORD=31|CustomX=180|CustomY=120|VisibleGridSize=10|SnapGridSize=5' +
+                    '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+                    '|FontIdCount=1|Size1=12|FontName1=Times New Roman|Bold1=F|Rotation1=0'
+            ),
+            SplitSchematicOleFactory.#propertyRecordBytes(
+                'RECORD=28|IndexInSheet=4|Location.X=20|Location.Y=90|Corner.X=120|Corner.Y=104' +
+                    '|Text=FRAME NOTE|FontID=1|TextColor=128|Color=128|AreaColor=16777215' +
+                    '|IsSolid=F|ShowBorder=F|WordWrap=T'
+            )
+        ])
+    }
+
+    /**
+     * Builds one length-prefixed property record.
+     * @param {string} payloadText Pipe-delimited record payload.
+     * @returns {Uint8Array}
+     */
+    static #propertyRecordBytes(payloadText) {
+        const payload = new TextEncoder().encode(payloadText)
+        const bytes = new Uint8Array(4 + payload.byteLength + 1)
+        const dataView = new DataView(bytes.buffer)
+
+        dataView.setUint16(0, payload.byteLength + 1, true)
+        bytes[2] = 0
+        bytes[3] = 0
+        bytes.set(payload, 4)
+
+        return bytes
+    }
+
+    /**
+     * Builds one length-prefixed opaque frame.
+     * @param {Uint8Array} payload Raw frame payload.
+     * @returns {Uint8Array}
+     */
+    static #opaqueRecordBytes(payload) {
+        const bytes = new Uint8Array(4 + payload.byteLength)
+        const dataView = new DataView(bytes.buffer)
+
+        dataView.setUint16(0, payload.byteLength, true)
+        bytes[2] = 0
+        bytes[3] = 1
+        bytes.set(payload, 4)
+
+        return bytes
+    }
+
+    /**
+     * Concatenates byte arrays.
+     * @param {Uint8Array[]} chunks Byte chunks.
+     * @returns {Uint8Array}
+     */
+    static #concatBytes(chunks) {
+        const byteLength = chunks.reduce(
+            (total, chunk) => total + chunk.byteLength,
+            0
+        )
+        const bytes = new Uint8Array(byteLength)
+        let offset = 0
+
+        for (const chunk of chunks) {
+            bytes.set(chunk, offset)
+            offset += chunk.byteLength
+        }
+
+        return bytes
     }
 
     /**
@@ -297,10 +406,41 @@ test('parseAltiumArrayBuffer reads schematic blankets from the Additional stream
             fill: '#ffffff',
             isSolid: true,
             transparent: false,
-            lineWidth: 1,
+            lineWidth: 0.4,
             lineStyle: 1,
             renderOrder: 8,
             ownerIndex: undefined
+        }
+    ])
+})
+
+/**
+ * Verifies OLE-backed schematics parse native length-prefixed property records
+ * instead of depending only on long printable byte runs.
+ */
+test('parseAltiumArrayBuffer reads framed schematic property records', () => {
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'stream-framed.SchDoc',
+        SplitSchematicOleFactory.createDocumentBufferWithFramedRecords()
+    )
+    const note = documentModel.schematic.texts.find(
+        (text) => text.recordType === '28'
+    )
+
+    assert.ok(note)
+    assert.equal(note.text, 'FRAME NOTE')
+    assert.equal(note.x, 20)
+    assert.equal(note.y, 90)
+    assert.equal(note.cornerX, 120)
+    assert.equal(note.cornerY, 104)
+    assert.deepEqual(documentModel.schematic.opaqueRecords, [
+        {
+            source: 'schdoc',
+            sourceStream: 'FileHeader',
+            frameType: 1,
+            recordIndex: 1,
+            byteLength: 3,
+            rawBase64: 'AQID'
         }
     ])
 })

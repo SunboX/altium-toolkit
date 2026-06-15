@@ -76,6 +76,20 @@ class SchematicImageOleFactory {
     }
 
     /**
+     * Creates one OLE document containing `FileHeader` and schematic preview
+     * metadata streams.
+     * @param {{ fileHeaderText: string, previewBytes: Uint8Array }} options
+     * @returns {ArrayBuffer}
+     */
+    static createPreviewDocumentBuffer(options) {
+        return SchematicImageOleFactory.createDocumentBuffer({
+            fileHeaderText: options.fileHeaderText,
+            imageFileName: 'Preview',
+            imageBytes: options.previewBytes
+        })
+    }
+
+    /**
      * Writes the OLE file header.
      * @param {DataView} dataView
      */
@@ -269,6 +283,53 @@ test('parseAltiumArrayBuffer recovers embedded schematic images from OLE streams
             diagnosticState: 'embedded'
         }
     ])
+})
+
+/**
+ * Verifies schematic preview metadata is exposed as a deterministic PNG
+ * thumbnail sidecar.
+ */
+test('parseAltiumArrayBuffer recovers schematic preview thumbnails', () => {
+    const fileHeaderText =
+        '|HEADER=Schematic Document' +
+        '|RECORD=31|CustomX=120|CustomY=80|VisibleGridSize=10|SnapGridSize=5' +
+        '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+        '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0'
+    const pixels = Uint8Array.from([0, 0, 255, 0, 0, 255, 0, 0])
+    const previewBytes = new TextEncoder().encode(
+        '[Preview]\n' +
+            'LargeImageWidth=2\n' +
+            'LargeImageHeight=1\n' +
+            'LargeImage=' +
+            deflateSync(pixels).toString('hex') +
+            '\n'
+    )
+    const arrayBuffer = SchematicImageOleFactory.createPreviewDocumentBuffer({
+        fileHeaderText,
+        previewBytes
+    })
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'preview-thumbnail.SchDoc',
+        arrayBuffer
+    )
+    const thumbnail = documentModel.schematic.thumbnails[0]
+
+    assert.deepEqual(
+        documentModel.schematic.thumbnails.map(
+            ({ dataBase64, ...metadata }) => metadata
+        ),
+        [
+            {
+                kind: 'large-preview',
+                width: 2,
+                height: 1,
+                mimeType: 'image/png',
+                sourceStream: 'Preview',
+                pixelFormat: 'bgra32'
+            }
+        ]
+    )
+    assert.match(thumbnail.dataBase64, /^iVBORw0KGgo/)
 })
 
 /**

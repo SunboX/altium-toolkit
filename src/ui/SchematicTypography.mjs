@@ -104,8 +104,8 @@ export class SchematicTypography {
      * Builds render options for one schematic text label, including the signed
      * SVG rotation derived from the original Altium orientation and mirrored
      * source state.
-     * @param {{ fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean }} text
-     * @returns {{ fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number }}
+     * @param {{ fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, textSegments?: { text: string, overline: boolean }[] }} text
+     * @returns {{ fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, segments?: { text: string, overline: boolean }[] }}
      */
     static buildSchematicTextRenderOptions(text) {
         return {
@@ -117,7 +117,8 @@ export class SchematicTypography {
                 text.rotation,
                 text.sourceOrientation,
                 text.isMirrored
-            )
+            ),
+            segments: text.textSegments
         }
     }
 

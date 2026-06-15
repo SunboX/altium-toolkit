@@ -7,6 +7,7 @@ import test from 'node:test'
 import { PcbCustomPadShapeParser } from '../../src/core/altium/PcbCustomPadShapeParser.mjs'
 import { PcbExtendedPrimitiveInformationParser } from '../../src/core/altium/PcbExtendedPrimitiveInformationParser.mjs'
 import { PcbModelParser } from '../../src/core/altium/PcbModelParser.mjs'
+import { PcbStreamExtractor } from '../../src/core/altium/PcbStreamExtractor.mjs'
 import { PcbSidecarTestFactory } from './PcbSidecarTestFactory.mjs'
 
 /**
@@ -214,4 +215,84 @@ test('PcbModelParser exposes sidecar metadata and resolved PCB text metadata', (
         'document-default'
     )
     assert.equal(model.pcb.vias[0].effectiveMaskPaste.solder.expansionMil, 4)
+})
+
+/**
+ * Verifies panelized embedded-board records and placement-room records are
+ * promoted from native streams into stable PCB read-model collections.
+ */
+test('PcbStreamExtractor and PcbModelParser expose embedded boards and rooms', () => {
+    const streams = new Map([
+        [
+            'Board6/Data',
+            new TextEncoder().encode(
+                '|RECORD=Board|KIND0=0|VX0=0mil|VY0=0mil|CX0=0mil|CY0=0mil|SA0=0|EA0=0|R0=0mil|KIND1=0|VX1=500mil|VY1=0mil|CX1=0mil|CY1=0mil|SA1=0|EA1=0|R1=0mil|KIND2=0|VX2=500mil|VY2=250mil|CX2=0mil|CY2=0mil|SA2=0|EA2=0|R2=0mil|KIND3=0|VX3=0mil|VY3=250mil|CX3=0mil|CY3=0mil|SA3=0|EA3=0|R3=0mil'
+            )
+        ],
+        [
+            'EmbeddedBoards6/Data',
+            PcbSidecarTestFactory.createLengthPrefixedRecords([
+                '|DOCUMENTPATH=panels/repeated.PcbDoc|LAYER=Top Layer|ROTATION=90|MIRRORFLAG=TRUE|ORIGINMODE=1|SCALE=1.25|COLCOUNT=2|ROWCOUNT=3|COLUMNSPACING=250mil|ROWSPACING=500mil|UNIQUEID=EMB-1|KEEPIN=TRUE|TRANSMITBOARDSHAPE=TRUE'
+            ])
+        ],
+        [
+            'Rooms6/Data',
+            PcbSidecarTestFactory.createLengthPrefixedRecords([
+                '|NAME=Assembly Keepout|UNIQUEID=ROOM-1|MEMBERCOUNT=2|M0=U1|M1=J1|X1=10mil|Y1=20mil|X2=200mil|Y2=120mil'
+            ])
+        ]
+    ])
+    const extraction = PcbStreamExtractor.extractFromStreams(streams)
+    const model = PcbModelParser.parse(
+        'panel-review.PcbDoc',
+        extraction.records,
+        extraction
+    )
+
+    assert.deepEqual(model.pcb.embeddedBoards, [
+        {
+            embeddedBoardIndex: 0,
+            documentPath: 'panels/repeated.PcbDoc',
+            fileName: 'repeated.PcbDoc',
+            layer: 'Top Layer',
+            rotation: 90,
+            mirrored: true,
+            originMode: 1,
+            scale: 1.25,
+            array: {
+                columns: 2,
+                rows: 3,
+                columnSpacingMil: 250,
+                rowSpacingMil: 500
+            },
+            uniqueId: 'EMB-1',
+            flags: {
+                keepIn: true,
+                transmitBoardShape: true
+            }
+        }
+    ])
+    assert.deepEqual(model.pcb.rooms, [
+        {
+            roomIndex: 0,
+            name: 'Assembly Keepout',
+            uniqueId: 'ROOM-1',
+            members: ['U1', 'J1'],
+            bounds: {
+                x1: 10,
+                y1: 20,
+                x2: 200,
+                y2: 120
+            }
+        }
+    ])
+    assert.equal(model.summary.embeddedBoardCount, 1)
+    assert.equal(model.summary.roomCount, 1)
+    assert.ok(
+        model.diagnostics.some(
+            (diagnostic) =>
+                diagnostic.message ===
+                'Recovered 1 embedded board placement and 1 placement room.'
+        )
+    )
 })

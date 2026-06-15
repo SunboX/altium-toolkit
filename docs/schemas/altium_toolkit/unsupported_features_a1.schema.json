@@ -1,0 +1,212 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.unsupported-features.a1",
+    "title": "Altium Toolkit Unsupported Features A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "summary",
+        "recordTypes",
+        "rawRecords",
+        "opaqueRecords",
+        "diagnostics"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.unsupported-features.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+                "modelCount",
+                "unsupportedRecordTypeCount",
+                "rawRecordCount",
+                "opaqueRecordCount",
+                "diagnosticCount",
+                "itemCount",
+                "status"
+            ],
+            "properties": {
+                "modelCount": {
+                    "type": "number"
+                },
+                "unsupportedRecordTypeCount": {
+                    "type": "number"
+                },
+                "rawRecordCount": {
+                    "type": "number"
+                },
+                "opaqueRecordCount": {
+                    "type": "number"
+                },
+                "diagnosticCount": {
+                    "type": "number"
+                },
+                "itemCount": {
+                    "type": "number"
+                },
+                "status": {
+                    "enum": ["supported", "unsupported"]
+                }
+            }
+        },
+        "recordTypes": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/recordType"
+            }
+        },
+        "rawRecords": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/rawRecord"
+            }
+        },
+        "opaqueRecords": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/opaqueRecord"
+            }
+        },
+        "diagnostics": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/diagnostic"
+            }
+        }
+    },
+    "$defs": {
+        "recordType": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["domain", "recordType", "name", "family", "count"],
+            "properties": {
+                "fileName": {
+                    "type": "string"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "recordType": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "family": {
+                    "type": "string"
+                },
+                "count": {
+                    "type": "number"
+                }
+            }
+        },
+        "rawRecord": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["domain"],
+            "properties": {
+                "fileName": {
+                    "type": "string"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "sourceStream": {
+                    "type": "string"
+                },
+                "sourceStorage": {
+                    "type": "string"
+                },
+                "recordIndex": {
+                    "type": "number"
+                },
+                "family": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "typeId": {
+                    "type": "number"
+                },
+                "byteLength": {
+                    "type": "number"
+                },
+                "supported": {
+                    "type": "boolean"
+                },
+                "parsed": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "opaqueRecord": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["domain"],
+            "properties": {
+                "fileName": {
+                    "type": "string"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "sourceStream": {
+                    "type": "string"
+                },
+                "sourceStorage": {
+                    "type": "string"
+                },
+                "frameType": {
+                    "type": "number"
+                },
+                "recordIndex": {
+                    "type": "number"
+                },
+                "byteLength": {
+                    "type": "number"
+                }
+            }
+        },
+        "diagnostic": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["code", "severity", "message"],
+            "properties": {
+                "fileName": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "severity": {
+                    "enum": ["info", "warning", "error"]
+                },
+                "message": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "sourceStream": {
+                    "type": "string"
+                },
+                "sourceStorage": {
+                    "type": "string"
+                },
+                "recordIndex": {
+                    "type": "number"
+                },
+                "recordType": {
+                    "type": "number"
+                },
+                "errorKind": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

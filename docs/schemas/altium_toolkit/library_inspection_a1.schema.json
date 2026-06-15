@@ -1,0 +1,94 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.library.inspection.a1",
+    "title": "Altium Toolkit Library Inspection A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "summary",
+        "libraries",
+        "qa",
+        "duplicates",
+        "staleImplementations",
+        "missingModels",
+        "multipartMismatches",
+        "libraryLint",
+        "mergePlan",
+        "issues"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.library.inspection.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "libraries": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/libraryRow"
+            }
+        },
+        "qa": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "duplicates": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "staleImplementations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "missingModels": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "multipartMismatches": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "libraryLint": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "mergePlan": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "issues": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    },
+    "$defs": {
+        "libraryRow": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["fileName", "kind"],
+            "properties": {
+                "fileName": {
+                    "type": "string"
+                },
+                "kind": {
+                    "enum": ["schematic-library", "pcb-library"]
+                }
+            }
+        }
+    }
+}

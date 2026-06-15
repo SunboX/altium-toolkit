@@ -39,3 +39,5 @@ areas and must keep `assetPolicy` set to `repo-owned-synthetic-only`. Each
 fixture entry records `source: inline-synthetic-records` plus expected parser,
 SVG, schema, and diagnostic contracts so tests can catch drift between fake
 fixtures and public read-model coverage.
+`FixtureCoverageMatrixBuilder` can turn the manifest into a machine-readable
+required-coverage report without adding native fixture files.

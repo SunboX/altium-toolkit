@@ -7,6 +7,7 @@ import { PcbCustomPadShapeParser } from './PcbCustomPadShapeParser.mjs'
 import { PcbEmbeddedFontExtractor } from './PcbEmbeddedFontExtractor.mjs'
 import { PcbEmbeddedModelExtractor } from './PcbEmbeddedModelExtractor.mjs'
 import { PcbExtendedPrimitiveInformationParser } from './PcbExtendedPrimitiveInformationParser.mjs'
+import { NativeStreamInventoryBuilder } from './NativeStreamInventoryBuilder.mjs'
 import { PcbRawRecordRegistry } from './PcbRawRecordRegistry.mjs'
 import { OleCompoundDocument } from '../ole/OleCompoundDocument.mjs'
 import { OleConstants } from '../ole/OleConstants.mjs'
@@ -164,18 +165,29 @@ export class PcbLibStreamExtractor {
             PcbEmbeddedFontExtractor.extractFromStreams(streams)
         const embeddedModels =
             PcbEmbeddedModelExtractor.extractFromStreams(streams)
+        const usedStreamNames = PcbLibStreamExtractor.#collectUsedStreamNames(
+            footprints,
+            streams,
+            embeddedFonts,
+            embeddedModels
+        )
+        const nativeStreams = NativeStreamInventoryBuilder.buildFromStreams(
+            streams,
+            {
+                source: 'pcblib',
+                consumedStreamNames: usedStreamNames,
+                knownStreamNames:
+                    PcbLibStreamExtractor.#knownStreamNames(streams)
+            }
+        )
 
         return {
             libraryHeader: parsedLibraryData.libraryHeader,
             componentParamsToc,
             sectionKeys,
             footprints,
-            streamNames: PcbLibStreamExtractor.#collectUsedStreamNames(
-                footprints,
-                streams,
-                embeddedFonts,
-                embeddedModels
-            ),
+            streamNames: usedStreamNames,
+            nativeStreams,
             embeddedFonts,
             embeddedModels,
             diagnostics: {
@@ -997,6 +1009,37 @@ export class PcbLibStreamExtractor {
         }
 
         return [...names].sort((left, right) => left.localeCompare(right))
+    }
+
+    /**
+     * Builds recognized PcbLib stream names from one stream map.
+     * @param {Map<string, Uint8Array>} streams Native stream map.
+     * @returns {string[]}
+     */
+    static #knownStreamNames(streams) {
+        return [...(streams || new Map()).keys()].filter((streamName) => {
+            if (
+                [
+                    'Library/Data',
+                    'Library/ComponentParamsTOC/Data',
+                    'SectionKeys'
+                ].includes(streamName)
+            ) {
+                return true
+            }
+
+            const leafName = String(streamName || '')
+                .split('/')
+                .at(-1)
+            return [
+                'Header',
+                'Data',
+                'Parameters',
+                'WideStrings',
+                'ExtendedPrimitiveInformation',
+                'CustomShapes'
+            ].includes(leafName)
+        })
     }
 
     /**

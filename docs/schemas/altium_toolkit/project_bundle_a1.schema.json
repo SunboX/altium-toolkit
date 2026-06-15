@@ -41,6 +41,9 @@
         "schematic_hierarchy": {
             "type": "object"
         },
+        "schematicHierarchyReport": {
+            "$ref": "project_hierarchy_a1.schema.json"
+        },
         "pnp": {
             "type": "object"
         },

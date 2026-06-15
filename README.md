@@ -18,23 +18,34 @@ browser or Node-based tools.
 
 ## Features
 
-- Parse standalone native `.SchDoc`, `.PcbDoc`, `.PcbLib`, `.PrjPcb`, and
-  `.IntLib` files from `ArrayBuffer`
-- Recover schematic records, PCB outlines, placements, PCB library footprints,
+- Parse standalone native `.SchDoc`, `.PcbDoc`, `.SchLib`, `.PcbLib`,
+  `.PrjPcb`, and `.IntLib` files from `ArrayBuffer`
+- Recover schematic records, PCB outlines, placements, schematic library
+  symbols, PCB library footprints,
   project document references, variants, parameters, primitives, embedded
   schematic images, component annotations from PrimitiveParameters/Text streams,
   PCB pad/via stack and hole-tolerance detail, via-protection sidecars, custom
   pad shape links, extended mask/paste sidecars, PCB union metadata, embedded
   PCB 3D payload metadata, PCB component provenance, differential-pair class
   joins, schematic directive semantics, barcode PCB text metadata, mechanical
-  layer pairs, pick-and-place coordinate modes, PCB dimensions, project
+  layer pairs, pick-and-place coordinate modes, PCB dimensions, embedded-board
+  panel placements, placement rooms, project
   class-generation policy, project-level design bundles, annotation mappings,
   effective variant views, schematic/PCB ownership sidecars, deterministic
   wirelist/netlist exports, library render manifests, library lookup indexes,
+  library catalog artifacts, project hierarchy reports,
+  schematic-library section keys, pin side streams, compressed storage assets,
   schematic project-parameter text resolution, PCB QA statistics, structured
   diagnostics, and embedded PCB/PcbLib font payloads with basic text metrics
 - Preserve raw PCB primitive records through a read-only record registry so
-  unsupported or partially decoded stream data remains inspectable
+  unsupported or partially decoded stream data remains inspectable; native OLE
+  stream inventories summarize known, unknown, consumed, and opaque streams
+- Build deterministic parser field-coverage matrix, raw-data preservation,
+  parameter-record inventory, parser value-verification, normalized
+  diagnostics, geometry-bounds, fixture-coverage, embedded-asset,
+  library-diff, library-QA lint, project-hierarchy, and static
+  library-catalog reports, classify PCB layer ids, and convert common Altium
+  length units for downstream QA tooling
 - Emit Circuit JSON arrays from parser roots, with non-serialized
   renderer-compatibility fields for existing consumers
 - Render semantically annotated schematic SVG, semantically annotated PCB SVG,
@@ -52,6 +63,14 @@ The package is published on npm as
 
 ```bash
 npm install altium-toolkit
+```
+
+GitHub Packages releases are published as `@sunbox/altium-toolkit`. Configure
+the GitHub Packages registry for the `@sunbox` scope before installing:
+
+```bash
+npm config set @sunbox:registry https://npm.pkg.github.com
+npm install @sunbox/altium-toolkit
 ```
 
 ## Usage
@@ -90,11 +109,21 @@ import 'altium-toolkit/styles/altium-renderers.css'
 - [Normalized Model Schema](docs/schemas/altium_toolkit/normalized_model_a1.schema.json)
 - [Project Bundle Schema](docs/schemas/altium_toolkit/project_bundle_a1.schema.json)
 - [Netlist Schema](docs/schemas/altium_toolkit/netlist_a1.schema.json)
+- [Parser Diagnostics Schema](docs/schemas/altium_toolkit/parser_diagnostics_a1.schema.json)
+- [Parser Value Verification Schema](docs/schemas/altium_toolkit/parser_value_verification_a1.schema.json)
+- [Geometry Bounds Schema](docs/schemas/altium_toolkit/geometry_bounds_a1.schema.json)
+- [Fixture Coverage Matrix Schema](docs/schemas/altium_toolkit/fixture_coverage_matrix_a1.schema.json)
+- [Unsupported Features Schema](docs/schemas/altium_toolkit/unsupported_features_a1.schema.json)
 - [Testing](docs/testing.md)
 - [Scope](spec/library-scope.md)
 
 ## Examples
 
+- Read-only utility scripts:
+  `examples/inspect-board.mjs`, `examples/extract-bom.mjs`,
+  `examples/generate-pnp.mjs`, `examples/net-report.mjs`,
+  `examples/library-catalog.mjs`, `examples/validate-library.mjs`, and
+  `examples/corpus-smoke.mjs`
 - [Arduino Uno Altium example](examples/arduino-uno/) based on Mehdi
   KHALFALLAH's public
   [My-Arduino-UNO-Design](https://github.com/Mehdi-KHALFALLAH/My-Arduino-UNO-Design)

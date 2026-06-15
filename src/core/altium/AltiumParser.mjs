@@ -13,12 +13,16 @@ import { SchematicPinParser } from './SchematicPinParser.mjs'
 import { SchematicPrimitiveParser } from './SchematicPrimitiveParser.mjs'
 import { AltiumLayoutParser } from './AltiumLayoutParser.mjs'
 import { NormalizedModelSchema } from './NormalizedModelSchema.mjs'
+import { ParserDiagnosticNormalizer } from './ParserDiagnosticNormalizer.mjs'
+import { AltiumUnsupportedFeatureError } from './ParserErrors.mjs'
 import { IntLibModelParser } from './IntLibModelParser.mjs'
 import { IntLibStreamExtractor } from './IntLibStreamExtractor.mjs'
 import { DraftsmanDigestParser } from './DraftsmanDigestParser.mjs'
 import { PcbModelParser } from './PcbModelParser.mjs'
 import { PcbLibModelParser } from './PcbLibModelParser.mjs'
 import { PcbLibStreamExtractor } from './PcbLibStreamExtractor.mjs'
+import { SchLibModelParser } from './SchLibModelParser.mjs'
+import { SchLibStreamExtractor } from './SchLibStreamExtractor.mjs'
 import { PrjPcbModelParser } from './PrjPcbModelParser.mjs'
 import { PrjScrModelParser } from './PrjScrModelParser.mjs'
 import { PcbStreamExtractor } from './PcbStreamExtractor.mjs'
@@ -35,8 +39,11 @@ import { SchematicComponentOwnerTextResolver } from './SchematicComponentOwnerTe
 import { SchematicOwnershipGraphParser } from './SchematicOwnershipGraphParser.mjs'
 import { SchematicStreamExtractor } from './SchematicStreamExtractor.mjs'
 import { SchematicTemplateParser } from './SchematicTemplateParser.mjs'
+import { SchematicThumbnailParser } from './SchematicThumbnailParser.mjs'
 import { SchematicHarnessParser } from './SchematicHarnessParser.mjs'
 import { SchematicImplementationParser } from './SchematicImplementationParser.mjs'
+import { SchematicCodeSymbolParser } from './SchematicCodeSymbolParser.mjs'
+import { SchematicHyperlinkParser } from './SchematicHyperlinkParser.mjs'
 import { SchematicCrossSheetConnectorParser } from './SchematicCrossSheetConnectorParser.mjs'
 import { SchematicRepeatedChannelParser } from './SchematicRepeatedChannelParser.mjs'
 import { SchematicDisplayModeCatalogParser } from './SchematicDisplayModeCatalogParser.mjs'
@@ -51,6 +58,7 @@ const {
     getField,
     parseBoolean,
     parseNumericField,
+    parseSchematicLineWidth,
     toColor,
     dedupeByDesignator,
     stripExtension
@@ -89,10 +97,34 @@ export class AltiumParser {
     }
 
     /**
+     * Parses a native Altium buffer into a non-throwing Circuit JSON envelope.
+     * @param {string} fileName
+     * @param {ArrayBuffer} arrayBuffer
+     * @returns {{ ok: true, model: object[], diagnostics: object[] } | { ok: false, model: null, diagnostics: object[] }}
+     */
+    static tryParseArrayBuffer(fileName, arrayBuffer) {
+        return AltiumParser.#tryParse(fileName, () =>
+            AltiumParser.parseArrayBuffer(fileName, arrayBuffer)
+        )
+    }
+
+    /**
+     * Parses a native Altium buffer into a non-throwing renderer model envelope.
+     * @param {string} fileName
+     * @param {ArrayBuffer} arrayBuffer
+     * @returns {{ ok: true, model: object, diagnostics: object[] } | { ok: false, model: null, diagnostics: object[] }}
+     */
+    static tryParseArrayBufferToRendererModel(fileName, arrayBuffer) {
+        return AltiumParser.#tryParse(fileName, () =>
+            AltiumParser.parseArrayBufferToRendererModel(fileName, arrayBuffer)
+        )
+    }
+
+    /**
      * Parses a native Altium buffer into the renderer compatibility model.
      * @param {string} fileName
      * @param {ArrayBuffer} arrayBuffer
-     * @returns {{ schema: string, kind: 'schematic' | 'pcb' | 'pcb-library' | 'project' | 'project-script' | 'integrated-library' | 'draftsman', fileType: 'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb' | 'PrjScr' | 'IntLib' | 'PCBDwf', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], schematic?: Record<string, unknown>, pcb?: Record<string, unknown>, pcbLibrary?: Record<string, unknown>, project?: Record<string, unknown>, projectScript?: Record<string, unknown>, integratedLibrary?: Record<string, unknown>, draftsman?: Record<string, unknown>, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
+     * @returns {{ schema: string, kind: 'schematic' | 'pcb' | 'pcb-library' | 'schematic-library' | 'project' | 'project-script' | 'integrated-library' | 'draftsman', fileType: 'SchDoc' | 'PcbDoc' | 'PcbLib' | 'SchLib' | 'PrjPcb' | 'PrjScr' | 'IntLib' | 'PCBDwf', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], schematic?: Record<string, unknown>, pcb?: Record<string, unknown>, pcbLibrary?: Record<string, unknown>, schematicLibrary?: Record<string, unknown>, project?: Record<string, unknown>, projectScript?: Record<string, unknown>, integratedLibrary?: Record<string, unknown>, draftsman?: Record<string, unknown>, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
      */
     static parseArrayBufferToRendererModel(fileName, arrayBuffer) {
         const records = AsciiRecordParser.parse(arrayBuffer)
@@ -122,6 +154,12 @@ export class AltiumParser {
                 PcbLibStreamExtractor.extractFromArrayBuffer(arrayBuffer)
             )
         }
+        if (fileType === 'SchLib') {
+            return SchLibModelParser.parse(
+                fileName,
+                SchLibStreamExtractor.extractFromArrayBuffer(arrayBuffer)
+            )
+        }
         if (fileType === 'PrjPcb') {
             return PrjPcbModelParser.parse(fileName, arrayBuffer)
         }
@@ -137,20 +175,78 @@ export class AltiumParser {
         if (fileType === 'PCBDwf') {
             return DraftsmanDigestParser.parse(fileName, arrayBuffer)
         }
-        throw new Error('Unsupported file type: ' + fileName)
+        throw new AltiumUnsupportedFeatureError(
+            'Unsupported file type: ' + fileName,
+            { fileName }
+        )
+    }
+
+    /**
+     * Runs one parser function and returns a normalized result envelope.
+     * @param {string} fileName
+     * @param {() => object | object[]} parser
+     * @returns {{ ok: true, model: object | object[], diagnostics: object[] } | { ok: false, model: null, diagnostics: object[] }}
+     */
+    static #tryParse(fileName, parser) {
+        try {
+            const model = parser()
+            return {
+                ok: true,
+                model,
+                diagnostics: ParserDiagnosticNormalizer.normalizeMany(
+                    model?.diagnostics || [],
+                    { source: fileName }
+                )
+            }
+        } catch (error) {
+            return AltiumParser.#safeParseFailure(fileName, error)
+        }
+    }
+
+    /**
+     * Builds one safe-parse failure envelope.
+     * @param {string} fileName
+     * @param {unknown} error
+     * @returns {{ ok: false, model: null, diagnostics: object[] }}
+     */
+    static #safeParseFailure(fileName, error) {
+        const diagnostic = ParserDiagnosticNormalizer.normalize(error, {
+            code: 'parser.safe.parse.failed',
+            severity: 'error',
+            source: fileName
+        })
+        const errorKind = diagnostic.errorKind || 'parse'
+
+        return {
+            ok: false,
+            model: null,
+            diagnostics: [
+                {
+                    ...diagnostic,
+                    code: 'parser.safe.parse.failed',
+                    fileName: String(fileName || ''),
+                    errorKind,
+                    errorName:
+                        error && typeof error === 'object' && 'name' in error
+                            ? String(error.name)
+                            : 'Error'
+                }
+            ]
+        }
     }
 
     /**
      * Chooses the format based on extension and content.
      * @param {string} fileName
      * @param {{ fields: Record<string, string | string[]> }[]} records
-     * @returns {'SchDoc' | 'PcbDoc' | 'PcbLib' | 'PrjPcb' | 'PrjScr' | 'IntLib' | 'PCBDwf'}
+     * @returns {'SchDoc' | 'PcbDoc' | 'PcbLib' | 'SchLib' | 'PrjPcb' | 'PrjScr' | 'IntLib' | 'PCBDwf'}
      */
     static #sniffFileType(fileName, records) {
         const normalized = String(fileName || '').toLowerCase()
         if (normalized.endsWith('.schdoc')) return 'SchDoc'
         if (normalized.endsWith('.pcbdoc')) return 'PcbDoc'
         if (normalized.endsWith('.pcblib')) return 'PcbLib'
+        if (normalized.endsWith('.schlib')) return 'SchLib'
         if (normalized.endsWith('.prjpcb')) return 'PrjPcb'
         if (normalized.endsWith('.prjscr')) return 'PrjScr'
         if (normalized.endsWith('.intlib')) return 'IntLib'
@@ -159,7 +255,14 @@ export class AltiumParser {
         const hasSchematicHeader = records.some((record) =>
             getField(record.fields, 'HEADER').includes('Schematic')
         )
-        return hasSchematicHeader ? 'SchDoc' : 'PcbDoc'
+        const hasSchematicLibraryHeader = records.some((record) =>
+            getField(record.fields, 'HEADER').includes('Schematic Library')
+        )
+        return hasSchematicLibraryHeader
+            ? 'SchLib'
+            : hasSchematicHeader
+              ? 'SchDoc'
+              : 'PcbDoc'
     }
     /**
      * Normalizes a schematic document.
@@ -185,6 +288,11 @@ export class AltiumParser {
         const recordTypes = SchematicRecordTypeRegistry.summarize(records)
         const ownersWithImplicitDisplayMode =
             AltiumParser.#collectOwnersWithImplicitDisplayMode(records)
+        const activeOwnerDisplayModes =
+            AltiumParser.#collectActiveOwnerDisplayModes(
+                recordIndexAwareRecords,
+                componentRecords
+            )
         const activeMultipartOwnerParts =
             SchematicMultipartOwnerMatcher.collectActiveMultipartOwnerParts(
                 recordIndexAwareRecords,
@@ -200,6 +308,7 @@ export class AltiumParser {
             AltiumParser.#isDrawableSchematicRecord(
                 record.fields,
                 ownersWithImplicitDisplayMode,
+                activeOwnerDisplayModes,
                 activeMultipartOwnerParts
             )
         )
@@ -207,6 +316,7 @@ export class AltiumParser {
             AltiumParser.#isDrawableSchematicRecord(
                 record.fields,
                 ownersWithImplicitDisplayMode,
+                activeOwnerDisplayModes,
                 activeMultipartOwnerParts
             )
         )
@@ -215,6 +325,7 @@ export class AltiumParser {
                 AltiumParser.#isDrawableSchematicRecord(
                     record.fields,
                     ownersWithImplicitDisplayMode,
+                    activeOwnerDisplayModes,
                     activeMultipartOwnerParts
                 ) &&
                 getField(record.fields, 'RECORD') !== '211' &&
@@ -308,6 +419,9 @@ export class AltiumParser {
         const implementations = SchematicImplementationParser.parse(
             recordIndexAwareRecords
         )
+        const codeSymbols = SchematicCodeSymbolParser.parse(
+            recordIndexAwareRecords
+        )
         const displayModes = SchematicDisplayModeCatalogParser.parse(
             recordIndexAwareRecords
         )
@@ -394,7 +508,7 @@ export class AltiumParser {
                 x2: parseNumericField(record.fields, 'Corner.X') || 0,
                 y2: parseNumericField(record.fields, 'Corner.Y') || 0,
                 color: toColor(record.fields.Color, '#a44a1b'),
-                width: parseNumericField(record.fields, 'LineWidth') || 1,
+                width: parseSchematicLineWidth(record.fields),
                 lineStyle: parseNumericField(record.fields, 'LineStyle') || 0,
                 recordType: getField(record.fields, 'RECORD') || undefined,
                 renderOrder:
@@ -503,6 +617,8 @@ export class AltiumParser {
                 recordIndexAwareRecords,
                 arrayBuffer
             )
+        const { thumbnails, diagnostics: thumbnailDiagnostics } =
+            SchematicThumbnailParser.parse(arrayBuffer)
         const template = SchematicTemplateParser.parse(
             recordIndexAwareRecords,
             sheetRecord,
@@ -616,12 +732,22 @@ export class AltiumParser {
             ports,
             crosses
         )
+        const componentDesignatorsByOwnerIndex =
+            AltiumParser.#componentDesignatorsByOwnerIndex(
+                recordIndexAwareRecords,
+                componentRecords,
+                components
+            )
 
         resolvedSheet.xZones =
             SchematicSheetStyleResolver.resolveXZones(resolvedSheet)
         resolvedSheet.yZones =
             SchematicSheetStyleResolver.resolveYZones(resolvedSheet)
         delete resolvedSheet.sheetStyle
+        const hyperlinks = SchematicHyperlinkParser.parse(
+            recordIndexAwareRecords,
+            resolvedSheet
+        )
 
         const title =
             AltiumParser.#findNamedText(textRecords, 'Title') ||
@@ -675,6 +801,7 @@ export class AltiumParser {
             }))
         )
         diagnostics.push(...imageDiagnostics)
+        diagnostics.push(...thumbnailDiagnostics)
         const { nets, diagnostics: netDiagnostics } =
             SchematicNetlistBuilder.build({
                 lines: normalizedLines,
@@ -684,7 +811,8 @@ export class AltiumParser {
                 crossSheetConnectors: crossSheetConnectors?.connectors || [],
                 junctions,
                 busEntries,
-                sheetEntries
+                sheetEntries,
+                componentDesignatorsByOwnerIndex
             })
         AltiumParser.#suppressRedundantSinglePinPowerNetNames(
             pins,
@@ -700,12 +828,17 @@ export class AltiumParser {
         })
         const connectivityQa = SchematicConnectivityQaBuilder.build({
             nets,
+            lines: normalizedLines,
             texts: anchoredTexts,
             pins,
             ports,
             junctions
         })
         const embeddedFiles = schematicExtraction?.embeddedFiles || null
+        const nativeStreams = schematicExtraction?.nativeStreams || null
+        const opaqueRecords = Array.isArray(schematicExtraction?.opaqueRecords)
+            ? schematicExtraction.opaqueRecords
+            : []
 
         if (embeddedFiles?.diagnostics?.length) {
             diagnostics.push(
@@ -726,8 +859,17 @@ export class AltiumParser {
                 componentCount: components.length,
                 lineCount: lines.length,
                 textCount: anchoredTexts.length,
+                ...(hyperlinks.length
+                    ? { hyperlinkCount: hyperlinks.length }
+                    : {}),
                 recordTypeCount: recordTypes.length,
-                bomRowCount: bom.length
+                bomRowCount: bom.length,
+                ...(nativeStreams?.summary?.streamCount
+                    ? {
+                          nativeStreamCount: nativeStreams.summary.streamCount
+                      }
+                    : {}),
+                opaqueRecordCount: opaqueRecords.length
             },
             diagnostics,
             schematic: {
@@ -750,6 +892,7 @@ export class AltiumParser {
                 directiveSemantics,
                 texts: anchoredTexts,
                 textFrames,
+                ...(hyperlinks.length ? { hyperlinks } : {}),
                 components,
                 pins,
                 ports,
@@ -762,11 +905,13 @@ export class AltiumParser {
                 junctions,
                 busEntries,
                 images,
+                ...(thumbnails.length ? { thumbnails } : {}),
                 nets,
                 ownership,
                 ...(template ? { template } : {}),
                 ...(harnesses ? { harnesses } : {}),
                 ...(implementations ? { implementations } : {}),
+                ...(codeSymbols ? { codeSymbols } : {}),
                 ...(displayModes ? { displayModes } : {}),
                 ...(bindings ? { bindings } : {}),
                 ...(crossSheetConnectors ? { crossSheetConnectors } : {}),
@@ -776,11 +921,50 @@ export class AltiumParser {
                     embeddedFiles.diagnostics?.length)
                     ? { embeddedFiles }
                     : {}),
+                ...(nativeStreams ? { nativeStreams } : {}),
+                ...(opaqueRecords.length ? { opaqueRecords } : {}),
                 qa,
                 connectivityQa
             },
             bom
         })
+    }
+
+    /**
+     * Maps native component owner indexes to resolved component designators.
+     * @param {{ fields: Record<string, string | string[]>, recordIndex?: number }[]} records Indexed schematic records.
+     * @param {{ fields: Record<string, string | string[]>, recordIndex?: number }[]} componentRecords Component records.
+     * @param {{ designator?: string }[]} components Normalized components.
+     * @returns {Map<string, string>}
+     */
+    static #componentDesignatorsByOwnerIndex(
+        records,
+        componentRecords,
+        components
+    ) {
+        const designatorsByOwnerIndex = new Map()
+
+        for (let index = 0; index < componentRecords.length; index += 1) {
+            const designator = String(
+                components[index]?.designator || ''
+            ).trim()
+
+            if (!designator) {
+                continue
+            }
+
+            for (const ownerIndex of SchematicComponentOwnerTextResolver.resolveOwnerIndexes(
+                componentRecords[index],
+                records
+            )) {
+                const key = String(ownerIndex || '').trim()
+                if (key && !designatorsByOwnerIndex.has(key)) {
+                    designatorsByOwnerIndex.set(key, designator)
+                }
+            }
+        }
+
+        return designatorsByOwnerIndex
     }
 
     /**
@@ -826,7 +1010,7 @@ export class AltiumParser {
                         AltiumParser.#normalizePowerNetLabel(pin.name)
                     )
                 ) {
-                    pin.labelMode = 'number-only'
+                    AltiumParser.#setPinLabelMode(pin, pins, 'number-only')
                 }
             }
         }
@@ -850,9 +1034,49 @@ export class AltiumParser {
             )
 
             if (matchesDirectPowerPort) {
-                pin.labelMode = 'number-only'
+                AltiumParser.#setPinLabelMode(pin, pins, 'number-only')
             }
         }
+    }
+
+    /**
+     * Updates a net pin and its matching top-level pin when both are present.
+     * @param {object} pin Net or top-level pin.
+     * @param {object[]} pins Top-level pins.
+     * @param {'hidden' | 'number-only' | 'name-only' | 'name-and-number'} labelMode New label mode.
+     * @returns {void}
+     */
+    static #setPinLabelMode(pin, pins, labelMode) {
+        pin.labelMode = labelMode
+
+        const sourcePin = (pins || []).find((candidate) =>
+            AltiumParser.#pinsReferToSameSource(candidate, pin)
+        )
+
+        if (sourcePin) {
+            sourcePin.labelMode = labelMode
+        }
+    }
+
+    /**
+     * Returns true when two pin rows describe the same native source pin.
+     * @param {object} left First pin.
+     * @param {object} right Second pin.
+     * @returns {boolean}
+     */
+    static #pinsReferToSameSource(left, right) {
+        if (left === right) {
+            return true
+        }
+
+        return (
+            String(left?.ownerIndex || '') ===
+                String(right?.ownerIndex || '') &&
+            String(left?.designator || '') ===
+                String(right?.designator || '') &&
+            String(left?.name || '') === String(right?.name || '') &&
+            AltiumParser.#pointsAreNear(left, right, 0.01)
+        )
     }
 
     /**
@@ -963,6 +1187,103 @@ export class AltiumParser {
     }
 
     /**
+     * Maps component owner indexes to their active display mode.
+     * @param {{ fields: Record<string, string | string[]>, recordIndex?: number }[]} records
+     * @param {{ fields: Record<string, string | string[]>, recordIndex?: number }[]} componentRecords
+     * @returns {Map<string, number>}
+     */
+    static #collectActiveOwnerDisplayModes(records, componentRecords) {
+        const activeDisplayModes = new Map()
+
+        for (const componentRecord of componentRecords) {
+            const displayMode =
+                parseNumericField(componentRecord.fields, 'DisplayMode') || 1
+            const displayModeCount =
+                parseNumericField(componentRecord.fields, 'DisplayModeCount') ||
+                0
+            const ownerIndexes = AltiumParser.#componentOwnerIndexCandidates(
+                records,
+                componentRecord
+            )
+
+            if (displayModeCount <= 1 && !ownerIndexes.size) {
+                continue
+            }
+
+            for (const ownerIndex of ownerIndexes) {
+                activeDisplayModes.set(ownerIndex, displayMode)
+            }
+        }
+
+        return activeDisplayModes
+    }
+
+    /**
+     * Resolves owner indexes that may point at one component placement.
+     * @param {{ fields: Record<string, string | string[]>, recordIndex?: number }[]} records
+     * @param {{ fields: Record<string, string | string[]>, recordIndex?: number }} componentRecord
+     * @returns {Set<string>}
+     */
+    static #componentOwnerIndexCandidates(records, componentRecord) {
+        const ownerIndexes = new Set()
+        const indexInSheet = parseNumericField(
+            componentRecord.fields,
+            'IndexInSheet'
+        )
+
+        if (indexInSheet !== null) {
+            ownerIndexes.add(String(indexInSheet))
+        }
+        if (Number.isInteger(componentRecord.recordIndex)) {
+            ownerIndexes.add(String(componentRecord.recordIndex))
+        }
+
+        for (const ownerIndex of AltiumParser.#serializedOwnerDisplayModeIndexes(
+            records,
+            componentRecord.recordIndex
+        )) {
+            ownerIndexes.add(ownerIndex)
+        }
+
+        return ownerIndexes
+    }
+
+    /**
+     * Collects display-mode owner indexes serialized after one component record.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @param {number | undefined} componentRecordIndex
+     * @returns {Set<string>}
+     */
+    static #serializedOwnerDisplayModeIndexes(records, componentRecordIndex) {
+        const ownerIndexes = new Set()
+        if (!Number.isInteger(componentRecordIndex)) {
+            return ownerIndexes
+        }
+
+        for (
+            let index = componentRecordIndex + 1;
+            index < records.length;
+            index += 1
+        ) {
+            const record = records[index]
+            if (getField(record.fields, 'RECORD') === '1') {
+                break
+            }
+
+            if (!getField(record.fields, 'OwnerPartDisplayMode')) {
+                continue
+            }
+
+            const ownerIndex = getField(record.fields, 'OwnerIndex')
+            if (ownerIndex) {
+                ownerIndexes.add(ownerIndex)
+            }
+        }
+
+        return ownerIndexes
+    }
+
+    /**
      * Collects symbol owners that draw an inaccessible body around compact
      * internal pins.
      * @param {{ fields: Record<string, string | string[]> }[]} records
@@ -1024,19 +1345,33 @@ export class AltiumParser {
      * display mode for its owner.
      * @param {Record<string, string | string[]>} fields
      * @param {Set<string>} ownersWithImplicitDisplayMode
+     * @param {Map<string, number>} activeOwnerDisplayModes
      * @returns {boolean}
      */
     static #isActiveSchematicDisplayModeRecord(
         fields,
-        ownersWithImplicitDisplayMode
+        ownersWithImplicitDisplayMode,
+        activeOwnerDisplayModes
     ) {
         const ownerIndex = getField(fields, 'OwnerIndex')
-        const ownerPartDisplayMode = getField(fields, 'OwnerPartDisplayMode')
-        if (!ownerIndex || !ownerPartDisplayMode) {
+        const ownerPartDisplayMode = parseNumericField(
+            fields,
+            'OwnerPartDisplayMode'
+        )
+        if (!ownerIndex || ownerPartDisplayMode === null) {
             return true
         }
 
-        return !ownersWithImplicitDisplayMode.has(ownerIndex)
+        if (ownersWithImplicitDisplayMode.has(ownerIndex)) {
+            return false
+        }
+
+        const activeDisplayMode = activeOwnerDisplayModes.get(ownerIndex)
+        if (activeDisplayMode !== undefined) {
+            return ownerPartDisplayMode === activeDisplayMode
+        }
+
+        return true
     }
 
     /**
@@ -1044,18 +1379,21 @@ export class AltiumParser {
      * display mode and the active multipart owner part for its owner.
      * @param {Record<string, string | string[]>} fields
      * @param {Set<string>} ownersWithImplicitDisplayMode
+     * @param {Map<string, number>} activeOwnerDisplayModes
      * @param {Map<string, string>} activeMultipartOwnerParts
      * @returns {boolean}
      */
     static #isDrawableSchematicRecord(
         fields,
         ownersWithImplicitDisplayMode,
+        activeOwnerDisplayModes,
         activeMultipartOwnerParts
     ) {
         return (
             AltiumParser.#isActiveSchematicDisplayModeRecord(
                 fields,
-                ownersWithImplicitDisplayMode
+                ownersWithImplicitDisplayMode,
+                activeOwnerDisplayModes
             ) &&
             SchematicMultipartOwnerMatcher.isActiveOwnerPartRecord(
                 fields,

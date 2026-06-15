@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { ParserUtils } from './ParserUtils.mjs'
+import { SchematicTextRunParser } from './SchematicTextRunParser.mjs'
+import { SchematicTextOrientationResolver } from './SchematicTextOrientationResolver.mjs'
 
 /**
  * Helpers for normalized schematic text extraction.
@@ -134,7 +136,7 @@ export class SchematicTextParser {
      * @param {{ width: number, marginWidth: number, titleBlockOn?: boolean }} sheet
      * @param {Record<string, { size: number, family: string, bold: boolean, italic?: boolean, rotation: number }>} fonts
      * @param {Map<string, Record<string, string>>} [ownerMetadata]
-     * @returns {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] } | null}
+     * @returns {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end', verticalAnchor?: 'top', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] } | null}
      */
     static normalizeSchematicTextRecord(
         fields,
@@ -158,8 +160,9 @@ export class SchematicTextParser {
                 ownerMetadata
             )
         )
+        const textRuns = SchematicTextRunParser.parseOptionalOverlineRuns(text)
 
-        if (hidden || x === null || y === null || !text) {
+        if (hidden || x === null || y === null || !textRuns.text) {
             return null
         }
 
@@ -168,7 +171,7 @@ export class SchematicTextParser {
                 fields,
                 name,
                 rawText,
-                text,
+                textRuns.text,
                 sheet
             )
         ) {
@@ -191,7 +194,8 @@ export class SchematicTextParser {
         const textRecord = {
             x,
             y,
-            text,
+            text: textRuns.text,
+            textSegments: textRuns.segments,
             color: SchematicTextParser.#resolveSchematicTextColor(
                 fields,
                 recordType
@@ -211,6 +215,11 @@ export class SchematicTextParser {
             sourceOrientation:
                 sourceOrientation === null ? undefined : sourceOrientation,
             isMirrored: isMirrored || undefined,
+            verticalAnchor:
+                SchematicTextOrientationResolver.resolveVerticalAnchor(
+                    fields,
+                    recordType
+                ) || undefined,
             powerPortDirection:
                 SchematicTextParser.#resolvePowerPortDirection(
                     fields,
@@ -597,8 +606,14 @@ export class SchematicTextParser {
     static #inferTextAnchor(fields, recordType, name, text, font, rotation) {
         const explicitAnchor =
             SchematicTextParser.#resolveSchematicTextJustificationAnchor(fields)
+        const orientationAnchor =
+            SchematicTextOrientationResolver.resolveHorizontalAnchor(
+                fields,
+                recordType
+            )
 
         if (recordType === '17') return 'middle'
+        if (orientationAnchor) return orientationAnchor
         if (explicitAnchor) return explicitAnchor
         if (
             SchematicTextParser.#shouldCenterSchematicNoteByDefault(
@@ -748,12 +763,9 @@ export class SchematicTextParser {
      */
     static #resolveTextRotation(fields, font, recordType) {
         if (recordType === '17') return 0
-        if (recordType === '25') {
-            const orientation = ParserUtils.parseNumericField(
-                fields,
-                'Orientation'
-            )
+        const orientation = ParserUtils.parseNumericField(fields, 'Orientation')
 
+        if (recordType === '25') {
             if (orientation === 1 || orientation === 3) {
                 return 90
             }
@@ -765,7 +777,12 @@ export class SchematicTextParser {
         )
         if (explicitRotation !== null) return explicitRotation
         if (font.rotation) return font.rotation
-        if (ParserUtils.parseNumericField(fields, 'Orientation') === 1) {
+        if (
+            SchematicTextOrientationResolver.shouldRotateFromOrientation(
+                recordType,
+                orientation
+            )
+        ) {
             return 90
         }
         return 0
@@ -870,8 +887,7 @@ export class SchematicTextParser {
                 fields.Color || fields.TextColor,
                 '#7b7753'
             ),
-            lineWidth:
-                ParserUtils.parseNumericField(fields, 'LineWidth') ?? undefined,
+            lineWidth: ParserUtils.parseSchematicLineWidth(fields),
             isSolid: ParserUtils.parseBoolean(fields.IsSolid),
             showBorder: ParserUtils.parseBoolean(fields.ShowBorder),
             textMargin:

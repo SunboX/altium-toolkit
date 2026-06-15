@@ -14,6 +14,7 @@
                 "schematic.ieee-symbols",
                 "schematic.polyline-markers",
                 "schematic.text-frames",
+                "schematic.hyperlinks",
                 "schematic.render-ops"
             ],
             "contracts": {
@@ -22,7 +23,8 @@
                     "schematic.pies",
                     "schematic.rounded-rectangles",
                     "schematic.ieee-symbols",
-                    "schematic.text-frames"
+                    "schematic.text-frames",
+                    "schematic.hyperlinks"
                 ],
                 "svg": [
                     "schematic.svg.shapes",
@@ -227,18 +229,23 @@
                 "parser.fuzz-record-ordering",
                 "parser.fuzz-malformed-sidecars",
                 "parser.fuzz-odd-encodings",
+                "parser.typed-errors",
+                "parser.unsupported-feature-report",
                 "host.capability-diagnostics",
                 "host.readiness-report"
             ],
             "contracts": {
                 "parser": [
                     "parser.compatibility-fuzz",
+                    "parser.typed-errors",
+                    "parser.unsupported-feature-report",
                     "host.capability-diagnostics",
                     "host.readiness-report"
                 ],
                 "svg": [],
                 "schemas": [
                     "altium-toolkit.parser-compatibility-fuzz.a1",
+                    "altium-toolkit.unsupported-features.a1",
                     "altium-toolkit.host-capabilities.a1"
                 ],
                 "diagnostics": [

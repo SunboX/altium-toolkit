@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import assert from 'node:assert/strict'
+import { deflateSync } from 'node:zlib'
 import test from 'node:test'
 import { PcbModelParser } from '../../src/core/altium/PcbModelParser.mjs'
 
@@ -763,6 +764,159 @@ test('PcbModelParser preserves rich layer-stack source evidence', () => {
     )
     assert.equal(documentModel.summary.cavityRegionCount, 1)
     assert.equal(documentModel.summary.stiffenerLayerCount, 1)
+})
+
+test('PcbModelParser reads compressed stack custom data from board fields', () => {
+    const stackupXml =
+        '?<StackupDocument SerializerVersion="1.1.0.0" RevisionId="{REV-B}">' +
+        '<FeatureSet><Feature Id="{0A82BA33-E4D8-43F3-9C01-412DC26BDD5E}">Back Drill</Feature></FeatureSet>' +
+        '<Stackup Type="Standard" RoughnessType="NoRoughness">' +
+        '<Stacks><Stack Id="{STACK-B}" Name="Recovered Stack" IsFlex="false">' +
+        '<Layers>' +
+        '<Layer Id="{LAYER-C}" Name="Top Layer" TypeId="F4ECCD87-2CFB-4F37-BE50-4F3A272B4D01">' +
+        '<Properties><Property Name="Material" Type="System.String">Copper</Property></Properties>' +
+        '</Layer>' +
+        '<Layer Id="{LAYER-D}" Name="Dielectric" TypeId="136C62EF-1FA6-4897-AE71-7E797B632B92">' +
+        '<Properties><Property Name="Thickness" Type="System.String">12mil</Property></Properties>' +
+        '</Layer>' +
+        '</Layers></Stack></Stacks></Stackup></StackupDocument>'
+    const compressed = deflateSync(Buffer.from(stackupXml)).toString('base64')
+
+    const documentModel = PcbModelParser.parse(
+        'custom-stack.PcbDoc',
+        [
+            {
+                sourceStream: 'Board6/Data',
+                fields: {
+                    RECORD: 'Board',
+                    V9_STACKCUSTOMDATA: compressed
+                }
+            }
+        ],
+        {
+            streamNames: ['Board6/Data'],
+            binaryPrimitives: {
+                tracks: [],
+                arcs: [],
+                vias: [],
+                fills: [],
+                pads: [],
+                texts: [],
+                regions: [],
+                shapeBasedRegions: [],
+                boardRegions: []
+            },
+            diagnostics: {
+                printableRecordCount: 1,
+                printableStreamCount: 1,
+                binaryPrimitiveCount: 0
+            }
+        }
+    )
+
+    assert.deepEqual(documentModel.pcb.layerStackReadModel.stackup, {
+        serializerVersion: '1.1.0.0',
+        revisionId: '{REV-B}',
+        type: 'Standard',
+        roughnessType: 'NoRoughness',
+        features: [
+            {
+                index: 0,
+                id: '{0A82BA33-E4D8-43F3-9C01-412DC26BDD5E}',
+                name: 'Back Drill',
+                kind: 'back-drills'
+            }
+        ]
+    })
+    assert.deepEqual(
+        documentModel.pcb.layerStackReadModel.layers.map((layer) => ({
+            name: layer.name,
+            kind: layer.kind,
+            sourceRecordId: layer.sourceRecordId
+        })),
+        [
+            {
+                name: 'Top Layer',
+                kind: 'signal',
+                sourceRecordId: '{LAYER-C}'
+            },
+            {
+                name: 'Dielectric',
+                kind: 'dielectric',
+                sourceRecordId: '{LAYER-D}'
+            }
+        ]
+    )
+    assert.deepEqual(documentModel.pcb.layerStackReadModel.substacks, [
+        {
+            index: 0,
+            id: '{STACK-B}',
+            name: 'Recovered Stack',
+            isFlex: false,
+            layerIds: [1, 2],
+            layerKeys: ['L1', 'L2'],
+            boardRegionIndexes: [],
+            boardRegionNames: [],
+            bendingLineCount: 0
+        }
+    ])
+})
+
+/**
+ * Verifies invalid compressed stack custom data produces a caller-visible
+ * diagnostic instead of being silently ignored.
+ */
+test('PcbModelParser warns when compressed stack custom data cannot be decoded', () => {
+    const documentModel = PcbModelParser.parse(
+        'invalid-stack.PcbDoc',
+        [
+            {
+                sourceStream: 'Board6/Data',
+                fields: {
+                    RECORD: 'Board',
+                    V9_STACKCUSTOMDATA: 'not-zlib-data'
+                }
+            }
+        ],
+        {
+            streamNames: ['Board6/Data'],
+            binaryPrimitives: {
+                tracks: [],
+                arcs: [],
+                vias: [],
+                fills: [],
+                pads: [],
+                texts: [],
+                regions: [],
+                shapeBasedRegions: [],
+                boardRegions: []
+            },
+            diagnostics: {
+                printableRecordCount: 1,
+                printableStreamCount: 1,
+                binaryPrimitiveCount: 0
+            }
+        }
+    )
+
+    assert.deepEqual(
+        documentModel.diagnostics
+            .filter(
+                (diagnostic) =>
+                    diagnostic.code ===
+                    'pcb.layer-stack-custom-data.decode-failed'
+            )
+            .map((diagnostic) => ({
+                severity: diagnostic.severity,
+                sourceStream: diagnostic.sourceStream
+            })),
+        [
+            {
+                severity: 'warning',
+                sourceStream: 'Board6/Data'
+            }
+        ]
+    )
 })
 
 /**

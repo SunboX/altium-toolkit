@@ -10,11 +10,12 @@ export class SchematicConnectivityQaBuilder {
 
     /**
      * Builds connectivity QA from the normalized single-sheet net model.
-     * @param {{ nets?: object[], texts?: object[], pins?: object[], ports?: object[], junctions?: object[] }} schematic Normalized schematic fragments.
+     * @param {{ nets?: object[], texts?: object[], pins?: object[], ports?: object[], junctions?: object[], lines?: object[] }} schematic Normalized schematic fragments.
      * @returns {object}
      */
     static build(schematic) {
         const nets = Array.isArray(schematic?.nets) ? schematic.nets : []
+        const lines = Array.isArray(schematic?.lines) ? schematic.lines : []
         const labels = (schematic?.texts || []).filter(
             (text) => text.recordType === '25'
         )
@@ -37,6 +38,10 @@ export class SchematicConnectivityQaBuilder {
             ...SchematicConnectivityQaBuilder.#ambiguousJunctionFindings(
                 junctions,
                 nets
+            ),
+            ...SchematicConnectivityQaBuilder.#unjunctionedTeeContactFindings(
+                lines,
+                junctions
             )
         ]
 
@@ -180,7 +185,12 @@ export class SchematicConnectivityQaBuilder {
      * @returns {object}
      */
     static #summary(nets, findings) {
-        return {
+        const unjunctionedTeeContactCount =
+            SchematicConnectivityQaBuilder.#countCode(
+                findings,
+                'schematic.connectivity.unjunctioned-tee-contact'
+            )
+        const summary = {
             netCount: nets.length,
             findingCount: findings.length,
             danglingLabelCount: SchematicConnectivityQaBuilder.#countCode(
@@ -204,6 +214,98 @@ export class SchematicConnectivityQaBuilder {
                 'schematic.connectivity.ambiguous-junction'
             )
         }
+
+        if (unjunctionedTeeContactCount) {
+            summary.unjunctionedTeeContactCount = unjunctionedTeeContactCount
+        }
+
+        return summary
+    }
+
+    /**
+     * Reports segment endpoints that touch another segment interior without an
+     * authored junction at the contact point.
+     * @param {object[]} lines Normalized line segments.
+     * @param {object[]} junctions Authored junctions.
+     * @returns {object[]}
+     */
+    static #unjunctionedTeeContactFindings(lines, junctions) {
+        const findings = []
+        const seen = new Set()
+
+        for (
+            let segmentIndex = 0;
+            segmentIndex < lines.length;
+            segmentIndex += 1
+        ) {
+            const segment = lines[segmentIndex]
+            if (!SchematicConnectivityQaBuilder.#isUsableSegment(segment)) {
+                continue
+            }
+
+            for (const point of SchematicConnectivityQaBuilder.#segmentEndpoints(
+                segment
+            )) {
+                if (
+                    junctions.some((junction) =>
+                        SchematicConnectivityQaBuilder.#samePoint(
+                            point,
+                            junction
+                        )
+                    )
+                ) {
+                    continue
+                }
+
+                for (
+                    let touchedSegmentIndex = 0;
+                    touchedSegmentIndex < lines.length;
+                    touchedSegmentIndex += 1
+                ) {
+                    if (touchedSegmentIndex === segmentIndex) {
+                        continue
+                    }
+
+                    const touchedSegment = lines[touchedSegmentIndex]
+                    if (
+                        !SchematicConnectivityQaBuilder.#isUsableSegment(
+                            touchedSegment
+                        ) ||
+                        SchematicConnectivityQaBuilder.#isSegmentEndpoint(
+                            touchedSegment,
+                            point
+                        ) ||
+                        !SchematicConnectivityQaBuilder.#segmentContainsPoint(
+                            touchedSegment,
+                            point
+                        )
+                    ) {
+                        continue
+                    }
+
+                    const key =
+                        SchematicConnectivityQaBuilder.#pointKey(point) +
+                        ':' +
+                        segmentIndex +
+                        ':' +
+                        touchedSegmentIndex
+                    if (seen.has(key)) {
+                        continue
+                    }
+                    seen.add(key)
+                    findings.push({
+                        code: 'schematic.connectivity.unjunctioned-tee-contact',
+                        severity: 'warning',
+                        x: point.x,
+                        y: point.y,
+                        segmentIndex,
+                        touchedSegmentIndex
+                    })
+                }
+            }
+        }
+
+        return findings
     }
 
     /**
@@ -254,6 +356,79 @@ export class SchematicConnectivityQaBuilder {
             String(left.designator || '') === String(right.designator || '') &&
             SchematicConnectivityQaBuilder.#samePoint(left, right)
         )
+    }
+
+    /**
+     * Returns true for a non-degenerate line segment.
+     * @param {object} segment Line segment.
+     * @returns {boolean}
+     */
+    static #isUsableSegment(segment) {
+        return !SchematicConnectivityQaBuilder.#samePoint(
+            { x: segment?.x1, y: segment?.y1 },
+            { x: segment?.x2, y: segment?.y2 }
+        )
+    }
+
+    /**
+     * Lists the two endpoints of a segment.
+     * @param {object} segment Line segment.
+     * @returns {{ x: number, y: number }[]}
+     */
+    static #segmentEndpoints(segment) {
+        return [
+            { x: Number(segment.x1), y: Number(segment.y1) },
+            { x: Number(segment.x2), y: Number(segment.y2) }
+        ]
+    }
+
+    /**
+     * Returns true when a point matches either segment endpoint.
+     * @param {object} segment Line segment.
+     * @param {{ x: number, y: number }} point Test point.
+     * @returns {boolean}
+     */
+    static #isSegmentEndpoint(segment, point) {
+        return SchematicConnectivityQaBuilder.#segmentEndpoints(segment).some(
+            (endpoint) =>
+                SchematicConnectivityQaBuilder.#samePoint(endpoint, point)
+        )
+    }
+
+    /**
+     * Returns true when a point lies on a segment.
+     * @param {object} segment Line segment.
+     * @param {{ x: number, y: number }} point Test point.
+     * @returns {boolean}
+     */
+    static #segmentContainsPoint(segment, point) {
+        const x1 = Number(segment.x1)
+        const y1 = Number(segment.y1)
+        const x2 = Number(segment.x2)
+        const y2 = Number(segment.y2)
+        const x = Number(point.x)
+        const y = Number(point.y)
+        const cross = (x - x1) * (y2 - y1) - (y - y1) * (x2 - x1)
+
+        if (Math.abs(cross) > 0.01) {
+            return false
+        }
+
+        return (
+            x >= Math.min(x1, x2) - 0.01 &&
+            x <= Math.max(x1, x2) + 0.01 &&
+            y >= Math.min(y1, y2) - 0.01 &&
+            y <= Math.max(y1, y2) + 0.01
+        )
+    }
+
+    /**
+     * Builds a stable key fragment for one point.
+     * @param {{ x: number, y: number }} point Point.
+     * @returns {string}
+     */
+    static #pointKey(point) {
+        return Number(point.x).toFixed(2) + ',' + Number(point.y).toFixed(2)
     }
 
     /**

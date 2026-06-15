@@ -12,6 +12,7 @@ import { PcbComponentKindPolicy } from './PcbComponentKindPolicy.mjs'
 import { PcbComponentPrimitiveIndexer } from './PcbComponentPrimitiveIndexer.mjs'
 import { PcbCustomPadShapeParser } from './PcbCustomPadShapeParser.mjs'
 import { PcbDimensionParser } from './PcbDimensionParser.mjs'
+import { PcbLayerStackCustomDataParser } from './PcbLayerStackCustomDataParser.mjs'
 import { PcbLayerStackReadModelBuilder } from './PcbLayerStackReadModelBuilder.mjs'
 import { PcbMechanicalLayerPairParser } from './PcbMechanicalLayerPairParser.mjs'
 import { PcbDefaultsParser } from './PcbDefaultsParser.mjs'
@@ -50,13 +51,21 @@ export class PcbModelParser {
      * resolved primitive netName fields keyed by numeric netIndex values.
      * @param {string} fileName
      * @param {{ raw: string, fields: Record<string, string | string[]>, sourceStream?: string }[]} records
-     * @param {{ streamNames: string[], binaryPrimitives: Record<string, object[]>, primitiveParameters?: object, viaStructures?: object, customPadShapes?: object, extendedPrimitiveInformation?: object, unions?: object, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } } | null} pcbExtraction
+     * @param {{ streamNames: string[], nativeStreams?: object, binaryPrimitives: Record<string, object[]>, primitiveParameters?: object, viaStructures?: object, customPadShapes?: object, extendedPrimitiveInformation?: object, unions?: object, diagnostics: { printableRecordCount: number, printableStreamCount: number, binaryPrimitiveCount: number } } | null} pcbExtraction
      * @returns {{ schema: string, kind: 'pcb', fileType: 'PcbDoc', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], pcb: Record<string, unknown>, bom: { designators: string[], quantity: number, pattern: string, source: string, value: string }[] }}
      */
     static parse(fileName, records, pcbExtraction = null) {
         const boardRecords = records.filter(
             (record) => record.sourceStream === 'Board6/Data'
         )
+        const stackCustomData =
+            PcbLayerStackCustomDataParser.parseBoardRecordsWithDiagnostics(
+                boardRecords
+            )
+        const layerStackBoardRecords = [
+            ...boardRecords,
+            ...stackCustomData.records
+        ]
         const boardRecord =
             boardRecords.find(
                 (record) =>
@@ -64,7 +73,7 @@ export class PcbModelParser {
                     record.sourceStream === 'Board6/Data'
             ) || records.find((record) => getField(record.fields, 'KIND0'))
         const layerRecord =
-            boardRecords.find(
+            layerStackBoardRecords.find(
                 (record) =>
                     countMatchingKeys(
                         record.fields,
@@ -100,7 +109,7 @@ export class PcbModelParser {
         )
         const layerSubstacks =
             PcbBoardRegionSemanticsParser.parseLayerSubstacks(
-                boardRecords.map((record) => record.fields)
+                layerStackBoardRecords.map((record) => record.fields)
             )
         const primitiveLayers = AltiumLayoutParser.parsePrimitiveLayerNames(
             boardRecords.map((record) => record.fields)
@@ -120,6 +129,9 @@ export class PcbModelParser {
             PcbModelParser.#parseDifferentialPairRecords(records),
             classes
         )
+        const embeddedBoards =
+            PcbModelParser.#parseEmbeddedBoardRecords(records)
+        const rooms = PcbModelParser.#parseRoomRecords(records)
         const rules = PcbRuleParser.parse(records)
         const defaults = PcbDefaultsParser.parse(
             boardRecord?.fields || {},
@@ -190,6 +202,7 @@ export class PcbModelParser {
         const rawRecords = Array.isArray(pcbExtraction?.rawRecords)
             ? pcbExtraction.rawRecords
             : []
+        const nativeStreams = pcbExtraction?.nativeStreams || null
         const viaStructures = pcbExtraction?.viaStructures || {
             structures: [],
             links: [],
@@ -257,7 +270,7 @@ export class PcbModelParser {
             )
         const layerStackReadModel = PcbLayerStackReadModelBuilder.build({
             fileName,
-            boardRecords,
+            boardRecords: layerStackBoardRecords,
             streamNames: pcbExtraction?.streamNames || [],
             layers,
             primitiveLayers,
@@ -403,6 +416,36 @@ export class PcbModelParser {
                         'lines'
                     ) +
                     '.'
+            })
+        }
+
+        if (embeddedBoards.length || rooms.length) {
+            diagnostics.push({
+                severity: 'info',
+                message:
+                    'Recovered ' +
+                    embeddedBoards.length +
+                    ' embedded board ' +
+                    PcbModelParser.#plural(
+                        embeddedBoards.length,
+                        'placement',
+                        'placements'
+                    ) +
+                    ' and ' +
+                    rooms.length +
+                    ' placement ' +
+                    PcbModelParser.#plural(rooms.length, 'room', 'rooms') +
+                    '.'
+            })
+        }
+
+        for (const issue of stackCustomData.diagnostics) {
+            diagnostics.push({
+                severity: issue.severity || 'warning',
+                code: issue.code,
+                message: issue.message,
+                sourceStream: issue.sourceStream,
+                fieldName: issue.fieldName
             })
         }
 
@@ -607,6 +650,10 @@ export class PcbModelParser {
                     differentialPairData.differentialPairs.length,
                 differentialPairClassCount:
                     differentialPairData.differentialPairClasses.length,
+                ...(embeddedBoards.length
+                    ? { embeddedBoardCount: embeddedBoards.length }
+                    : {}),
+                ...(rooms.length ? { roomCount: rooms.length } : {}),
                 ruleCount: rules.length,
                 routeReviewGroupCount:
                     reviewMetadata.summary.routeGroupCount || 0,
@@ -649,6 +696,11 @@ export class PcbModelParser {
                 embeddedFontCount: extractedEmbeddedFonts.length,
                 embeddedFileCount: embeddedFiles.files.length,
                 rawRecordCount: rawRecords.length,
+                ...(nativeStreams?.summary?.streamCount
+                    ? {
+                          nativeStreamCount: nativeStreams.summary.streamCount
+                      }
+                    : {}),
                 boardWidthMil: Math.round(boardOutline.widthMil),
                 boardHeightMil: Math.round(boardOutline.heightMil)
             },
@@ -669,6 +721,8 @@ export class PcbModelParser {
                 differentialPairs: differentialPairData.differentialPairs,
                 differentialPairClasses:
                     differentialPairData.differentialPairClasses,
+                ...(embeddedBoards.length ? { embeddedBoards } : {}),
+                ...(rooms.length ? { rooms } : {}),
                 rules,
                 ...(defaults ? { defaults } : {}),
                 maskPaste,
@@ -698,6 +752,7 @@ export class PcbModelParser {
                 embeddedFonts: extractedEmbeddedFonts,
                 embeddedFiles,
                 rawRecords,
+                ...(nativeStreams ? { nativeStreams } : {}),
                 componentBodies,
                 componentPrimitives,
                 componentPrimitiveGroups,
@@ -996,6 +1051,136 @@ export class PcbModelParser {
     }
 
     /**
+     * Parses panel embedded-board placement records.
+     * @param {{ fields: Record<string, string | string[]>, sourceStream?: string }[]} records Source records.
+     * @returns {object[]}
+     */
+    static #parseEmbeddedBoardRecords(records) {
+        return (records || [])
+            .filter((record) => record.sourceStream === 'EmbeddedBoards6/Data')
+            .map((record, index) =>
+                PcbModelParser.#normalizeEmbeddedBoardRecord(
+                    record.fields,
+                    index
+                )
+            )
+            .filter(
+                (embeddedBoard) =>
+                    embeddedBoard.documentPath || embeddedBoard.uniqueId
+            )
+    }
+
+    /**
+     * Normalizes one embedded-board placement.
+     * @param {Record<string, string | string[]>} fields Native fields.
+     * @param {number} embeddedBoardIndex Fallback index.
+     * @returns {object}
+     */
+    static #normalizeEmbeddedBoardRecord(fields, embeddedBoardIndex) {
+        const documentPath = PcbModelParser.#firstField(fields, [
+            'DOCUMENTPATH',
+            'DOCUMENTNAME',
+            'FILENAME'
+        ])
+        const array = PcbModelParser.#stripEmptyObject({
+            columns: PcbModelParser.#firstNumberField(fields, [
+                'COLCOUNT',
+                'COLUMNCOUNT',
+                'COLUMNS'
+            ]),
+            rows: PcbModelParser.#firstNumberField(fields, [
+                'ROWCOUNT',
+                'ROWS'
+            ]),
+            columnSpacingMil: PcbModelParser.#firstNumberField(fields, [
+                'COLUMNSPACING',
+                'COLSPACING',
+                'XSPACING'
+            ]),
+            rowSpacingMil: PcbModelParser.#firstNumberField(fields, [
+                'ROWSPACING',
+                'YSPACING'
+            ])
+        })
+        const flags = PcbModelParser.#stripEmptyObject({
+            keepIn: PcbModelParser.#optionalBooleanAny(fields, [
+                'KEEPIN',
+                'KEEPINSIDE'
+            ]),
+            keepout: PcbModelParser.#optionalBooleanAny(fields, ['KEEPOUT']),
+            electrical: PcbModelParser.#optionalBooleanAny(fields, [
+                'ELECTRICAL'
+            ]),
+            preRoute: PcbModelParser.#optionalBooleanAny(fields, ['PREROUTE']),
+            teardrops: PcbModelParser.#optionalBooleanAny(fields, [
+                'TEARDROPS'
+            ]),
+            polygons: PcbModelParser.#optionalBooleanAny(fields, ['POLYGONS']),
+            transmitBoardShape: PcbModelParser.#optionalBooleanAny(fields, [
+                'TRANSMITBOARDSHAPE'
+            ])
+        })
+
+        return PcbModelParser.#stripEmptyObject({
+            embeddedBoardIndex,
+            documentPath,
+            fileName: PcbModelParser.#basenameFromAltiumPath(documentPath),
+            layer: PcbModelParser.#firstField(fields, ['LAYER', 'LAYERNAME']),
+            rotation: PcbModelParser.#firstNumberField(fields, ['ROTATION']),
+            mirrored: PcbModelParser.#optionalBooleanAny(fields, [
+                'MIRRORFLAG',
+                'MIRRORED'
+            ]),
+            originMode: PcbModelParser.#firstNumberField(fields, [
+                'ORIGINMODE'
+            ]),
+            scale: PcbModelParser.#firstNumberField(fields, ['SCALE']),
+            ...(Object.keys(array).length ? { array } : {}),
+            uniqueId: PcbModelParser.#firstField(fields, ['UNIQUEID', 'UID']),
+            ...(Object.keys(flags).length ? { flags } : {})
+        })
+    }
+
+    /**
+     * Parses PCB placement room records.
+     * @param {{ fields: Record<string, string | string[]>, sourceStream?: string }[]} records Source records.
+     * @returns {object[]}
+     */
+    static #parseRoomRecords(records) {
+        return (records || [])
+            .filter((record) => record.sourceStream === 'Rooms6/Data')
+            .map((record, index) =>
+                PcbModelParser.#normalizeRoomRecord(record.fields, index)
+            )
+            .filter(
+                (room) => room.name || room.uniqueId || room.members?.length
+            )
+    }
+
+    /**
+     * Normalizes one placement room record.
+     * @param {Record<string, string | string[]>} fields Native fields.
+     * @param {number} roomIndex Fallback index.
+     * @returns {object}
+     */
+    static #normalizeRoomRecord(fields, roomIndex) {
+        const bounds = PcbModelParser.#stripEmptyObject({
+            x1: PcbModelParser.#firstNumberField(fields, ['X1', 'LEFT']),
+            y1: PcbModelParser.#firstNumberField(fields, ['Y1', 'TOP']),
+            x2: PcbModelParser.#firstNumberField(fields, ['X2', 'RIGHT']),
+            y2: PcbModelParser.#firstNumberField(fields, ['Y2', 'BOTTOM'])
+        })
+
+        return PcbModelParser.#stripEmptyObject({
+            roomIndex,
+            name: PcbModelParser.#firstField(fields, ['NAME', 'ROOMNAME']),
+            uniqueId: PcbModelParser.#firstField(fields, ['UNIQUEID', 'UID']),
+            members: PcbModelParser.#parseClassMembers(fields),
+            ...(Object.keys(bounds).length ? { bounds } : {})
+        })
+    }
+
+    /**
      * Parses native DifferentialPairs6/Data records in stream order.
      * @param {{ fields: Record<string, string | string[]>, sourceStream?: string }[]} records
      * @returns {{ pairIndex: number, name: string, positiveNetName: string, negativeNetName: string, netNames: string[], gatherControl: boolean, uniqueId: string }[]}
@@ -1148,6 +1333,23 @@ export class PcbModelParser {
         const raw = getField(fields, key)
 
         return raw ? parseBoolean(raw) : null
+    }
+
+    /**
+     * Reads the first optional boolean from a list of field aliases.
+     * @param {Record<string, string | string[]>} fields Native fields.
+     * @param {string[]} keys Candidate field names.
+     * @returns {boolean | null}
+     */
+    static #optionalBooleanAny(fields, keys) {
+        for (const key of keys || []) {
+            const raw = getField(fields, key)
+            if (raw) {
+                return parseBoolean(raw)
+            }
+        }
+
+        return null
     }
 
     /**
@@ -1428,6 +1630,23 @@ export class PcbModelParser {
         for (const key of keys) {
             const parsed = parseNumericField(fields, key)
             if (Number.isInteger(parsed)) {
+                return parsed
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Returns the first numeric field value from a list of field aliases.
+     * @param {Record<string, string | string[]>} fields Source fields.
+     * @param {string[]} keys Candidate keys.
+     * @returns {number | null}
+     */
+    static #firstNumberField(fields, keys) {
+        for (const key of keys || []) {
+            const parsed = parseNumericField(fields, key)
+            if (Number.isFinite(parsed)) {
                 return parsed
             }
         }

@@ -39,6 +39,12 @@ test('SchematicRecordTypeRegistry describes deferred record families', () => {
         family: 'annotation',
         supported: true
     })
+    assert.deepEqual(SchematicRecordTypeRegistry.get(210), {
+        recordType: 210,
+        name: 'probe-marker',
+        family: 'code-symbol',
+        supported: true
+    })
     assert.deepEqual(SchematicRecordTypeRegistry.get(211), {
         recordType: 211,
         name: 'compile-mask',
@@ -61,7 +67,7 @@ test('SchematicRecordTypeRegistry describes deferred record families', () => {
         recordType: 226,
         name: 'hyperlink',
         family: 'annotation',
-        supported: false
+        supported: true
     })
 })
 
@@ -116,12 +122,18 @@ test('SchematicRecordTypeRegistry supported flags match normalized read models',
         [47, 'implementations'],
         [48, 'implementations'],
         [209, 'texts'],
+        [210, 'codeSymbols.markers'],
         [211, 'directiveSemantics.compileMasks'],
         [215, 'harnesses.connectors'],
         [216, 'harnesses.entries'],
         [217, 'harnesses.typeLabels'],
         [218, 'harnesses.signalHarnesses'],
-        [225, 'directiveSemantics.blankets']
+        [220, 'codeSymbols.symbols'],
+        [221, 'codeSymbols.entries'],
+        [222, 'codeSymbols.texts'],
+        [223, 'codeSymbols.texts'],
+        [225, 'directiveSemantics.blankets'],
+        [226, 'hyperlinks']
     ])
 
     for (const [recordType, readModelPath] of supportedFamilies) {

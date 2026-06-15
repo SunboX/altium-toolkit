@@ -2,8 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { AsciiRecordParser } from './AsciiRecordParser.mjs'
 import { EmbeddedFileInventoryBuilder } from './EmbeddedFileInventoryBuilder.mjs'
+import { NativeStreamInventoryBuilder } from './NativeStreamInventoryBuilder.mjs'
+import { SchematicRecordStreamParser } from './SchematicRecordStreamParser.mjs'
 import { OleCompoundDocument } from '../ole/OleCompoundDocument.mjs'
 import { OleConstants } from '../ole/OleConstants.mjs'
 
@@ -58,10 +59,10 @@ export class SchematicStreamExtractor {
             return null
         }
 
-        let fileHeaderRecords
+        let fileHeaderParse
 
         try {
-            fileHeaderRecords = SchematicStreamExtractor.#parseStreamRecords(
+            fileHeaderParse = SchematicStreamExtractor.#parseStreamRecords(
                 compoundDocument,
                 'FileHeader'
             )
@@ -73,32 +74,64 @@ export class SchematicStreamExtractor {
         const auxiliaryStreamNames = streamNames.filter((streamName) =>
             SchematicStreamExtractor.#isAuxiliaryPrintableStream(streamName)
         )
-        const auxiliaryRecords = auxiliaryStreamNames.flatMap((streamName) =>
+        const auxiliaryParses = auxiliaryStreamNames.map((streamName) =>
             SchematicStreamExtractor.#parseStreamRecords(
                 compoundDocument,
                 streamName
             )
         )
-        const records = [...fileHeaderRecords, ...auxiliaryRecords]
+        const records = [
+            ...fileHeaderParse.records,
+            ...auxiliaryParses.flatMap((entry) => entry.records)
+        ]
+        const opaqueRecords = [
+            ...fileHeaderParse.opaqueRecords,
+            ...auxiliaryParses.flatMap((entry) => entry.opaqueRecords)
+        ]
 
-        if (!records.length) {
+        if (!records.length && !opaqueRecords.length) {
             return null
         }
+
+        const embeddedFiles = EmbeddedFileInventoryBuilder.buildFromStreams(
+            new Map(
+                streamNames.map((name) => [
+                    name,
+                    compoundDocument.getStream(name)
+                ])
+            ),
+            {
+                skipStreamNames: ['FileHeader', ...auxiliaryStreamNames]
+            }
+        )
+        const consumedStreamNames = [
+            'FileHeader',
+            ...auxiliaryStreamNames,
+            ...embeddedFiles.files.map((file) => file.sourceStream),
+            ...embeddedFiles.diagnostics.map(
+                (diagnostic) => diagnostic.sourceStream
+            )
+        ]
+        const nativeStreams = NativeStreamInventoryBuilder.buildFromStreams(
+            new Map(
+                streamNames.map((name) => [
+                    name,
+                    compoundDocument.getStream(name)
+                ])
+            ),
+            {
+                source: 'schdoc',
+                consumedStreamNames,
+                knownStreamNames: ['FileHeader', ...auxiliaryStreamNames]
+            }
+        )
 
         return {
             records,
             streamNames,
-            embeddedFiles: EmbeddedFileInventoryBuilder.buildFromStreams(
-                new Map(
-                    streamNames.map((name) => [
-                        name,
-                        compoundDocument.getStream(name)
-                    ])
-                ),
-                {
-                    skipStreamNames: ['FileHeader', ...auxiliaryStreamNames]
-                }
-            )
+            opaqueRecords,
+            nativeStreams,
+            embeddedFiles
         }
     }
 
@@ -106,17 +139,23 @@ export class SchematicStreamExtractor {
      * Parses printable records from one compound-document stream.
      * @param {OleCompoundDocument} compoundDocument
      * @param {string} streamName
-     * @returns {Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>}
+     * @returns {{ records: Array<{ raw: string, fields: Record<string, string | string[]>, sourceStream: string }>, opaqueRecords: object[] }}
      */
     static #parseStreamRecords(compoundDocument, streamName) {
-        return AsciiRecordParser.parse(
+        const parsed = SchematicRecordStreamParser.parseWithOpaqueRecords(
             SchematicStreamExtractor.#toArrayBuffer(
                 compoundDocument.getStream(streamName)
-            )
-        ).map((record) => ({
-            ...record,
-            sourceStream: streamName
-        }))
+            ),
+            { sourceStream: streamName }
+        )
+
+        return {
+            records: parsed.records.map((record) => ({
+                ...record,
+                sourceStream: streamName
+            })),
+            opaqueRecords: parsed.opaqueRecords
+        }
     }
 
     /**

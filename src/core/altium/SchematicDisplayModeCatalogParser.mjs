@@ -62,6 +62,8 @@ export class SchematicDisplayModeCatalogParser {
             parseNumericField(componentRecord.fields, 'DisplayModeCount') || 1
         const currentPartId =
             parseNumericField(componentRecord.fields, 'CurrentPartId') || 1
+        const activeDisplayMode =
+            parseNumericField(componentRecord.fields, 'DisplayMode') || 1
         const partIds = SchematicDisplayModeCatalogParser.#collectPartIds(
             children,
             declaredPartCount
@@ -88,6 +90,7 @@ export class SchematicDisplayModeCatalogParser {
                 SchematicDisplayModeCatalogParser.#partCatalog(
                     partId,
                     currentPartId,
+                    activeDisplayMode,
                     declaredDisplayModeCount,
                     children
                 )
@@ -156,6 +159,7 @@ export class SchematicDisplayModeCatalogParser {
      * Builds one part catalog row.
      * @param {number} partId Native part id.
      * @param {number} currentPartId Active part id.
+     * @param {number} activeDisplayMode Active display-mode id.
      * @param {number} declaredDisplayModeCount Declared display-mode count.
      * @param {object[]} children Owner child records.
      * @returns {object}
@@ -163,6 +167,7 @@ export class SchematicDisplayModeCatalogParser {
     static #partCatalog(
         partId,
         currentPartId,
+        activeDisplayMode,
         declaredDisplayModeCount,
         children
     ) {
@@ -185,6 +190,7 @@ export class SchematicDisplayModeCatalogParser {
                     displayMode,
                     partId,
                     currentPartId,
+                    activeDisplayMode,
                     partChildren
                 )
             )
@@ -219,6 +225,7 @@ export class SchematicDisplayModeCatalogParser {
      * @param {number} displayMode Native display-mode id.
      * @param {number} partId Native part id.
      * @param {number} currentPartId Active part id.
+     * @param {number} activeDisplayMode Active display-mode id.
      * @param {object[]} partChildren Child records for one part.
      * @returns {object}
      */
@@ -226,6 +233,7 @@ export class SchematicDisplayModeCatalogParser {
         displayMode,
         partId,
         currentPartId,
+        activeDisplayMode,
         partChildren
     ) {
         const displayChildren = partChildren.filter(
@@ -236,7 +244,8 @@ export class SchematicDisplayModeCatalogParser {
 
         return {
             displayMode,
-            isActive: partId === currentPartId && displayMode === 1,
+            isActive:
+                partId === currentPartId && displayMode === activeDisplayMode,
             primitiveCount: displayChildren.length,
             pinCount:
                 SchematicDisplayModeCatalogParser.#pinCount(displayChildren)

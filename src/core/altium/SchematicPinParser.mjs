@@ -5,6 +5,7 @@
 import { ParserUtils } from './ParserUtils.mjs'
 import { SchematicNoErcSymbolResolver } from './SchematicNoErcSymbolResolver.mjs'
 import { SchematicPinDesignatorInferer } from './SchematicPinDesignatorInferer.mjs'
+import { SchematicTextRunParser } from './SchematicTextRunParser.mjs'
 
 /**
  * Helpers for normalized schematic pins, ports, and crosses.
@@ -480,7 +481,7 @@ export class SchematicPinParser {
                         options.recordType
                     )
                 ),
-                width: ParserUtils.parseNumericField(fields, 'LineWidth') || 1,
+                width: ParserUtils.parseSchematicLineWidth(fields),
                 lineStyle,
                 isBus: options.isBus === true ? true : undefined,
                 recordType: options.recordType || undefined,
@@ -524,7 +525,7 @@ export class SchematicPinParser {
                     fields.Color,
                     SchematicPinParser.#resolveDefaultPolylineColor(fields, '7')
                 ),
-                width: ParserUtils.parseNumericField(fields, 'LineWidth') || 1,
+                width: ParserUtils.parseSchematicLineWidth(fields),
                 lineStyle
             })
         }
@@ -541,7 +542,7 @@ export class SchematicPinParser {
                 fields.Color,
                 SchematicPinParser.#resolveDefaultPolylineColor(fields, '7')
             ),
-            width: ParserUtils.parseNumericField(fields, 'LineWidth') || 1,
+            width: ParserUtils.parseSchematicLineWidth(fields),
             lineStyle
         })
 
@@ -644,8 +645,12 @@ export class SchematicPinParser {
             case 2:
                 return 'filled-arrow'
             case 3:
-                return 'circle'
+                return 'tail'
             case 4:
+                return 'filled-tail'
+            case 5:
+                return 'circle'
+            case 6:
                 return 'square'
             default:
                 return 'marker-' + shape
@@ -1209,49 +1214,11 @@ export class SchematicPinParser {
      * @returns {{ name: string, nameSegments?: { text: string, overline: boolean }[] }}
      */
     static #parseSchematicPinName(name) {
-        const characters = []
-
-        for (const character of String(name || '').trim()) {
-            if (character === '\\') {
-                const previousCharacter = characters.at(-1)
-                if (previousCharacter) {
-                    previousCharacter.overline = true
-                }
-                continue
-            }
-
-            characters.push({
-                text: character,
-                overline: false
-            })
-        }
-
-        const normalizedName = characters
-            .map((character) => character.text)
-            .join('')
-        const nameSegments = []
-
-        for (const character of characters) {
-            const previousSegment = nameSegments.at(-1)
-            if (
-                previousSegment &&
-                previousSegment.overline === character.overline
-            ) {
-                previousSegment.text += character.text
-                continue
-            }
-
-            nameSegments.push({
-                text: character.text,
-                overline: character.overline
-            })
-        }
+        const parsed = SchematicTextRunParser.parseOptionalOverlineRuns(name)
 
         return {
-            name: normalizedName,
-            nameSegments: nameSegments.some((segment) => segment.overline)
-                ? nameSegments
-                : undefined
+            name: parsed.text,
+            nameSegments: parsed.segments
         }
     }
 

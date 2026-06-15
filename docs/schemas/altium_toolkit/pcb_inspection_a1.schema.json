@@ -1,0 +1,65 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.pcb.inspection.a1",
+    "title": "Altium Toolkit PCB Inspection A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "units",
+        "summary",
+        "board",
+        "statistics",
+        "primitives",
+        "rules",
+        "diagnostics",
+        "netMembership",
+        "classes",
+        "routeAnalysis"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.pcb.inspection.a1"
+        },
+        "units": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "board": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "statistics": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "primitives": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "rules": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "diagnostics": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "netMembership": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "classes": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "routeAnalysis": {
+            "type": "object",
+            "additionalProperties": true
+        }
+    }
+}

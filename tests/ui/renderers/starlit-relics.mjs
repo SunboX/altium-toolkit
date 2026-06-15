@@ -343,11 +343,11 @@ test('renderSchematicSvg renders the nova-sheet EMBER12 package body and both pi
 
     assert.match(
         markup,
-        /<rect class="schematic-rectangle" x="1210" y="284" width="60" height="60" fill="var\(--schematic-fill-color\)" stroke="var\(--schematic-power-color\)" stroke-width="1" \/>/
+        /<rect class="schematic-rectangle" x="1210" y="284" width="60" height="60" fill="var\(--schematic-fill-color\)" stroke="var\(--schematic-power-color\)" stroke-width="0.80" \/>/
     )
     assert.doesNotMatch(
         markup,
-        /<line x1="1210" y1="344" x2="1270" y2="284" stroke="var\(--schematic-power-color\)" stroke-width="1" \/>/
+        /<line x1="1210" y1="344" x2="1270" y2="284" stroke="var\(--schematic-power-color\)"[^>]*\/>/
     )
     assert.match(
         markup,

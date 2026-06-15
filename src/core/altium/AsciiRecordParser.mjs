@@ -64,6 +64,15 @@ export class AsciiRecordParser {
     }
 
     /**
+     * Parses one pipe-delimited record string into a field object.
+     * @param {string} raw Raw record text.
+     * @returns {{ raw: string, fields: Record<string, string | string[]> }}
+     */
+    static parseRecord(raw) {
+        return AsciiRecordParser.#parseRecord(raw)
+    }
+
+    /**
      * Returns true when a printable run looks like an Altium record block.
      * @param {string} candidate
      * @returns {boolean}

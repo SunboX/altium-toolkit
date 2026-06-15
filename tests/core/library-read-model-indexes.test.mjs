@@ -1040,6 +1040,12 @@ test('LibraryQaReportBuilder reports collection-level collisions and stale links
         missingModelCount: 1,
         multipartMismatchCount: 1,
         mergePlanConflictCount: 1,
+        libraryLintIssueCount: 0,
+        issuesBySeverity: {
+            error: 0,
+            warning: 6,
+            info: 0
+        },
         issueCount: 6
     })
     assert.deepEqual(report.duplicates.symbols, [
@@ -1094,6 +1100,137 @@ test('LibraryQaReportBuilder reports collection-level collisions and stale links
             expectedPartIds: ['A', 'B']
         }
     ])
+})
+
+test('LibraryQaReportBuilder emits symbol and footprint lint issues', () => {
+    const report = LibraryQaReportBuilder.build({
+        schematicLibraries: [
+            {
+                fileName: 'lint-symbols.SchLib',
+                schematicLibrary: {
+                    symbols: [
+                        {
+                            name: '',
+                            pins: []
+                        },
+                        {
+                            name: 'GATE_FAKE',
+                            pins: [
+                                { designator: '1', name: 'A' },
+                                { designator: '1', name: 'B' },
+                                { designator: '', name: 'C' },
+                                { designator: '4', name: '' }
+                            ],
+                            implementations: [{ modelName: 'PKG_GATE_FAKE' }]
+                        }
+                    ]
+                }
+            }
+        ],
+        pcbLibraries: [
+            {
+                fileName: 'lint-footprints.PcbLib',
+                pcbLibrary: {
+                    footprints: [
+                        {
+                            name: '',
+                            pads: []
+                        },
+                        {
+                            name: 'PKG_GATE_FAKE',
+                            pads: [
+                                { designator: '1' },
+                                { designator: '1' },
+                                { designator: '' }
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    })
+
+    assert.equal(report.summary.libraryLintIssueCount, 10)
+    assert.equal(report.summary.issueCount, 10)
+    assert.deepEqual(report.summary.issuesBySeverity, {
+        error: 0,
+        warning: 9,
+        info: 1
+    })
+    assert.deepEqual(report.libraryLint.summary.issuesBySeverity, {
+        error: 0,
+        warning: 9,
+        info: 1
+    })
+    assert.deepEqual(
+        report.libraryLint.issues.map((issue) => ({
+            code: issue.code,
+            target: issue.target
+        })),
+        [
+            {
+                code: 'library.symbol.empty-name',
+                target: 'lint-symbols.SchLib#0'
+            },
+            {
+                code: 'library.symbol.no-pins',
+                target: 'lint-symbols.SchLib#0'
+            },
+            {
+                code: 'library.symbol.blank-pin-designator',
+                target: 'GATE_FAKE'
+            },
+            {
+                code: 'library.symbol.unnamed-pin',
+                target: 'GATE_FAKE'
+            },
+            {
+                code: 'library.symbol.duplicate-pin-designator',
+                target: 'GATE_FAKE'
+            },
+            {
+                code: 'library.footprint.empty-name',
+                target: 'lint-footprints.PcbLib#0'
+            },
+            {
+                code: 'library.footprint.no-pads',
+                target: 'lint-footprints.PcbLib#0'
+            },
+            {
+                code: 'library.footprint.blank-pad-designator',
+                target: 'PKG_GATE_FAKE'
+            },
+            {
+                code: 'library.footprint.duplicate-pad-designator',
+                target: 'PKG_GATE_FAKE'
+            },
+            {
+                code: 'library.symbol-footprint.pin-pad-count-mismatch',
+                target: 'GATE_FAKE'
+            }
+        ]
+    )
+    assert.deepEqual(report.libraryLint.issues[3], {
+        code: 'library.symbol.unnamed-pin',
+        severity: 'info',
+        target: 'GATE_FAKE',
+        libraryFileName: 'lint-symbols.SchLib',
+        symbolName: 'GATE_FAKE',
+        unnamedPinCount: 1,
+        reason: 'one or more pins had a blank name'
+    })
+    assert.deepEqual(report.libraryLint.issues[9], {
+        code: 'library.symbol-footprint.pin-pad-count-mismatch',
+        severity: 'warning',
+        target: 'GATE_FAKE',
+        libraryFileName: 'lint-symbols.SchLib',
+        symbolName: 'GATE_FAKE',
+        footprintName: 'PKG_GATE_FAKE',
+        pinCount: 4,
+        padCount: 3,
+        modelName: 'PKG_GATE_FAKE',
+        reason: 'symbol pin count differs from the linked footprint pad count'
+    })
 })
 
 test('IntLibModelParser exposes source and cross-reference indexes', () => {

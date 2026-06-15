@@ -9,8 +9,8 @@
 export class SchematicNetlistBuilder {
     /**
      * Builds normalized nets and connectivity diagnostics.
-     * @param {{ lines: { x1: number, y1: number, x2: number, y2: number, ownerIndex?: string, isBus?: boolean }[], texts: { x: number, y: number, text: string, recordType?: string }[], pins?: { x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', name: string, designator: string }[], ports?: { x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down', name: string }[], crossSheetConnectors?: { key: string, x: number, y: number, name: string, style?: string }[], junctions?: { x: number, y: number, color: string }[], busEntries?: { x1: number, y1: number, x2: number, y2: number }[], sheetEntries?: { x: number, y: number, name: string }[] }} schematic
-     * @returns {{ nets: { name: string, segments: { x1: number, y1: number, x2: number, y2: number, ownerIndex?: string, isBus?: boolean }[], labels: { x: number, y: number, text: string, recordType?: string }[], powerPorts: { x: number, y: number, text: string, recordType?: string }[], crossSheetConnectors: { key: string, name: string, x: number, y: number, style?: string }[], pins: { x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', name: string, designator: string }[], ports: { x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down', name: string }[], junctions: { x: number, y: number, color: string }[], busEntries: { x1: number, y1: number, x2: number, y2: number }[], sheetEntries: { x: number, y: number, name: string }[] }[], diagnostics: { severity: 'warning', message: string }[] }}
+     * @param {{ lines: { x1: number, y1: number, x2: number, y2: number, ownerIndex?: string, isBus?: boolean }[], texts: { x: number, y: number, text: string, recordType?: string }[], pins?: { x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', name: string, designator: string, ownerIndex?: string, componentDesignator?: string }[], ports?: { x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down', name: string }[], crossSheetConnectors?: { key: string, x: number, y: number, name: string, style?: string }[], junctions?: { x: number, y: number, color: string }[], busEntries?: { x1: number, y1: number, x2: number, y2: number }[], sheetEntries?: { x: number, y: number, name: string }[], componentDesignatorsByOwnerIndex?: Map<string, string> | Record<string, string> }} schematic
+     * @returns {{ nets: { name: string, autoName?: string, autoNameSource?: string, aliasCandidates?: string[], segments: { x1: number, y1: number, x2: number, y2: number, ownerIndex?: string, isBus?: boolean }[], labels: { x: number, y: number, text: string, recordType?: string }[], powerPorts: { x: number, y: number, text: string, recordType?: string }[], crossSheetConnectors: { key: string, name: string, x: number, y: number, style?: string }[], pins: { x: number, y: number, length: number, orientation: 'left' | 'right' | 'top' | 'bottom', name: string, designator: string, ownerIndex?: string, componentDesignator?: string }[], ports: { x: number, y: number, width: number, direction?: 'left' | 'right' | 'up' | 'down', name: string }[], junctions: { x: number, y: number, color: string }[], busEntries: { x1: number, y1: number, x2: number, y2: number }[], sheetEntries: { x: number, y: number, name: string }[] }[], diagnostics: { severity: 'warning', message: string }[] }}
      */
     static build(schematic) {
         const diagnostics = []
@@ -43,12 +43,19 @@ export class SchematicNetlistBuilder {
             ).filter((connector) =>
                 SchematicNetlistBuilder.#groupContainsPoint(group, connector)
             )
-            const pins = (schematic.pins || []).filter((pin) =>
-                SchematicNetlistBuilder.#groupContainsPoint(
-                    group,
-                    SchematicNetlistBuilder.#resolvePinConnectionPoint(pin)
+            const pins = (schematic.pins || [])
+                .filter((pin) =>
+                    SchematicNetlistBuilder.#groupContainsPoint(
+                        group,
+                        SchematicNetlistBuilder.#resolvePinConnectionPoint(pin)
+                    )
                 )
-            )
+                .map((pin) =>
+                    SchematicNetlistBuilder.#annotatePinComponentDesignator(
+                        pin,
+                        schematic.componentDesignatorsByOwnerIndex
+                    )
+                )
             const ports = (schematic.ports || []).filter((port) =>
                 SchematicNetlistBuilder.#groupContainsPoint(
                     group,
@@ -89,6 +96,11 @@ export class SchematicNetlistBuilder {
             ]
             const name =
                 explicitNames[0] || 'UnknownNet' + String(unknownNetIndex++)
+            const implicitNaming =
+                SchematicNetlistBuilder.#deriveImplicitNetNaming({
+                    explicitNames,
+                    pins
+                })
 
             if (explicitNames.length > 1) {
                 diagnostics.push({
@@ -102,6 +114,7 @@ export class SchematicNetlistBuilder {
 
             return {
                 name,
+                ...implicitNaming,
                 segments: group,
                 labels,
                 powerPorts,
@@ -120,7 +133,257 @@ export class SchematicNetlistBuilder {
             }
         })
 
-        return { nets, diagnostics }
+        return {
+            nets: SchematicNetlistBuilder.#mergeMatchingPowerPortNets(nets),
+            diagnostics
+        }
+    }
+
+    /**
+     * Adds a component designator to a net pin when owner metadata resolves it.
+     * @param {object} pin Net pin.
+     * @param {Map<string, string> | Record<string, string> | undefined} componentDesignatorsByOwnerIndex Component designators by native owner id.
+     * @returns {object}
+     */
+    static #annotatePinComponentDesignator(
+        pin,
+        componentDesignatorsByOwnerIndex
+    ) {
+        const componentDesignator =
+            pin?.componentDesignator ||
+            SchematicNetlistBuilder.#lookupComponentDesignator(
+                componentDesignatorsByOwnerIndex,
+                pin?.ownerIndex
+            )
+
+        if (!componentDesignator) {
+            return pin
+        }
+
+        return {
+            ...pin,
+            componentDesignator
+        }
+    }
+
+    /**
+     * Derives non-breaking names for unnamed nets from attached pins.
+     * @param {{ explicitNames: string[], pins: object[] }} options Naming inputs.
+     * @returns {{ autoName?: string, autoNameSource?: string, aliasCandidates?: string[] }}
+     */
+    static #deriveImplicitNetNaming(options) {
+        if ((options.explicitNames || []).length) {
+            return {}
+        }
+
+        const candidates = SchematicNetlistBuilder.#pinAliasCandidates(
+            options.pins || []
+        )
+
+        if (!candidates.length) {
+            return {}
+        }
+
+        return {
+            autoName: candidates[0].name,
+            autoNameSource: candidates[0].source,
+            aliasCandidates: candidates.map((candidate) => candidate.name)
+        }
+    }
+
+    /**
+     * Builds deterministic alias candidates from connected pins.
+     * @param {object[]} pins Connected pins.
+     * @returns {{ name: string, source: string }[]}
+     */
+    static #pinAliasCandidates(pins) {
+        const candidates = []
+
+        for (const pin of pins || []) {
+            const componentDesignator = String(
+                pin?.componentDesignator || ''
+            ).trim()
+            const ownerIndex = String(pin?.ownerIndex || '').trim()
+            const pinDesignator = String(pin?.designator || '').trim()
+            const pinName = String(pin?.name || '').trim()
+
+            if (componentDesignator) {
+                SchematicNetlistBuilder.#pushPinAliasCandidate(
+                    candidates,
+                    componentDesignator,
+                    pinDesignator,
+                    'component-pin'
+                )
+                SchematicNetlistBuilder.#pushPinAliasCandidate(
+                    candidates,
+                    componentDesignator,
+                    pinName,
+                    'component-pin-name'
+                )
+                continue
+            }
+
+            if (ownerIndex) {
+                SchematicNetlistBuilder.#pushPinAliasCandidate(
+                    candidates,
+                    'owner-' + ownerIndex,
+                    pinDesignator,
+                    'owner-pin'
+                )
+                SchematicNetlistBuilder.#pushPinAliasCandidate(
+                    candidates,
+                    'owner-' + ownerIndex,
+                    pinName,
+                    'owner-pin-name'
+                )
+                continue
+            }
+
+            if (pinName) {
+                candidates.push({
+                    name: 'pin.' + pinName,
+                    source: 'pin-name'
+                })
+            }
+        }
+
+        return SchematicNetlistBuilder.#dedupeAliasCandidates(candidates)
+    }
+
+    /**
+     * Adds one scoped pin alias candidate.
+     * @param {{ name: string, source: string }[]} candidates Alias candidates.
+     * @param {string} scope Alias scope.
+     * @param {string} pinLabel Pin designator or name.
+     * @param {string} source Alias source label.
+     * @returns {void}
+     */
+    static #pushPinAliasCandidate(candidates, scope, pinLabel, source) {
+        const trimmedScope = String(scope || '').trim()
+        const trimmedPinLabel = String(pinLabel || '').trim()
+
+        if (!trimmedScope || !trimmedPinLabel) {
+            return
+        }
+
+        candidates.push({
+            name: trimmedScope + '.' + trimmedPinLabel,
+            source
+        })
+    }
+
+    /**
+     * Deduplicates alias candidates by visible alias name.
+     * @param {{ name: string, source: string }[]} candidates Alias candidates.
+     * @returns {{ name: string, source: string }[]}
+     */
+    static #dedupeAliasCandidates(candidates) {
+        const seen = new Set()
+        const uniqueCandidates = []
+
+        for (const candidate of candidates || []) {
+            if (!candidate.name || seen.has(candidate.name)) {
+                continue
+            }
+
+            seen.add(candidate.name)
+            uniqueCandidates.push(candidate)
+        }
+
+        return uniqueCandidates
+    }
+
+    /**
+     * Looks up a component designator by native owner id.
+     * @param {Map<string, string> | Record<string, string> | undefined} componentDesignatorsByOwnerIndex Component designators by native owner id.
+     * @param {string | undefined} ownerIndex Native owner id.
+     * @returns {string}
+     */
+    static #lookupComponentDesignator(
+        componentDesignatorsByOwnerIndex,
+        ownerIndex
+    ) {
+        const key = String(ownerIndex || '').trim()
+        if (!key || !componentDesignatorsByOwnerIndex) {
+            return ''
+        }
+
+        if (componentDesignatorsByOwnerIndex instanceof Map) {
+            return String(componentDesignatorsByOwnerIndex.get(key) || '')
+        }
+
+        return String(componentDesignatorsByOwnerIndex[key] || '')
+    }
+
+    /**
+     * Merges physically separate net groups that share one power-port label.
+     * @param {{ name: string, powerPorts: { text?: string }[] }[]} nets Source nets.
+     * @returns {object[]}
+     */
+    static #mergeMatchingPowerPortNets(nets) {
+        const mergedNets = []
+        const netsByPowerName = new Map()
+
+        for (const net of nets) {
+            const powerName =
+                SchematicNetlistBuilder.#singlePowerPortNetName(net)
+
+            if (!powerName) {
+                mergedNets.push(net)
+                continue
+            }
+
+            const existingNet = netsByPowerName.get(powerName)
+            if (!existingNet) {
+                netsByPowerName.set(powerName, net)
+                mergedNets.push(net)
+                continue
+            }
+
+            SchematicNetlistBuilder.#appendNet(existingNet, net)
+        }
+
+        return mergedNets
+    }
+
+    /**
+     * Returns one normalized power-port name when every port agrees.
+     * @param {{ powerPorts?: { text?: string }[] }} net Source net.
+     * @returns {string}
+     */
+    static #singlePowerPortNetName(net) {
+        const names = [
+            ...new Set(
+                (net.powerPorts || [])
+                    .map((powerPort) => String(powerPort.text || '').trim())
+                    .filter(Boolean)
+                    .map((name) => name.toUpperCase())
+            )
+        ]
+
+        return names.length === 1 ? names[0] : ''
+    }
+
+    /**
+     * Appends one net's observable members to an existing logical net.
+     * @param {object} target Existing logical net.
+     * @param {object} source Source net to append.
+     * @returns {void}
+     */
+    static #appendNet(target, source) {
+        for (const key of [
+            'segments',
+            'labels',
+            'powerPorts',
+            'crossSheetConnectors',
+            'pins',
+            'ports',
+            'junctions',
+            'busEntries',
+            'sheetEntries'
+        ]) {
+            target[key].push(...(source[key] || []))
+        }
     }
 
     /**

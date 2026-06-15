@@ -4,7 +4,13 @@
 
 import { ParserUtils } from './ParserUtils.mjs'
 
-const { getDisplayText, getField, parseNumericField, toColor } = ParserUtils
+const {
+    getDisplayText,
+    getField,
+    parseNumericField,
+    parseSchematicLineWidth,
+    toColor
+} = ParserUtils
 
 /**
  * Parses schematic harness connector records into a first-class read model.
@@ -79,7 +85,7 @@ export class SchematicHarnessParser {
             primaryConnectionPosition:
                 parseNumericField(record.fields, 'PrimaryConnectionPosition') ||
                 0,
-            lineWidth: parseNumericField(record.fields, 'LineWidth') || 0,
+            lineWidth: parseSchematicLineWidth(record.fields),
             color: toColor(record.fields.Color, '#000000'),
             fill: toColor(record.fields.AreaColor, '#ffffff'),
             entries,
@@ -145,7 +151,7 @@ export class SchematicHarnessParser {
             recordKey: SchematicHarnessParser.#recordKey(record),
             points,
             color: toColor(record.fields.Color, '#9fc5e8'),
-            lineWidth: parseNumericField(record.fields, 'LineWidth') || 1
+            lineWidth: parseSchematicLineWidth(record.fields)
         })
     }
 

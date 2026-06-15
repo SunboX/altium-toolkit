@@ -1,0 +1,74 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.parser-value-verification.a1",
+    "title": "Altium Toolkit Parser Value Verification A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "summary", "cases", "failures"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.parser-value-verification.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "cases": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "key",
+                    "status",
+                    "assertionCount",
+                    "passedCount",
+                    "failedCount",
+                    "failures"
+                ],
+                "properties": {
+                    "key": {
+                        "type": "string"
+                    },
+                    "source": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "enum": ["passed", "failed"]
+                    },
+                    "failures": {
+                        "type": "array"
+                    },
+                    "assertions": {
+                        "type": "array"
+                    }
+                },
+                "additionalProperties": true
+            }
+        },
+        "failures": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["caseKey", "path", "status", "message"],
+                "properties": {
+                    "caseKey": {
+                        "type": "string"
+                    },
+                    "source": {
+                        "type": "string"
+                    },
+                    "path": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "enum": ["missing", "mismatch"]
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                },
+                "additionalProperties": true
+            }
+        }
+    }
+}

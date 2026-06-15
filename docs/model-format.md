@@ -64,13 +64,14 @@ the object form can call
 
 - `schema`: normalized model schema id, currently
   `urn:altium-toolkit:normalized-model:a1`
-- `kind`: `schematic`, `pcb`, `pcb-library`, `project`,
+- `kind`: `schematic`, `pcb`, `schematic-library`, `pcb-library`, `project`,
   `integrated-library`, or `design-bundle`
-- `fileType`: `SchDoc`, `PcbDoc`, `PcbLib`, `PrjPcb`, `IntLib`, or
+- `fileType`: `SchDoc`, `PcbDoc`, `SchLib`, `PcbLib`, `PrjPcb`, `IntLib`, or
   `ProjectDesignBundle`
 - `fileName`: original file name passed to the parser
 - `diagnostics`: parser warnings and recovery notes. Each diagnostic carries a
-  machine-readable `code` plus `severity` and `message`.
+  machine-readable `code`, `severity`, and `message`; entries may also carry
+  source stream, storage, record-index, field, and context metadata.
 - `bom`: grouped component metadata where available
 
 ## Schema Contracts
@@ -82,6 +83,102 @@ and consumers can compare it with `NormalizedModelSchema.CURRENT_SCHEMA_ID`.
 The serialized parser return value follows the upstream
 [`tscircuit/circuit-json`](https://github.com/tscircuit/circuit-json) element
 array convention.
+
+## Parser Utility Reports
+
+`ParserFieldCoverageReportBuilder.build()` emits
+`altium-toolkit.parser-field-coverage.a1` reports. Rows are grouped by parser
+domain and primitive family, with observed native fields split into mapped,
+missing, and unsupported sets. The report also carries a compact matrix with
+per-family coverage status and mapped-field ratios. Source field matching is
+case-insensitive while observed field names preserve their original spelling.
+It is intended for fixture coverage and parser QA; it does not mutate parser
+output or require native source files in tests.
+
+`ParameterRecordInventoryBuilder.build()` emits
+`altium-toolkit.parameter-record-inventory.a1` reports. Rows expose raw keys,
+normalized keys, values, delimiter type, backtick nesting level, duplicate
+occurrence numbers, UTF-8 key markers, and simple boolean/integer/number hints.
+Duplicate-key rollups include first and last values so consumers can audit
+parser policies without changing parsed model output.
+`ParameterCollection.parse()` provides the corresponding local read helper for
+duplicate-preserving, case-insensitive string, integer, number, boolean, code,
+and coordinate-style parameter access.
+
+`ParserValueVerificationReportBuilder.build()` emits
+`altium-toolkit.parser-value-verification.a1` reports for curated fixture
+manifests. Each assertion targets one explicit model path and expected value,
+then reports pass, missing-path, or mismatch status. This complements field
+coverage by checking recovered values rather than only field presence.
+
+`ParserDiagnosticNormalizer.buildReport()` emits
+`altium-toolkit.parser-diagnostics.a1` reports from string, `Error`, or object
+diagnostics. The normalized envelope uses stable codes, `info`/`warning`/`error`
+severities, messages, and optional source-stream, storage, record-index, field,
+typed error-kind, field, and context keys.
+
+`GeometryBoundsReportBuilder.build()` emits
+`altium-toolkit.geometry-bounds.a1` reports from parsed schematic and PCB
+document models. Rows identify document, domain, primitive family, primitive
+index, status, and rounded axis-aligned bounds; the summary carries the union
+bounds and missing-bounds count for QA tooling.
+
+`FixtureCoverageMatrixBuilder.build()` emits
+`altium-toolkit.fixture-coverage-matrix.a1` reports from synthetic fixture
+manifests. Coverage rows and contract rows list fixture keys, required flags,
+and missing gaps, while the policy section records the manifest asset policy
+and native-asset count.
+
+`RawDataPreservationReportBuilder.build()` emits
+`altium-toolkit.raw-data-preservation.a1` reports. It summarizes preserved raw
+primitive records, unknown records, and opaque schematic/library records by
+count, parse state, support state, and byte length without repeating the base64
+payloads already carried by parser models. When parser roots include
+`nativeStreams`, the report adds native-stream counts and byte totals without
+folding those stream bytes into the raw-record payload total.
+
+`UnsupportedFeatureReportBuilder.build()` emits
+`altium-toolkit.unsupported-features.a1` reports. It collects unsupported
+schematic record type summaries, unsupported or unparsed raw records, opaque
+preserved records, and unsupported diagnostics so parser coverage gaps can be
+reviewed separately from general raw-data preservation.
+
+`NativeStreamInventoryBuilder.buildFromStreams()` emits
+`altium-toolkit.native-stream-inventory.a1` reports for OLE stream maps. Parser
+roots expose the same metadata under `schematic.nativeStreams`,
+`pcb.nativeStreams`, `schematicLibrary.nativeStreams`, and
+`pcbLibrary.nativeStreams` when the source file was parsed from a compound
+document. Rows include stream path, storage, leaf name, byte length, checksum,
+known/unknown classification, and consumed status.
+
+`EmbeddedAssetReportBuilder.build()` emits
+`altium-toolkit.embedded-assets.a1` reports that normalize schematic images,
+embedded file inventories, PCB font/model payloads, and integrated-library
+source entries into one stable asset table. `LibraryDiffReportBuilder.build()`
+emits `altium-toolkit.library.diff.a1` reports comparing parsed symbol and
+footprint libraries by item name, counts, and parameter values.
+`LibraryInspectionReportBuilder.build()` emits
+`altium-toolkit.library.inspection.a1` reports that combine library inventory
+rows with duplicate, stale-link, missing-model, lint, and merge-plan QA
+summaries.
+
+`PcbNetMembershipReportBuilder.build()` emits
+`altium-toolkit.pcb.net-membership.a1` reports that count observed copper
+ownership by net across pads, tracks, arcs, vias, fills, regions, and polygons.
+Declared-but-empty nets, observed-but-undeclared nets, unowned primitives, and
+possible unrouted pad-only nets are split into deterministic lists.
+`PcbClassReportBuilder.build()` emits
+`altium-toolkit.pcb.class-report.a1` reports that summarize PCB classes by
+kind, enabled state, member resolution, empty classes, and unresolved members.
+`PcbInspectionReportBuilder.build()` emits `altium-toolkit.pcb.inspection.a1`
+reports that compose board statistics, primitive counts, design-rule counts,
+diagnostics, net membership, class membership, and route-analysis summaries
+into one inspection artifact.
+
+`PcbLayerGroups` provides stable layer-group names, deterministic display
+colors, and draw priorities for legacy PCB layer ids. `AltiumUnits` provides
+deterministic mil, millimeter, inch, and raw coordinate conversions for report
+output.
 
 ## Schematic Fields
 
@@ -97,9 +194,18 @@ pie-chart primitives are exposed as first-class `schematic.beziers` and
 `schematic.pies` arrays for deterministic SVG rendering. Rounded rectangles are
 exposed through `schematic.roundedRectangles`, and IEEE drawing symbols are
 exposed through `schematic.ieeeSymbols` with a stable `symbolName`. The registry
-also names schematic families such as notes, compile masks, harness records,
-blankets, and hyperlinks so consumers can inspect supported parser coverage
-without stringly typed local maps.
+also names schematic families such as notes, compile masks, harness records, and
+blankets so consumers can inspect supported parser coverage without stringly
+typed local maps. Hyperlink records are exposed as first-class
+`schematic.hyperlinks` entries with URL, display text, location, font/color, and
+owner/source metadata.
+
+`schematic.qa.fieldCoverage` provides a parser-development coverage sidecar for
+additive native fields that are not in the toolkit's current schematic field
+catalog. It groups unrecognized field names by record type and stable record
+keys without emitting top-level diagnostics. Known schematic fields are matched
+case-insensitively, so uppercase native keys do not inflate the unrecognized
+field counts.
 
 Record-28 text frames are preserved both as drawable note text and as a
 read-only `schematic.textFrames` contract with frame rectangle, alignment,
@@ -115,9 +221,14 @@ distinguish hidden directive metadata from visible sheet text.
 
 `schematic.ownership` is a read-only sidecar built from raw record
 `OwnerIndex` and `IndexInSheet` values. It exposes stable record keys,
-`childrenByParentKey`, `parentsByChildKey`, and `recordsByIndexInSheet` so
-consumers can inspect component, sheet-symbol, and directive children without
-reimplementing owner-index lookup rules.
+`childrenByParentKey`, `parentsByChildKey`, `recordsByIndexInSheet`, and a
+nested `hierarchy` projection so consumers can inspect component, sheet-symbol,
+and directive children without reimplementing owner-index lookup rules.
+
+`schematic.codeSymbols` is an optional read-only sidecar for auxiliary
+code-symbol style records. It preserves block geometry, entry pins, title/source
+text rows, routine and memory metadata, and marker points without affecting
+schematic SVG rendering or netlist merging.
 
 Schematic project parameters and special strings can be resolved without
 mutating source parser models through `SchematicProjectParameterResolver`.
@@ -133,10 +244,17 @@ family, and matching top-level warning diagnostic.
 
 The normalized schematic net model is single-sheet. `schematic.nets` is built
 from the wires, labels, ports, pins, junctions, bus entries, and sheet entries
-present in the parsed `.SchDoc`. Project-level hierarchy, repeated channels,
-variants, and cross-sheet compilation metadata are preserved through the
-`.PrjPcb` parser, but this schema does not currently emit a compiled
+present in the parsed `.SchDoc`. Nets with explicit labels keep those labels as
+their canonical `name`; unnamed nets keep their stable `UnknownNetN` name and
+may add `autoName`, `autoNameSource`, and `aliasCandidates` from connected
+component pins for display/search use. Project-level hierarchy, repeated
+channels, variants, and cross-sheet compilation metadata are preserved through
+the `.PrjPcb` parser, but this schema does not currently emit a compiled
 multi-sheet design netlist.
+`schematic.connectivityQa` reports read-only connectivity findings, including
+implicit generated net names, dangling labels, orphan ports, unconnected pins,
+ambiguous junctions, and un-junctioned tee contacts where one wire endpoint
+touches another wire interior without an authored junction.
 
 Embedded schematic images preserve the raw record geometry and expose
 browser-facing payload metadata. When an embedded stream contains a native
@@ -144,6 +262,14 @@ PNG/JPEG/GIF/SVG/WebP payload alongside a preview, `mimeType` and `dataBase64`
 refer to the native payload while `sourceMimeType` records the preview format.
 Alpha-bearing 32-bit BMP previews are converted to PNG and marked with
 `hasAlpha` so SVG renderers can display transparency deterministically.
+When a schematic OLE container exposes preview metadata, `schematic.thumbnails`
+contains PNG thumbnail sidecars with `kind`, dimensions, `sourceStream`,
+`pixelFormat`, `mimeType`, and `dataBase64` fields.
+
+When a native framed schematic stream contains non-property frames,
+`schematic.opaqueRecords` preserves compact metadata for those unmodelled
+payloads. Each row carries source stream context, frame type, record index, byte
+length, and base64 payload data for downstream read-only diagnostics.
 
 ## PCB Fields
 
@@ -218,6 +344,11 @@ dielectric thickness, dielectric constant, and dissipation factor, plus
 aggregate material and role counts. The `planning` section summarizes keepout
 regions, room-related rules and names, board-region flex/rigid counts, locked
 3D regions, bending-line counts, and board-region layer-stack usage.
+Native panel and placement streams are exposed as `pcb.embeddedBoards` and
+`pcb.rooms` when present. Embedded-board rows preserve source document path,
+placement layer, rotation, mirroring, array counts and spacing, unique id, and
+selected policy flags. Room rows preserve name, unique id, members, and simple
+bounds when available.
 
 Decoded pad primitives preserve raw `padFlags` plus named tenting and testpoint
 flags. Pad shape codes are kept as raw `shapeTop` / `shapeMid` / `shapeBottom`
@@ -301,6 +432,19 @@ callers that do not need the full geometry.
 
 ## PCB Library Fields
 
+Schematic symbol libraries include recovered `schematicLibrary` data with a
+library header, file-header metadata, section keys, stream names, ordered
+`symbols`, lookup `indexes`, embedded file inventory, opaque native frames,
+render manifest, and library QA report. Each symbol exposes source storage,
+pins, parts, parameters, implementation rows, primitive summaries, and
+referenced embedded assets where available. Pin rows preserve side-stream
+metadata such as fractional location/length, descriptions, package length,
+symbol line width, text placement, and pin-function hints when those streams are
+present.
+`schematicLibrary.indexes.symbolsByName` provides read-only symbol lookup and
+search metadata, while `schematicLibrary.renderManifest` lists deterministic
+symbol render outputs and embedded asset descriptors.
+
 PCB footprint libraries include recovered `pcbLibrary` data with library header
 properties, optional SectionKeys mappings, ComponentParamsTOC entries, and an
 ordered `footprints` list. Each footprint exposes its source storage name,
@@ -329,8 +473,13 @@ preserved versus stripped parameter names and stripped implementation keys.
 `LibraryRenderManifestBuilder.buildSchematicTemplateExtractionManifest()`
 summarizes template identity, owned records, fonts, title-block fields, and
 missing template parameters without generating template files.
-`LibrarySearchIndex` provides exact, keyword, and fuzzy symbol/footprint lookup
-helpers over parsed library read models.
+`LibraryCatalogArtifactBuilder.build()` emits
+`altium-toolkit.library.catalog.a1` artifacts for parsed schematic and PCB
+libraries. The artifact includes deterministic entries, QA issue badges,
+search-index rows, preview SVG keys from render manifests, and a static HTML
+catalog string with no server or runtime interaction. `LibrarySearchIndex`
+provides exact, keyword, and fuzzy symbol/footprint lookup helpers over parsed
+library read models.
 
 ## Project Fields
 
@@ -354,9 +503,13 @@ should combine project metadata with separately parsed schematic documents.
 `ProjectDesignBundleBuilder.build({ projectModel, documentModels,
 annotationModels })` composes already parsed project, schematic, PCB, and
 annotation models into a `design-bundle` payload. The bundle exposes `project`,
-`variants`, `sheets`, `components`, `schematic_hierarchy`, `pnp`, `nets`,
-`annotations`, and `indexes` so multi-document consumers can use one normalized
-JSON object above single-document parser output. Passing `variantName` adds
+`variants`, `sheets`, `components`, `schematic_hierarchy`,
+`schematicHierarchyReport`, `pnp`, `nets`, `annotations`, and `indexes` so
+multi-document consumers can use one normalized JSON object above
+single-document parser output. `ProjectHierarchyReportBuilder.build()` emits
+the richer hierarchy report directly from parsed project and schematic models,
+including child sheet links, missing sheets, cycles, repeated references,
+roots, and sheet-entry names. Passing `variantName` adds
 `effectiveVariant`, which applies DNP rows, alternate fitted rows, parameter
 overrides, and annotation designator mappings to BOM, PnP, component, and net
 views without mutating the source parser models. `ProjectNetlistExporter` emits
@@ -365,7 +518,8 @@ effective variant view. The wirelist remains a compact line-oriented
 `component.pin` view. The JSON netlist also carries aliases, auto-named flags,
 schematic source sheets, graphical source elements, terminal endpoints,
 hierarchy paths, and PCB net-table provenance when the bundle includes those
-details.
+details. Alias lists include explicit schematic labels and additive unnamed-net
+alias candidates when present.
 
 ## SVG And 3D Contracts
 
@@ -410,5 +564,5 @@ Parser fixes may add detail, but existing field names and shapes should stay
 compatible unless a new schema id explicitly documents a model migration.
 Focused machine-readable schemas are available under
 `docs/schemas/altium_toolkit/` for the normalized root plus focused project,
-netlist, SVG, PCB review, layer-stack, Draftsman, library, and CI/reporting
-contracts.
+netlist, SVG, PCB review, layer-stack, Draftsman, library, parser QA,
+inspection, unsupported-feature, and CI/reporting contracts.

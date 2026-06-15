@@ -112,7 +112,47 @@ test('parseAltiumArrayBuffer exposes schematic ownership graph sidecar', () => {
         parentKey: 'schematic-record-1',
         ownerIndex: '20'
     })
+    assert.deepEqual(
+        ownership.hierarchy.map((record) => ({
+            key: record.key,
+            recordType: record.recordType,
+            childTypes: (record.children || []).map((child) => child.recordType)
+        })),
+        [
+            {
+                key: 'schematic-record-0',
+                recordType: '31',
+                childTypes: []
+            },
+            {
+                key: 'schematic-record-1',
+                recordType: '1',
+                childTypes: ['2', '41']
+            },
+            {
+                key: 'schematic-record-4',
+                recordType: '15',
+                childTypes: ['16']
+            }
+        ]
+    )
+    assert.deepEqual(
+        ownership.hierarchy
+            .find((record) => record.key === 'schematic-record-1')
+            .children.map((child) => child.key),
+        ['schematic-record-2', 'schematic-record-3']
+    )
     assert.equal(ownership.recordsByIndexInSheet['20'].recordType, '1')
+    assert.equal(
+        ownership.recordsByRecordIndex['1'].fields.LibReference,
+        'BOX_A'
+    )
+    assert.equal(ownership.recordsByIndexInSheet['20'].fields.UniqueID, 'CMP-A')
+    assert.equal(
+        ownership.records.find((record) => record.recordType === '41').fields
+            .Name,
+        'Designator'
+    )
 })
 
 /**
@@ -976,4 +1016,53 @@ test('parseAltiumArrayBuffer preserves rotated text source orientation', async (
             sourceOrientation: 3
         }
     )
+})
+
+/**
+ * Verifies designator and parameter records decode the native orientation bits:
+ * bit 0 rotates the text, and bit 1 anchors the text from the right/top edge.
+ */
+test('parseAltiumArrayBuffer decodes component text orientation bits', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=240|CustomY=160|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=34|OwnerIndex=700|Location.X=40|Location.Y=80|Color=8388608|FontID=1' +
+            '|Text=U7|Name=Designator|Orientation=3',
+        '|RECORD=41|OwnerIndex=700|Location.X=70|Location.Y=95|Color=8388608|FontID=1' +
+            '|Text=CTRL|Name=Comment|Orientation=2',
+        '|RECORD=41|OwnerIndex=700|Location.X=90|Location.Y=110|Color=8388608|FontID=1' +
+            '|Text=ALT|Name=Variant|Orientation=1'
+    ]
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'component-text-orientation-bits.SchDoc',
+        new TextEncoder().encode(records.join('')).buffer
+    )
+    const texts = Object.fromEntries(
+        documentModel.schematic.texts.map((text) => [
+            text.text,
+            {
+                rotation: text.rotation,
+                sourceOrientation: text.sourceOrientation,
+                anchor: text.anchor
+            }
+        ])
+    )
+
+    assert.deepEqual(texts.U7, {
+        rotation: 90,
+        sourceOrientation: 3,
+        anchor: 'end'
+    })
+    assert.deepEqual(texts.CTRL, {
+        rotation: 0,
+        sourceOrientation: 2,
+        anchor: 'end'
+    })
+    assert.deepEqual(texts.ALT, {
+        rotation: 90,
+        sourceOrientation: 1,
+        anchor: 'start'
+    })
 })

@@ -59,6 +59,10 @@
         "mergePlan": {
             "$ref": "library_merge_plan_a1.schema.json"
         },
+        "libraryLint": {
+            "type": "object",
+            "additionalProperties": true
+        },
         "issues": {
             "type": "array",
             "items": {

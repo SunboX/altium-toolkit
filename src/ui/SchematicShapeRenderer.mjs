@@ -711,14 +711,16 @@ export class SchematicShapeRenderer {
             arc.startAngle,
             sheetHeight,
             radiusX,
-            radiusY
+            radiusY,
+            true
         )
         const end = SchematicShapeRenderer.#projectArcPoint(
             arc,
             arc.endAngle,
             sheetHeight,
             radiusX,
-            radiusY
+            radiusY,
+            true
         )
 
         return (
@@ -758,14 +760,16 @@ export class SchematicShapeRenderer {
             startAngle,
             sheetHeight,
             radiusX,
-            radiusY
+            radiusY,
+            true
         )
         const mid = SchematicShapeRenderer.#projectArcPoint(
             arc,
             midAngle,
             sheetHeight,
             radiusX,
-            radiusY
+            radiusY,
+            true
         )
 
         return (
@@ -803,10 +807,25 @@ export class SchematicShapeRenderer {
      * @param {number} sheetHeight
      * @param {number} radiusX
      * @param {number} radiusY
+     * @param {boolean} [convertEllipseAngle]
      * @returns {{ x: number, y: number }}
      */
-    static #projectArcPoint(arc, angle, sheetHeight, radiusX, radiusY) {
-        const radians = (Number(angle) * Math.PI) / 180
+    static #projectArcPoint(
+        arc,
+        angle,
+        sheetHeight,
+        radiusX,
+        radiusY,
+        convertEllipseAngle = false
+    ) {
+        const projectedAngle = convertEllipseAngle
+            ? SchematicShapeRenderer.#projectEllipticalArcAngle(
+                  angle,
+                  radiusX,
+                  radiusY
+              )
+            : Number(angle)
+        const radians = (projectedAngle * Math.PI) / 180
 
         return {
             x: Number(arc.x) + radiusX * Math.cos(radians),
@@ -815,6 +834,30 @@ export class SchematicShapeRenderer {
                 Number(arc.y) + radiusY * Math.sin(radians)
             )
         }
+    }
+
+    /**
+     * Converts an authored physical ellipse angle into an SVG parametric
+     * ellipse angle.
+     * @param {number} angle Source angle in degrees.
+     * @param {number} radiusX Horizontal radius.
+     * @param {number} radiusY Vertical radius.
+     * @returns {number}
+     */
+    static #projectEllipticalArcAngle(angle, radiusX, radiusY) {
+        if (Math.abs(Number(radiusX) - Number(radiusY)) < 0.000001) {
+            return Number(angle)
+        }
+
+        const radians = (Number(angle) * Math.PI) / 180
+        return (
+            (Math.atan2(
+                Number(radiusX) * Math.sin(radians),
+                Number(radiusY) * Math.cos(radians)
+            ) *
+                180) /
+            Math.PI
+        )
     }
 
     /**

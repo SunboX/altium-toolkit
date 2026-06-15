@@ -1,0 +1,84 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.parameter-record-inventory.a1",
+    "title": "Altium Toolkit Parameter Record Inventory A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "summary", "records"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.parameter-record-inventory.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "records": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "fieldCount",
+                    "emptyEntryCount",
+                    "duplicateFields",
+                    "fields"
+                ],
+                "properties": {
+                    "sourceStream": {
+                        "type": "string"
+                    },
+                    "recordIndex": {
+                        "type": "number"
+                    },
+                    "duplicateFields": {
+                        "type": "array"
+                    },
+                    "fields": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "rawKey",
+                                "key",
+                                "value",
+                                "delimiter",
+                                "level",
+                                "occurrence",
+                                "isUtf8"
+                            ],
+                            "properties": {
+                                "rawKey": {
+                                    "type": "string"
+                                },
+                                "key": {
+                                    "type": "string"
+                                },
+                                "value": {
+                                    "type": "string"
+                                },
+                                "delimiter": {
+                                    "type": "string"
+                                },
+                                "level": {
+                                    "type": "number"
+                                },
+                                "occurrence": {
+                                    "type": "number"
+                                },
+                                "isUtf8": {
+                                    "type": "boolean"
+                                },
+                                "typedValue": {
+                                    "type": ["object", "null"],
+                                    "additionalProperties": true
+                                }
+                            },
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "additionalProperties": true
+            }
+        }
+    }
+}

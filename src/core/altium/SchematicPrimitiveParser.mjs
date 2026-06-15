@@ -9,6 +9,7 @@ const {
     parseBoolean,
     parseNumericField,
     parseNumericFieldWithFraction,
+    parseSchematicLineWidth,
     toColor
 } = ParserUtils
 
@@ -134,8 +135,7 @@ export class SchematicPrimitiveParser {
                     fill: toColor(record.fields.AreaColor, color),
                     isSolid: parseBoolean(record.fields.IsSolid),
                     transparent: parseBoolean(record.fields.Transparent),
-                    lineWidth:
-                        parseNumericField(record.fields, 'LineWidth') || 1,
+                    lineWidth: parseSchematicLineWidth(record.fields),
                     renderOrder: SchematicPrimitiveParser.#resolveRenderOrder(
                         record.fields,
                         index
@@ -169,7 +169,7 @@ export class SchematicPrimitiveParser {
                     points,
                     segments,
                     color: toColor(record.fields.Color, '#000000'),
-                    width: parseNumericField(record.fields, 'LineWidth') || 1,
+                    width: parseSchematicLineWidth(record.fields),
                     lineStyle:
                         parseNumericField(record.fields, 'LineStyle') || 0,
                     renderOrder: SchematicPrimitiveParser.#resolveRenderOrder(
@@ -233,8 +233,7 @@ export class SchematicPrimitiveParser {
                     fill: toColor(record.fields.AreaColor, '#ffffff'),
                     isSolid: parseBoolean(record.fields.IsSolid),
                     transparent: parseBoolean(record.fields.Transparent),
-                    lineWidth:
-                        parseNumericField(record.fields, 'LineWidth') || 1,
+                    lineWidth: parseSchematicLineWidth(record.fields),
                     renderOrder: SchematicPrimitiveParser.#resolveRenderOrder(
                         record.fields,
                         index
@@ -280,8 +279,7 @@ export class SchematicPrimitiveParser {
                     fill: toColor(record.fields.AreaColor, '#ffffff'),
                     isSolid: parseBoolean(record.fields.IsSolid),
                     transparent: parseBoolean(record.fields.Transparent),
-                    lineWidth:
-                        parseNumericField(record.fields, 'LineWidth') || 1,
+                    lineWidth: parseSchematicLineWidth(record.fields),
                     lineStyle:
                         parseNumericField(record.fields, 'LineStyle') || 0,
                     renderOrder: SchematicPrimitiveParser.#resolveRenderOrder(
@@ -339,8 +337,7 @@ export class SchematicPrimitiveParser {
                         1
                     ),
                     color: toColor(record.fields.Color, '#000000'),
-                    lineWidth:
-                        parseNumericField(record.fields, 'LineWidth') || 1,
+                    lineWidth: parseSchematicLineWidth(record.fields),
                     renderOrder: SchematicPrimitiveParser.#resolveRenderOrder(
                         record.fields,
                         index
@@ -428,8 +425,7 @@ export class SchematicPrimitiveParser {
                     transparent: usesFrameFallback
                         ? false
                         : parseBoolean(record.fields.Transparent),
-                    lineWidth:
-                        parseNumericField(record.fields, 'LineWidth') || 1,
+                    lineWidth: parseSchematicLineWidth(record.fields),
                     lineStyle:
                         usesFrameFallback ||
                         SchematicPrimitiveParser.#shouldDefaultBlanketDash(
@@ -604,7 +600,7 @@ export class SchematicPrimitiveParser {
                     startAngle: startAngle === null ? 0 : startAngle,
                     endAngle: endAngle === null ? 360 : endAngle,
                     color: toColor(record.fields.Color, '#a44a1b'),
-                    width: parseNumericField(record.fields, 'LineWidth') || 1,
+                    width: parseSchematicLineWidth(record.fields),
                     renderOrder: SchematicPrimitiveParser.#resolveRenderOrder(
                         record.fields,
                         index
@@ -661,8 +657,7 @@ export class SchematicPrimitiveParser {
                     fill: toColor(record.fields.AreaColor, '#ffffff'),
                     isSolid: parseBoolean(record.fields.IsSolid),
                     transparent: parseBoolean(record.fields.Transparent),
-                    lineWidth:
-                        parseNumericField(record.fields, 'LineWidth') || 1,
+                    lineWidth: parseSchematicLineWidth(record.fields),
                     renderOrder: SchematicPrimitiveParser.#resolveRenderOrder(
                         record.fields,
                         index

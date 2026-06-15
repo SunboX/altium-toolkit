@@ -1,0 +1,86 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.geometry-bounds.a1",
+    "title": "Altium Toolkit Geometry Bounds A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "summary", "entries"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.geometry-bounds.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["documentCount", "entryCount", "missingBoundsCount"],
+            "properties": {
+                "documentCount": {
+                    "type": "number"
+                },
+                "entryCount": {
+                    "type": "number"
+                },
+                "missingBoundsCount": {
+                    "type": "number"
+                },
+                "minX": {
+                    "type": ["number", "null"]
+                },
+                "minY": {
+                    "type": ["number", "null"]
+                },
+                "maxX": {
+                    "type": ["number", "null"]
+                },
+                "maxY": {
+                    "type": ["number", "null"]
+                },
+                "width": {
+                    "type": "number"
+                },
+                "height": {
+                    "type": "number"
+                }
+            }
+        },
+        "entries": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": [
+                    "documentIndex",
+                    "domain",
+                    "family",
+                    "index",
+                    "status",
+                    "bounds"
+                ],
+                "properties": {
+                    "documentIndex": {
+                        "type": "number"
+                    },
+                    "fileName": {
+                        "type": "string"
+                    },
+                    "domain": {
+                        "enum": ["schematic", "pcb"]
+                    },
+                    "family": {
+                        "type": "string"
+                    },
+                    "index": {
+                        "type": "number"
+                    },
+                    "status": {
+                        "enum": ["bounded", "missing"]
+                    },
+                    "bounds": {
+                        "type": ["object", "null"],
+                        "additionalProperties": true
+                    }
+                }
+            }
+        }
+    }
+}

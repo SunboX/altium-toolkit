@@ -260,6 +260,293 @@ test('parseAltiumArrayBuffer exposes schematic QA report', () => {
 })
 
 /**
+ * Verifies auxiliary code-symbol style records are preserved as a read-only
+ * sidecar instead of falling through as unsupported native records.
+ */
+test('parseAltiumArrayBuffer exposes schematic code symbol records', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CustomX=300|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|RECORD=220|IndexInSheet=70|Location.X=40|Location.Y=120|XSize=160|YSize=50' +
+            '|Color=255|AreaColor=4366847|IsSolid=T|SymbolType=normal|UniqueID=CODE-A' +
+            '|ExportedRoutineCount=1|RoutineName0=BOOT_A|InterfaceMode0=1|DataWidth0=32|IsLinked0=T' +
+            '|InternalMemoryCount=1|InternalMemorySize=1024|ExternalMemoryCount=1' +
+            '|ExternalMemory_Name0=MEM_A|ExternalMemory_Interface0=2|ExternalMemory_DataWidth0=16|ExternalMemory_AddressWidth0=12' +
+            '|RECORD=221|IndexInSheet=71|OwnerIndex=70|Name=BUS_A[7..0]|DataIdentifier=BUS_A|DataType=logic' +
+            '|DataWidth=8|Side=1|IOType=2|EntryType=1|Style=3|DistanceFromTop=2|TextFontID=1' +
+            '|TextColor=128|Color=255|AreaColor=4366847|ParentRoutine=BOOT_A|OwnerIndexAdditionalList=T' +
+            '|RECORD=222|IndexInSheet=72|OwnerIndex=70|Text=Block title|Location.X=44|Location.Y=126|FontID=1|Color=128' +
+            '|RECORD=223|IndexInSheet=73|OwnerIndex=70|Text=Block source|Location.X=44|Location.Y=104|FontID=1|Color=255' +
+            '|RECORD=210|IndexInSheet=74|Location.X=12|Location.Y=34|Name=PROBE_A|Color=255|OwnerPartID=-1'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'code-symbol-records.SchDoc',
+        arrayBuffer
+    )
+
+    assert.deepEqual(documentModel.schematic.codeSymbols, {
+        schema: 'altium-toolkit.schematic.code-symbols.a1',
+        summary: {
+            symbolCount: 1,
+            entryCount: 1,
+            textCount: 2,
+            markerCount: 1
+        },
+        symbols: [
+            {
+                key: 'schematic-code-symbol-70',
+                recordKey: 'schematic-record-1',
+                recordId: 'record-70',
+                x: 40,
+                y: 120,
+                width: 160,
+                height: 50,
+                color: '#ff0000',
+                fill: '#ffa142',
+                isSolid: true,
+                symbolType: 'normal',
+                uniqueId: 'CODE-A',
+                routines: [
+                    {
+                        index: 0,
+                        name: 'BOOT_A',
+                        interfaceMode: 1,
+                        dataWidth: 32,
+                        isLinked: true
+                    }
+                ],
+                internalMemory: {
+                    count: 1,
+                    size: 1024
+                },
+                externalMemory: [
+                    {
+                        index: 0,
+                        name: 'MEM_A',
+                        interfaceMode: 2,
+                        dataWidth: 16,
+                        addressWidth: 12
+                    }
+                ],
+                entryKeys: ['schematic-code-entry-71'],
+                textKeys: ['schematic-code-text-72', 'schematic-code-text-73']
+            }
+        ],
+        entries: [
+            {
+                key: 'schematic-code-entry-71',
+                recordKey: 'schematic-record-2',
+                ownerSymbolKey: 'schematic-code-symbol-70',
+                ownerIndex: '70',
+                name: 'BUS_A[7..0]',
+                dataIdentifier: 'BUS_A',
+                dataType: 'logic',
+                dataWidth: 8,
+                side: 'right',
+                direction: 'input',
+                entryType: 1,
+                style: 3,
+                x: 200,
+                y: 100,
+                color: '#ff0000',
+                fill: '#ffa142',
+                textColor: '#800000',
+                textFontId: 1,
+                parentRoutine: 'BOOT_A',
+                ownerIndexAdditionalList: true
+            }
+        ],
+        texts: [
+            {
+                key: 'schematic-code-text-72',
+                recordKey: 'schematic-record-3',
+                ownerSymbolKey: 'schematic-code-symbol-70',
+                ownerIndex: '70',
+                kind: 'title',
+                text: 'Block title',
+                x: 44,
+                y: 126,
+                fontId: 1,
+                color: '#800000'
+            },
+            {
+                key: 'schematic-code-text-73',
+                recordKey: 'schematic-record-4',
+                ownerSymbolKey: 'schematic-code-symbol-70',
+                ownerIndex: '70',
+                kind: 'source',
+                text: 'Block source',
+                x: 44,
+                y: 104,
+                fontId: 1,
+                color: '#ff0000'
+            }
+        ],
+        markers: [
+            {
+                key: 'schematic-code-marker-74',
+                recordKey: 'schematic-record-5',
+                recordId: 'record-74',
+                name: 'PROBE_A',
+                x: 12,
+                y: 34,
+                color: '#ff0000',
+                ownerPartId: '-1'
+            }
+        ]
+    })
+    assert.deepEqual(
+        documentModel.schematic.recordTypes
+            .filter((recordType) =>
+                [210, 220, 221, 222, 223].includes(recordType.recordType)
+            )
+            .map(({ recordType, name, supported }) => ({
+                recordType,
+                name,
+                supported
+            })),
+        [
+            {
+                recordType: 210,
+                name: 'probe-marker',
+                supported: true
+            },
+            {
+                recordType: 220,
+                name: 'code-symbol',
+                supported: true
+            },
+            {
+                recordType: 221,
+                name: 'code-symbol-entry',
+                supported: true
+            },
+            {
+                recordType: 222,
+                name: 'code-symbol-title',
+                supported: true
+            },
+            {
+                recordType: 223,
+                name: 'code-symbol-source',
+                supported: true
+            }
+        ]
+    )
+})
+
+/**
+ * Verifies schematic QA exposes a deterministic parser field-coverage report
+ * without promoting additive native fields to top-level diagnostics.
+ */
+test('parseAltiumArrayBuffer reports unrecognized schematic fields by record type', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CustomX=300|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|SheetMystery=Y' +
+            '|RECORD=4|Location.X=40|Location.Y=120|Color=255|FontID=1|Text=FIRST' +
+            '|ExperimentalOffset=12' +
+            '|RECORD=4|Location.X=80|Location.Y=120|Color=255|FontID=1|Text=SECOND' +
+            '|ExperimentalOffset=24'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'field-coverage-report.SchDoc',
+        arrayBuffer
+    )
+    const coverage = documentModel.schematic.qa.fieldCoverage
+
+    assert.equal(coverage.schema, 'altium-toolkit.schematic.field-coverage.a1')
+    assert.deepEqual(coverage.summary, {
+        recordTypeCount: 2,
+        unrecognizedFieldCount: 2,
+        unrecognizedOccurrenceCount: 3
+    })
+    assert.deepEqual(coverage.recordTypes, [
+        {
+            recordType: 4,
+            name: 'label',
+            family: 'annotation',
+            supported: true,
+            recordCount: 2,
+            unrecognizedFields: [
+                {
+                    name: 'ExperimentalOffset',
+                    count: 2,
+                    recordKeys: ['schematic-record-1', 'schematic-record-2']
+                }
+            ]
+        },
+        {
+            recordType: 31,
+            name: 'sheet',
+            family: 'sheet',
+            supported: true,
+            recordCount: 1,
+            unrecognizedFields: [
+                {
+                    name: 'SheetMystery',
+                    count: 1,
+                    recordKeys: ['schematic-record-0']
+                }
+            ]
+        }
+    ])
+    assert.equal(
+        documentModel.diagnostics.some(
+            (diagnostic) => diagnostic.code === 'schematic.field.unrecognized'
+        ),
+        false
+    )
+})
+
+/**
+ * Verifies schematic field coverage matches known native fields without
+ * depending on the authored field-key casing.
+ */
+test('parseAltiumArrayBuffer treats known schematic coverage fields case-insensitively', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CUSTOMX=300|CUSTOMY=180|VISIBLEGRIDSIZE=10|SNAPGRIDSIZE=5' +
+            '|BORDERON=F|TITLEBLOCKON=F|CUSTOMMARGINWIDTH=10|CUSTOMXZONES=6|CUSTOMYZONES=4' +
+            '|FONTIDCOUNT=1|SIZE1=10|FONTNAME1=Times New Roman|BOLD1=F|ROTATION1=0' +
+            '|RECORD=2|OWNERINDEX=10|PINCONGLOMERATE=48|PINLENGTH=20' +
+            '|LOCATION.X=80|LOCATION.Y=90|NAME=READY|DESIGNATOR=1|FORMALTYPE=1' +
+            '|PINCASEMYSTERY=Y'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'case-normalized-field-coverage.SchDoc',
+        arrayBuffer
+    )
+    const coverage = documentModel.schematic.qa.fieldCoverage
+
+    assert.deepEqual(coverage.summary, {
+        recordTypeCount: 1,
+        unrecognizedFieldCount: 1,
+        unrecognizedOccurrenceCount: 1
+    })
+    assert.deepEqual(coverage.recordTypes, [
+        {
+            recordType: 2,
+            name: 'pin',
+            family: 'component',
+            supported: true,
+            recordCount: 1,
+            unrecognizedFields: [
+                {
+                    name: 'PINCASEMYSTERY',
+                    count: 1,
+                    recordKeys: ['schematic-record-1']
+                }
+            ]
+        }
+    ])
+})
+
+/**
  * Verifies malformed schematic font families produce structured render
  * diagnostics without changing the stable sheet font table shape.
  */
@@ -428,5 +715,43 @@ test('parseAltiumArrayBuffer exposes schematic connectivity QA graph', () => {
             'schematic.connectivity.unconnected-pin',
             'schematic.connectivity.ambiguous-junction'
         ]
+    )
+})
+
+/**
+ * Verifies explicit owner display-mode primitives are filtered to the active
+ * display mode requested by their component placement.
+ */
+test('parseAltiumArrayBuffer renders only active schematic display-mode records', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CustomX=240|CustomY=160|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|RECORD=1|IndexInSheet=30|Location.X=90|Location.Y=80|LibReference=MODE_CELL' +
+            '|PartCount=1|DisplayModeCount=2|CurrentPartId=1|DisplayMode=2' +
+            '|RECORD=2|OwnerIndex=30|OwnerPartID=1|OwnerPartDisplayMode=1|PinConglomerate=58' +
+            '|PinLength=20|Location.X=90|Location.Y=70|Name=MODE_A|Designator=1' +
+            '|RECORD=2|OwnerIndex=30|OwnerPartID=1|OwnerPartDisplayMode=2|PinConglomerate=58' +
+            '|PinLength=20|Location.X=90|Location.Y=90|Name=MODE_B|Designator=2'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'active-display-mode.SchDoc',
+        arrayBuffer
+    )
+
+    assert.deepEqual(
+        documentModel.schematic.pins.map((pin) => pin.name),
+        ['MODE_B']
+    )
+    assert.equal(
+        documentModel.schematic.displayModes.components[0].parts[0]
+            .displayModes[0].isActive,
+        false
+    )
+    assert.equal(
+        documentModel.schematic.displayModes.components[0].parts[0]
+            .displayModes[1].isActive,
+        true
     )
 })

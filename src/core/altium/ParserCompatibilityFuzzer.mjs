@@ -28,6 +28,9 @@ export class ParserCompatibilityFuzzer {
                 caseCount: cases.length,
                 failureCount: cases.filter((entry) => entry.status === 'fail')
                     .length,
+                handledErrorCount: cases.filter(
+                    (entry) => entry.status === 'handled-error'
+                ).length,
                 diagnosticCount: cases.reduce(
                     (total, entry) =>
                         total + Number(entry.diagnosticCount || 0),
@@ -40,7 +43,7 @@ export class ParserCompatibilityFuzzer {
 
     /**
      * Lists deterministic compatibility cases.
-     * @returns {{ key: string, parse: () => object }[]}
+     * @returns {{ key: string, parse: () => object, expectedError?: boolean }[]}
      */
     static #cases() {
         return [
@@ -107,18 +110,93 @@ export class ParserCompatibilityFuzzer {
                         'fuzz.PCBDwf',
                         new Uint8Array([0, 1, 2, 3]).buffer
                     )
+            },
+            {
+                key: 'empty-schdoc',
+                parse: () =>
+                    AltiumParser.parseArrayBufferToRendererModel(
+                        'empty.SchDoc',
+                        new ArrayBuffer(0)
+                    )
+            },
+            {
+                key: 'random-pcbdoc',
+                parse: () =>
+                    AltiumParser.parseArrayBufferToRendererModel(
+                        'random.PcbDoc',
+                        ParserCompatibilityFuzzer.#byteBuffer([
+                            0, 17, 65, 127, 128, 255, 42, 3
+                        ])
+                    )
+            },
+            {
+                key: 'random-pcblib',
+                parse: () =>
+                    AltiumParser.parseArrayBufferToRendererModel(
+                        'random.PcbLib',
+                        ParserCompatibilityFuzzer.#byteBuffer([
+                            9, 8, 7, 6, 5, 4, 3, 2
+                        ])
+                    )
+            },
+            {
+                key: 'random-intlib',
+                expectedError: true,
+                parse: () =>
+                    AltiumParser.parseArrayBufferToRendererModel(
+                        'random.IntLib',
+                        ParserCompatibilityFuzzer.#byteBuffer([
+                            1, 35, 69, 103, 137, 171, 205, 239
+                        ])
+                    )
+            },
+            {
+                key: 'wrong-reader-schdoc-as-intlib',
+                expectedError: true,
+                parse: () =>
+                    AltiumParser.parseArrayBufferToRendererModel(
+                        'wrong-reader.IntLib',
+                        ParserCompatibilityFuzzer.#encodeText(
+                            '|HEADER=Schematic Document|' +
+                                '|RECORD=31|CustomX=120|CustomY=80|'
+                        )
+                    )
+            },
+            {
+                key: 'unknown-extension-fallback',
+                parse: () =>
+                    AltiumParser.parseArrayBufferToRendererModel(
+                        'unknown.bin',
+                        ParserCompatibilityFuzzer.#encodeText(
+                            '|RECORD=1|NET=FALLBACK|'
+                        )
+                    )
             }
         ]
     }
 
     /**
      * Executes one compatibility case.
-     * @param {{ key: string, parse: () => object }} entry Case descriptor.
+     * @param {{ key: string, parse: () => object, expectedError?: boolean }} entry Case descriptor.
      * @returns {object}
      */
     static #runCase(entry) {
         try {
             const model = entry.parse()
+            if (entry.expectedError) {
+                return {
+                    key: entry.key,
+                    status: 'fail',
+                    expectedError: true,
+                    diagnosticCount: 1,
+                    error: {
+                        name: 'ExpectedError',
+                        message:
+                            'Parser case was expected to fail in a controlled way.'
+                    }
+                }
+            }
+
             return {
                 key: entry.key,
                 status: 'pass',
@@ -130,6 +208,19 @@ export class ParserCompatibilityFuzzer {
                 )
             }
         } catch (error) {
+            if (entry.expectedError) {
+                return {
+                    key: entry.key,
+                    status: 'handled-error',
+                    expectedError: true,
+                    diagnosticCount: 1,
+                    error: {
+                        name: error?.name || 'Error',
+                        message: error?.message || String(error)
+                    }
+                }
+            }
+
             return {
                 key: entry.key,
                 status: 'fail',
@@ -162,6 +253,19 @@ export class ParserCompatibilityFuzzer {
      */
     static #encodeText(text) {
         const bytes = new TextEncoder().encode(text)
+        return bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.length
+        )
+    }
+
+    /**
+     * Builds an ArrayBuffer from stable synthetic bytes.
+     * @param {number[]} values Byte values.
+     * @returns {ArrayBuffer}
+     */
+    static #byteBuffer(values) {
+        const bytes = new Uint8Array(values)
         return bytes.buffer.slice(
             bytes.byteOffset,
             bytes.byteOffset + bytes.length

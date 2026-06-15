@@ -4,7 +4,8 @@
 
 import { ParserUtils } from './ParserUtils.mjs'
 
-const { getField, parseNumericField, toColor } = ParserUtils
+const { getField, parseNumericField, parseSchematicLineWidth, toColor } =
+    ParserUtils
 
 /**
  * Normalizes authored schematic bus-entry records.
@@ -37,7 +38,7 @@ export class SchematicBusEntryParser {
                     x2,
                     y2,
                     color: toColor(record.fields.Color, '#000080'),
-                    width: parseNumericField(record.fields, 'LineWidth') || 1,
+                    width: parseSchematicLineWidth(record.fields),
                     renderOrder:
                         parseNumericField(record.fields, 'IndexInSheet') ??
                         record.recordIndex

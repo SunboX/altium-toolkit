@@ -92,6 +92,30 @@ export class ParserUtils {
     }
 
     /**
+     * Parses schematic line-width codes into normalized drawing stroke widths.
+     * @param {Record<string, string | string[]> | undefined} fields
+     * @param {string} [key]
+     * @returns {number}
+     */
+    static parseSchematicLineWidth(fields, key = 'LineWidth') {
+        const value = ParserUtils.parseNumericField(fields, key)
+
+        switch (value) {
+            case null:
+            case 0:
+                return 0.4
+            case 1:
+                return 1
+            case 2:
+                return 2
+            case 3:
+                return 4
+            default:
+                return value > 0 ? value : 0.4
+        }
+    }
+
+    /**
      * Parses an Altium-style boolean flag.
      * @param {string | string[] | undefined} raw
      * @returns {boolean}

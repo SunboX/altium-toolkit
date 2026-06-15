@@ -6,6 +6,27 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 # Examples
 
+## Read-only utility scripts
+
+The repository includes small Node.js examples for common non-interactive
+workflows. They read the requested input file, write deterministic output to
+stdout, and do not modify source documents:
+
+- `node examples/inspect-board.mjs <file> [--json]`
+- `node examples/inspect-schematic.mjs <file> [--json] [--view <view>]`
+- `node examples/extract-bom.mjs <file> [--json]`
+- `node examples/generate-pnp.mjs <file> [--json]`
+- `node examples/net-report.mjs <file> [--json]`
+- `node examples/library-catalog.mjs <file> [--json]`
+- `node examples/library-catalog.mjs <file> --html`
+- `node examples/validate-library.mjs <file> [--json]`
+- `node examples/corpus-smoke.mjs <directory> [--json] [--coverage]`
+
+Run any script with `--help` to see its output mode. The schematic inspection
+views are `summary`, `flat`, `hierarchy`, `parts`, `nets`, and `all`. Corpus
+coverage reports include aggregate record-type counters and field-gap counters
+for caller-owned local sample directories.
+
 ## Arduino Uno
 
 The `arduino-uno` example is a browser page for loading `.SchDoc` and

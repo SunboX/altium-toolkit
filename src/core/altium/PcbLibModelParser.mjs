@@ -20,7 +20,7 @@ export class PcbLibModelParser {
     /**
      * Parses one extracted PcbLib into a normalized read-only model.
      * @param {string} fileName
-     * @param {{ libraryHeader?: Record<string, string>, componentParamsToc?: Record<string, object>, sectionKeys?: Record<string, string>, footprints?: object[], embeddedFonts?: { fonts?: object[] }, streamNames?: string[], diagnostics?: Record<string, number> } | null} extraction
+     * @param {{ libraryHeader?: Record<string, string>, componentParamsToc?: Record<string, object>, sectionKeys?: Record<string, string>, footprints?: object[], embeddedFonts?: { fonts?: object[] }, nativeStreams?: object, streamNames?: string[], diagnostics?: Record<string, number> } | null} extraction
      * @returns {{ schema: string, kind: 'pcb-library', fileType: 'PcbLib', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], pcbLibrary: { libraryHeader: Record<string, string>, componentParamsToc: Record<string, object>, sectionKeys: Record<string, string>, footprints: object[], embeddedFonts: object[] }, bom: [] }}
      */
     static parse(fileName, extraction) {
@@ -54,7 +54,8 @@ export class PcbLibModelParser {
             fileName,
             footprints,
             embeddedFonts,
-            embeddedModels
+            embeddedModels,
+            safeExtraction.nativeStreams
         )
         const diagnostics = PcbLibModelParser.#buildDiagnostics(
             footprints,
@@ -71,6 +72,9 @@ export class PcbLibModelParser {
             embeddedFonts,
             embeddedModels,
             componentBodies,
+            ...(safeExtraction.nativeStreams
+                ? { nativeStreams: safeExtraction.nativeStreams }
+                : {}),
             ...(defaults ? { defaults } : {})
         }
         pcbLibrary.renderManifest =
@@ -94,9 +98,16 @@ export class PcbLibModelParser {
      * @param {object[]} footprints
      * @param {object[]} embeddedFonts
      * @param {object[]} embeddedModels
+     * @param {object | undefined} nativeStreams Native stream inventory.
      * @returns {Record<string, number | string>}
      */
-    static #buildSummary(fileName, footprints, embeddedFonts, embeddedModels) {
+    static #buildSummary(
+        fileName,
+        footprints,
+        embeddedFonts,
+        embeddedModels,
+        nativeStreams
+    ) {
         return {
             title: stripExtension(fileName),
             footprintCount: footprints.length,
@@ -116,7 +127,12 @@ export class PcbLibModelParser {
                 'rawRecords'
             ),
             embeddedFontCount: embeddedFonts.length,
-            embeddedModelCount: embeddedModels.length
+            embeddedModelCount: embeddedModels.length,
+            ...(nativeStreams?.summary?.streamCount
+                ? {
+                      nativeStreamCount: nativeStreams.summary.streamCount
+                  }
+                : {})
         }
     }
 

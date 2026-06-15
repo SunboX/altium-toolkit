@@ -1,0 +1,79 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.pcb.class-report.a1",
+    "title": "Altium Toolkit PCB Class Report A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "summary", "byKind", "classes", "issues"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.pcb.class-report.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "byKind": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "classes": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/classRow"
+            }
+        },
+        "issues": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/issue"
+            }
+        }
+    },
+    "$defs": {
+        "classRow": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["classIndex", "kindName", "memberCount"],
+            "properties": {
+                "classIndex": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "kindName": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "memberCount": {
+                    "type": "number"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "issue": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["code", "severity"],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

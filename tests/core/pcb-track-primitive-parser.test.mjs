@@ -52,8 +52,37 @@ class PcbTrackPrimitiveTestFactory {
     }
 
     /**
+     * Creates one fixed-layout track stream with route metadata set.
+     * @returns {{ headerBytes: Uint8Array, dataBytes: Uint8Array }}
+     */
+    static createMetadataTrackStream() {
+        const headerBytes = new Uint8Array(4)
+        const headerView = new DataView(headerBytes.buffer)
+        const dataBytes = PcbTrackPrimitiveTestFactory.#createTrackPayload({
+            layerId: 68,
+            flags: 0x15,
+            keepout: 1,
+            netIndex: 17,
+            polygonIndex: 23,
+            componentIndex: 3,
+            x1: 1000,
+            y1: 2000,
+            x2: 1500,
+            y2: 2000,
+            width: 10,
+            unionIndex: 11,
+            lengthTuning: true,
+            userRouted: true
+        })
+
+        headerView.setUint32(0, 1, true)
+
+        return { headerBytes, dataBytes }
+    }
+
+    /**
      * Creates one legacy fixed-layout track payload.
-     * @param {{ layerId: number, netIndex: number, polygonIndex: number, componentIndex: number, x1: number, y1: number, x2: number, y2: number, width: number }} options
+     * @param {{ layerId: number, flags?: number, keepout?: number, netIndex: number, polygonIndex: number, componentIndex: number, x1: number, y1: number, x2: number, y2: number, width: number, unionIndex?: number, lengthTuning?: boolean, userRouted?: boolean }} options
      * @returns {Uint8Array}
      */
     static #createTrackPayload(options) {
@@ -61,6 +90,8 @@ class PcbTrackPrimitiveTestFactory {
         const dataView = new DataView(dataBytes.buffer)
 
         dataView.setUint8(0, options.layerId)
+        dataView.setUint8(1, options.flags || 0)
+        dataView.setUint8(2, options.keepout || 0)
         dataView.setUint16(3, options.netIndex, true)
         dataView.setUint16(5, options.polygonIndex, true)
         dataView.setUint16(7, options.componentIndex, true)
@@ -69,6 +100,9 @@ class PcbTrackPrimitiveTestFactory {
         PcbTrackPrimitiveTestFactory.#writeMil(dataView, 21, options.x2)
         PcbTrackPrimitiveTestFactory.#writeMil(dataView, 25, options.y2)
         PcbTrackPrimitiveTestFactory.#writeMil(dataView, 29, options.width)
+        dataView.setUint8(36, options.unionIndex || 0)
+        dataView.setUint8(37, options.lengthTuning ? 1 : 0)
+        dataView.setUint8(44, options.userRouted ? 1 : 0)
 
         return dataBytes
     }
@@ -141,6 +175,40 @@ test('PcbBinaryPrimitiveParser decodes track streams', () => {
                 componentIndex: 3,
                 netIndex: 17,
                 polygonIndex: 23,
+                layerCode: 68,
+                layerId: 68
+            }
+        ]
+    )
+})
+
+/**
+ * Verifies track metadata flags survive binary primitive decoding.
+ */
+test('PcbBinaryPrimitiveParser decodes track flags and route metadata', () => {
+    const { headerBytes, dataBytes } =
+        PcbTrackPrimitiveTestFactory.createMetadataTrackStream()
+
+    assert.deepEqual(
+        PcbBinaryPrimitiveParser.parseTrackStream(headerBytes, dataBytes),
+        [
+            {
+                x1: 1000,
+                y1: 2000,
+                x2: 1500,
+                y2: 2000,
+                width: 10,
+                componentIndex: 3,
+                netIndex: 17,
+                polygonIndex: 23,
+                trackFlags: 0x15,
+                isSelected: true,
+                isLocked: false,
+                isPartOfComponent: true,
+                isKeepout: true,
+                unionIndex: 11,
+                isLengthTuning: true,
+                isUserRouted: true,
                 layerCode: 68,
                 layerId: 68
             }

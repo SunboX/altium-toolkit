@@ -19,7 +19,7 @@ export class PcbTrackPrimitiveParser {
      * Decodes one track stream.
      * @param {Uint8Array | ArrayBuffer} headerBytes
      * @param {Uint8Array | ArrayBuffer} dataBytes
-     * @returns {{ x1: number, y1: number, x2: number, y2: number, width: number, componentIndex: number | null, netIndex: number | null, polygonIndex: number | null, layerCode: number, layerId: number }[]}
+     * @returns {{ x1: number, y1: number, x2: number, y2: number, width: number, componentIndex: number | null, netIndex: number | null, polygonIndex: number | null, layerCode: number, layerId: number, [key: string]: unknown }[]}
      */
     static parseTrackStream(headerBytes, dataBytes) {
         return PcbTrackPrimitiveParser.#sliceTrackRecords(
@@ -31,7 +31,7 @@ export class PcbTrackPrimitiveParser {
     /**
      * Decodes one track record view into a normalized primitive.
      * @param {DataView} view
-     * @returns {{ x1: number, y1: number, x2: number, y2: number, width: number, componentIndex: number | null, netIndex: number | null, polygonIndex: number | null, layerCode: number, layerId: number }}
+     * @returns {{ x1: number, y1: number, x2: number, y2: number, width: number, componentIndex: number | null, netIndex: number | null, polygonIndex: number | null, layerCode: number, layerId: number, [key: string]: unknown }}
      */
     static #parseTrackRecord(view) {
         const layerId = view.getUint8(0)
@@ -49,9 +49,59 @@ export class PcbTrackPrimitiveParser {
             y2: PcbTrackPrimitiveParser.#readMil(view, 25),
             width: PcbTrackPrimitiveParser.#readMil(view, 29),
             ...ownershipIndexes,
+            ...PcbTrackPrimitiveParser.#parseTrackMetadata(view),
             layerCode: layerId,
             layerId
         }
+    }
+
+    /**
+     * Decodes optional route-state metadata from one track record.
+     * @param {DataView} view Track record view.
+     * @returns {{ trackFlags?: number, isSelected?: boolean, isLocked?: boolean, isPartOfComponent?: boolean, isKeepout?: boolean, unionIndex?: number, isLengthTuning?: boolean, isUserRouted?: boolean }}
+     */
+    static #parseTrackMetadata(view) {
+        const flags = PcbTrackPrimitiveParser.#readByteIfAvailable(view, 1)
+        const keepout = PcbTrackPrimitiveParser.#readByteIfAvailable(view, 2)
+        const unionIndex = PcbTrackPrimitiveParser.#readByteIfAvailable(
+            view,
+            36
+        )
+        const lengthTuning = PcbTrackPrimitiveParser.#readByteIfAvailable(
+            view,
+            37
+        )
+        const userRouted = PcbTrackPrimitiveParser.#readByteIfAvailable(
+            view,
+            44
+        )
+
+        if (!flags && !keepout && !unionIndex && !lengthTuning && !userRouted) {
+            return {}
+        }
+
+        const result = {}
+
+        if (flags) {
+            result.trackFlags = flags
+            result.isSelected = (flags & 0x01) !== 0
+            result.isLocked = (flags & 0x04) === 0
+            result.isPartOfComponent = (flags & 0x10) !== 0
+        }
+        if (keepout) {
+            result.isKeepout = true
+        }
+        if (unionIndex) {
+            result.unionIndex = unionIndex
+        }
+        if (lengthTuning) {
+            result.isLengthTuning = true
+        }
+        if (userRouted) {
+            result.isUserRouted = true
+        }
+
+        return result
     }
 
     /**
@@ -83,5 +133,19 @@ export class PcbTrackPrimitiveParser {
      */
     static #readMil(view, offset) {
         return view.getInt32(offset, true) / 10000
+    }
+
+    /**
+     * Reads one byte when it is present in a variable-length record.
+     * @param {DataView} view Record view.
+     * @param {number} offset Byte offset.
+     * @returns {number}
+     */
+    static #readByteIfAvailable(view, offset) {
+        if (!view || offset >= view.byteLength) {
+            return 0
+        }
+
+        return view.getUint8(offset)
     }
 }

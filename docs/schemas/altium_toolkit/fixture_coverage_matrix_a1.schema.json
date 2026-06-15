@@ -1,0 +1,89 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.fixture-coverage-matrix.a1",
+    "title": "Altium Toolkit Fixture Coverage Matrix A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "summary",
+        "policy",
+        "coverage",
+        "contracts",
+        "missingCoverage",
+        "missingContracts"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.fixture-coverage-matrix.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+                "fixtureCount",
+                "coverageTagCount",
+                "contractCount",
+                "missingCoverageCount",
+                "missingContractCount",
+                "status"
+            ],
+            "properties": {
+                "status": {
+                    "enum": ["pass", "gap"]
+                }
+            }
+        },
+        "policy": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["assetPolicy", "nativeAssetCount", "compliant"],
+            "properties": {
+                "assetPolicy": {
+                    "type": "string"
+                },
+                "nativeAssetCount": {
+                    "type": "number"
+                },
+                "compliant": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "coverage": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": [
+                    "tag",
+                    "fixtureKeys",
+                    "count",
+                    "required",
+                    "covered"
+                ]
+            }
+        },
+        "contracts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": [
+                    "group",
+                    "contract",
+                    "fixtureKeys",
+                    "count",
+                    "required",
+                    "covered"
+                ]
+            }
+        },
+        "missingCoverage": {
+            "type": "array"
+        },
+        "missingContracts": {
+            "type": "array"
+        }
+    }
+}

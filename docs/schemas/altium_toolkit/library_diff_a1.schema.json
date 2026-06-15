@@ -1,0 +1,54 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.library.diff.a1",
+    "title": "Altium Toolkit Library Diff A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "summary", "symbols", "footprints"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.library.diff.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "symbols": {
+            "$ref": "#/$defs/diffCollection"
+        },
+        "footprints": {
+            "$ref": "#/$defs/diffCollection"
+        }
+    },
+    "$defs": {
+        "diffCollection": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["added", "removed", "changed"],
+            "properties": {
+                "added": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "removed": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "changed": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": ["name", "left", "right", "differences"]
+                    }
+                }
+            }
+        }
+    }
+}

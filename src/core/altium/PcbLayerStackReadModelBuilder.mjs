@@ -62,6 +62,7 @@ export class PcbLayerStackReadModelBuilder {
             layerById,
             'backdrill'
         )
+        const stackup = PcbLayerStackReadModelBuilder.#stackup(fields)
         const diagnostics = PcbLayerStackReadModelBuilder.#diagnostics({
             substacks,
             branches,
@@ -105,6 +106,7 @@ export class PcbLayerStackReadModelBuilder {
             branches,
             topLevelBendLines,
             cavityReport,
+            ...(stackup ? { stackup } : {}),
             impedanceProfiles,
             transmissionLines,
             viaSpans,
@@ -166,9 +168,9 @@ export class PcbLayerStackReadModelBuilder {
                 PcbLayerStackReadModelBuilder.#stripUndefined({
                     index: layer.index,
                     layerId: layer.layerId,
-                    layerKey: PcbLayerStackReadModelBuilder.#layerKey(
-                        layer.layerId
-                    ),
+                    layerKey: Number.isFinite(layer.layerId)
+                        ? 'L' + layer.layerId
+                        : undefined,
                     name: layer.name,
                     kind: layer.kind,
                     material: layer.material,
@@ -189,9 +191,9 @@ export class PcbLayerStackReadModelBuilder {
             PcbLayerStackReadModelBuilder.#stripUndefined({
                 index: index + 1,
                 layerId: layer.layerId,
-                layerKey: PcbLayerStackReadModelBuilder.#layerKey(
-                    layer.layerId
-                ),
+                layerKey: Number.isFinite(layer.layerId)
+                    ? 'L' + layer.layerId
+                    : undefined,
                 name: layer.name,
                 kind: layer.kind || layer.role,
                 ...PcbLayerStackSourceMetadataParser.layerSourceFields(
@@ -593,6 +595,81 @@ export class PcbLayerStackReadModelBuilder {
     }
 
     /**
+     * Parses document-level layer-stack metadata.
+     * @param {Record<string, string | string[]>} fields Board fields.
+     * @returns {object | undefined}
+     */
+    static #stackup(fields) {
+        const features = PcbLayerStackReadModelBuilder.#stackupFeatures(fields)
+        const stackup = PcbLayerStackReadModelBuilder.#stripUndefined({
+            serializerVersion: PcbLayerStackReadModelBuilder.#field(
+                fields,
+                'STACKUPX_SERIALIZER_VERSION'
+            ),
+            revisionId: PcbLayerStackReadModelBuilder.#field(
+                fields,
+                'STACKUPX_REVISION_ID'
+            ),
+            type: PcbLayerStackReadModelBuilder.#field(fields, 'STACKUPX_TYPE'),
+            roughnessType: PcbLayerStackReadModelBuilder.#field(
+                fields,
+                'STACKUPX_ROUGHNESS_TYPE'
+            ),
+            roughnessFactorSR: PcbLayerStackReadModelBuilder.#field(
+                fields,
+                'STACKUPX_ROUGHNESS_FACTOR_SR'
+            ),
+            roughnessFactor: PcbLayerStackReadModelBuilder.#field(
+                fields,
+                'STACKUPX_ROUGHNESS_FACTOR'
+            ),
+            realisticRatio: PcbLayerStackReadModelBuilder.#optionalBoolean(
+                PcbLayerStackReadModelBuilder.#field(
+                    fields,
+                    'STACKUPX_REALISTIC_RATIO'
+                )
+            ),
+            features: PcbLayerStackSourceMetadataParser.optionalArray(features)
+        })
+
+        return Object.keys(stackup).length ? stackup : undefined
+    }
+
+    /**
+     * Parses stackup feature rows.
+     * @param {Record<string, string | string[]>} fields Board fields.
+     * @returns {object[]}
+     */
+    static #stackupFeatures(fields) {
+        return PcbLayerStackReadModelBuilder.#indexedRows(fields, [
+            /^STACKUPX_FEATURE(\d+)_ID$/iu,
+            /^STACKUP_FEATURE(\d+)_ID$/iu
+        ]).map((index) =>
+            PcbLayerStackReadModelBuilder.#stripUndefined({
+                index,
+                id: PcbLayerStackReadModelBuilder.#indexedField(
+                    fields,
+                    ['STACKUPX_FEATURE', 'STACKUP_FEATURE'],
+                    index,
+                    ['ID']
+                ),
+                name: PcbLayerStackReadModelBuilder.#indexedField(
+                    fields,
+                    ['STACKUPX_FEATURE', 'STACKUP_FEATURE'],
+                    index,
+                    ['NAME']
+                ),
+                kind: PcbLayerStackReadModelBuilder.#indexedField(
+                    fields,
+                    ['STACKUPX_FEATURE', 'STACKUP_FEATURE'],
+                    index,
+                    ['KIND']
+                )
+            })
+        )
+    }
+
+    /**
      * Builds preservation-first diagnostics for unresolved references.
      * @param {object} input Sidecar sections.
      * @returns {object[]}
@@ -901,15 +978,6 @@ export class PcbLayerStackReadModelBuilder {
     static #numberToken(value) {
         const parsed = Number.parseFloat(String(value || '').trim())
         return Number.isFinite(parsed) ? parsed : undefined
-    }
-
-    /**
-     * Builds a stable layer key.
-     * @param {number | null | undefined} layerId Layer id.
-     * @returns {string | undefined}
-     */
-    static #layerKey(layerId) {
-        return Number.isFinite(layerId) ? 'L' + layerId : undefined
     }
 
     /**

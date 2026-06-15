@@ -53,6 +53,50 @@ export class PcbLayerStackSourceMetadataParser {
                 'COVERLAYEXPANSION',
                 'COVERLAY_EXPANSION'
             ]),
+            process: layerField(['PROCESS']),
+            pullbackDistance: layerField([
+                'PULLBACKDISTANCE',
+                'PULLBACK_DISTANCE'
+            ]),
+            copperOrientation: layerField([
+                'COPPERORIENTATION',
+                'COPPER_ORIENTATION'
+            ]),
+            orientation: layerField(['ORIENTATION']),
+            note: layerField(['NOTE']),
+            comment: layerField(['COMMENT']),
+            materialManufacturer: layerField([
+                'MATERIALMANUFACTURER',
+                'MATERIAL_MANUFACTURER'
+            ]),
+            materialDescription: layerField([
+                'MATERIALDESCRIPTION',
+                'MATERIAL_DESCRIPTION'
+            ]),
+            materialGlassTransitionTemp: layerField([
+                'MATERIALGLASSTRANSITIONTEMP',
+                'MATERIAL_GLASS_TRANSITION_TEMP'
+            ]),
+            glassTransitionTemp: layerField([
+                'GLASSTRANSITIONTEMP',
+                'GLASS_TRANSITION_TEMP'
+            ]),
+            dielectricStrength: layerField([
+                'DIELECTRICSTRENGTH',
+                'DIELECTRIC_STRENGTH'
+            ]),
+            volumeResistivity: layerField([
+                'VOLUMERESISTIVITY',
+                'VOLUME_RESISTIVITY'
+            ]),
+            resin: layerField(['RESIN']),
+            solid: layerField(['SOLID']),
+            materialFrequency: layerField([
+                'MATERIALFREQUENCY',
+                'MATERIAL_FREQUENCY'
+            ]),
+            frequency: layerField(['FREQUENCY']),
+            constructions: layerField(['CONSTRUCTIONS']),
             isStiffener: PcbLayerStackSourceMetadataParser.#optionalBoolean(
                 layerField(['ISSTIFFENER', 'IS_STIFFENER'])
             ),
@@ -235,10 +279,17 @@ export class PcbLayerStackSourceMetadataParser {
      * @returns {object[]}
      */
     static #substackEnablement(fields, layerIndex) {
-        const pattern = new RegExp(
-            '^V9_STACK_LAYER' + layerIndex + '_SUBSTACK(\\d+)_ENABLED$',
-            'iu'
-        )
+        const prefix = 'V9_STACK_LAYER' + layerIndex + '_SUBSTACK'
+        if (
+            !PcbLayerStackSourceMetadataParser.#hasCaseInsensitivePrefix(
+                fields,
+                prefix
+            )
+        ) {
+            return []
+        }
+
+        const pattern = new RegExp('^' + prefix + '(\\d+)_ENABLED$', 'iu')
 
         return Object.keys(fields)
             .flatMap((key) => {
@@ -259,6 +310,25 @@ export class PcbLayerStackSourceMetadataParser {
                 ]
             })
             .sort((left, right) => left.substackIndex - right.substackIndex)
+    }
+
+    /**
+     * Returns true when any field key starts with a prefix, ignoring case.
+     * @param {Record<string, string | string[]>} fields Source fields.
+     * @param {string} prefix Field-key prefix.
+     * @returns {boolean}
+     */
+    static #hasCaseInsensitivePrefix(fields, prefix) {
+        const upperPrefix = prefix.toUpperCase()
+        for (const key of PcbLayerStackSourceMetadataParser.#fieldIndex(
+            fields
+        ).keys()) {
+            if (key.startsWith(upperPrefix)) {
+                return true
+            }
+        }
+
+        return false
     }
 
     /**

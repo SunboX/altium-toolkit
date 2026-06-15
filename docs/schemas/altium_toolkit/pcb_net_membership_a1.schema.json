@@ -1,0 +1,98 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.pcb.net-membership.a1",
+    "title": "Altium Toolkit PCB Net Membership A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "summary",
+        "byNet",
+        "emptyDeclaredNets",
+        "undeclaredNets",
+        "possibleUnroutedNets",
+        "unownedPrimitives"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.pcb.net-membership.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "byNet": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/netRow"
+            }
+        },
+        "emptyDeclaredNets": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "undeclaredNets": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "possibleUnroutedNets": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "unownedPrimitives": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/primitiveRow"
+            }
+        }
+    },
+    "$defs": {
+        "netRow": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["netName", "declared", "totalPrimitiveCount"],
+            "properties": {
+                "netName": {
+                    "type": "string"
+                },
+                "declared": {
+                    "type": "boolean"
+                },
+                "totalPrimitiveCount": {
+                    "type": "number"
+                },
+                "layers": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                }
+            }
+        },
+        "primitiveRow": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["primitiveKey", "family", "index"],
+            "properties": {
+                "primitiveKey": {
+                    "type": "string"
+                },
+                "family": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "number"
+                },
+                "layerId": {
+                    "type": "number"
+                }
+            }
+        }
+    }
+}

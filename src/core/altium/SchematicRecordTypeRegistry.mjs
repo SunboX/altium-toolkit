@@ -47,13 +47,18 @@ export class SchematicRecordTypeRegistry {
         [47, ['map-definer', 'implementation', true]],
         [48, ['implementation-parameters', 'implementation', true]],
         [209, ['note', 'annotation', true]],
+        [210, ['probe-marker', 'code-symbol', true]],
         [211, ['compile-mask', 'directive', true]],
         [215, ['harness-connector', 'harness', true]],
         [216, ['harness-entry', 'harness', true]],
         [217, ['harness-type', 'harness', true]],
         [218, ['signal-harness', 'harness', true]],
+        [220, ['code-symbol', 'code-symbol', true]],
+        [221, ['code-symbol-entry', 'code-symbol', true]],
+        [222, ['code-symbol-title', 'code-symbol', true]],
+        [223, ['code-symbol-source', 'code-symbol', true]],
         [225, ['blanket', 'directive', true]],
-        [226, ['hyperlink', 'annotation', false]]
+        [226, ['hyperlink', 'annotation', true]]
     ])
 
     /**

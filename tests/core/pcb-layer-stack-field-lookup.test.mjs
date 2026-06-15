@@ -73,3 +73,48 @@ test('PcbLayerStackSourceMetadataParser uses proxy field lookups directly', () =
     assert.equal(layerSource.surfaceFinish, 'ENIG')
     assert.equal(ownKeyReads, 1)
 })
+
+test('PcbLayerStackSourceMetadataParser exposes manufacturing layer properties', () => {
+    const layerSource = PcbLayerStackSourceMetadataParser.layerSourceFields(
+        {
+            V9_STACK_LAYER1_PROCESS: 'ED',
+            V9_STACK_LAYER1_PULLBACK_DISTANCE: '5mil',
+            V9_STACK_LAYER1_COPPER_ORIENTATION: 'Above',
+            V9_STACK_LAYER1_ORIENTATION: 'Top',
+            V9_STACK_LAYER1_NOTE: 'Primary foil',
+            V9_STACK_LAYER1_COMMENT: 'Checked',
+            V9_STACK_LAYER1_MATERIAL_MANUFACTURER: 'Maker A',
+            V9_STACK_LAYER1_MATERIAL_DESCRIPTION: 'Copper Foil',
+            V9_STACK_LAYER1_MATERIAL_GLASS_TRANSITION_TEMP: '180C',
+            V9_STACK_LAYER1_GLASS_TRANSITION_TEMP: '175C',
+            V9_STACK_LAYER1_DIELECTRIC_STRENGTH: '42kV/mm',
+            V9_STACK_LAYER1_VOLUME_RESISTIVITY: '1E12Ohm-m',
+            V9_STACK_LAYER1_RESIN: '48%',
+            V9_STACK_LAYER1_SOLID: '52%',
+            V9_STACK_LAYER1_MATERIAL_FREQUENCY: '1GHz',
+            V9_STACK_LAYER1_FREQUENCY: '2GHz',
+            V9_STACK_LAYER1_CONSTRUCTIONS: '1080'
+        },
+        1
+    )
+
+    assert.deepEqual(layerSource, {
+        process: 'ED',
+        pullbackDistance: '5mil',
+        copperOrientation: 'Above',
+        orientation: 'Top',
+        note: 'Primary foil',
+        comment: 'Checked',
+        materialManufacturer: 'Maker A',
+        materialDescription: 'Copper Foil',
+        materialGlassTransitionTemp: '180C',
+        glassTransitionTemp: '175C',
+        dielectricStrength: '42kV/mm',
+        volumeResistivity: '1E12Ohm-m',
+        resin: '48%',
+        solid: '52%',
+        materialFrequency: '1GHz',
+        frequency: '2GHz',
+        constructions: '1080'
+    })
+})

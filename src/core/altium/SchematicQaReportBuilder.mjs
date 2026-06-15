@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { ParserUtils } from './ParserUtils.mjs'
+import { SchematicFieldCoverageReportBuilder } from './SchematicFieldCoverageReportBuilder.mjs'
 
 const { parseBoolean, parseNumericField, toColor } = ParserUtils
 
@@ -55,6 +56,7 @@ export class SchematicQaReportBuilder {
             geometryFallbacks: SchematicQaReportBuilder.#geometryFallbacks(
                 input?.texts
             ),
+            fieldCoverage: SchematicFieldCoverageReportBuilder.build(records),
             findings
         }
     }

@@ -308,6 +308,8 @@ export class ProjectNetlistExporter {
      */
     static #sourceAliases(source) {
         return ProjectNetlistExporter.#dedupe([
+            source?.autoName,
+            ...(source?.aliasCandidates || []),
             ...(source?.labels || []).map((label) => label.text),
             ...(source?.powerPorts || []).map((port) => port.text),
             ...(source?.ports || []).map((port) => port.name),

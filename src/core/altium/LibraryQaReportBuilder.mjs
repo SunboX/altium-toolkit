@@ -29,6 +29,10 @@ export class LibraryQaReportBuilder {
             LibraryQaReportBuilder.#missingModels(pcbLibraries)
         const multipartMismatches =
             LibraryQaReportBuilder.#multipartMismatches(schematicLibraries)
+        const libraryLint = LibraryQaReportBuilder.#libraryLint(
+            schematicLibraries,
+            pcbLibraries
+        )
         const mergePlan =
             LibraryQaReportBuilder.#schematicLibraryMergePlan(
                 schematicLibraries
@@ -69,8 +73,11 @@ export class LibraryQaReportBuilder {
                     diagnostic.code,
                     diagnostic.symbolName
                 )
-            )
+            ),
+            ...libraryLint.issues
         ]
+        const issuesBySeverity =
+            LibraryQaReportBuilder.#issueSeverityCounts(issues)
 
         return {
             schema: LibraryQaReportBuilder.SCHEMA_ID,
@@ -83,6 +90,8 @@ export class LibraryQaReportBuilder {
                 missingModelCount: missingModels.length,
                 multipartMismatchCount: multipartMismatches.length,
                 mergePlanConflictCount: mergePlan.summary.conflictCount,
+                libraryLintIssueCount: libraryLint.summary.issueCount,
+                issuesBySeverity,
                 issueCount: issues.length
             },
             duplicates: {
@@ -92,6 +101,7 @@ export class LibraryQaReportBuilder {
             staleImplementations,
             missingModels,
             multipartMismatches,
+            libraryLint,
             mergePlan,
             issues
         }
@@ -169,6 +179,10 @@ export class LibraryQaReportBuilder {
      * @returns {object[]}
      */
     static #staleImplementations(schematicLibraries, pcbLibraries) {
+        if (!Array.isArray(pcbLibraries) || pcbLibraries.length === 0) {
+            return []
+        }
+
         const availablePcbLibraries = new Set(
             (pcbLibraries || []).map((library) => library.fileName || '')
         )
@@ -305,6 +319,365 @@ export class LibraryQaReportBuilder {
             fontDependencies,
             diagnostics
         }
+    }
+
+    /**
+     * Builds deterministic symbol and footprint lint diagnostics.
+     * @param {object[]} schematicLibraries Schematic libraries.
+     * @param {object[]} pcbLibraries PCB footprint libraries.
+     * @returns {object}
+     */
+    static #libraryLint(schematicLibraries, pcbLibraries) {
+        const issues = [
+            ...LibraryQaReportBuilder.#schematicLintIssues(schematicLibraries),
+            ...LibraryQaReportBuilder.#footprintLintIssues(pcbLibraries),
+            ...LibraryQaReportBuilder.#symbolFootprintMismatchIssues(
+                schematicLibraries,
+                pcbLibraries
+            )
+        ]
+
+        return {
+            schema: 'altium-toolkit.library-lint.a1',
+            summary: {
+                issueCount: issues.length,
+                issuesBySeverity:
+                    LibraryQaReportBuilder.#issueSeverityCounts(issues)
+            },
+            issues
+        }
+    }
+
+    /**
+     * Lints schematic library symbols.
+     * @param {object[]} schematicLibraries Schematic libraries.
+     * @returns {object[]}
+     */
+    static #schematicLintIssues(schematicLibraries) {
+        const issues = []
+
+        for (const library of schematicLibraries || []) {
+            const libraryFileName = library.fileName || ''
+            for (const [index, symbol] of (
+                library.schematicLibrary?.symbols || []
+            ).entries()) {
+                const name = String(symbol.name || '').trim()
+                const target = name || libraryFileName + '#' + index
+
+                if (!name) {
+                    issues.push(
+                        LibraryQaReportBuilder.#lintIssue({
+                            code: 'library.symbol.empty-name',
+                            target,
+                            libraryFileName,
+                            symbolName: name,
+                            reason: 'symbol name was blank'
+                        })
+                    )
+                }
+
+                if (!Array.isArray(symbol.pins)) {
+                    continue
+                }
+
+                if (symbol.pins.length === 0) {
+                    issues.push(
+                        LibraryQaReportBuilder.#lintIssue({
+                            code: 'library.symbol.no-pins',
+                            target,
+                            libraryFileName,
+                            symbolName: name,
+                            reason: 'symbol declared an empty pin list'
+                        })
+                    )
+                }
+
+                const blankPinCount =
+                    LibraryQaReportBuilder.#blankDesignatorCount(
+                        symbol.pins,
+                        'designator'
+                    )
+                if (blankPinCount) {
+                    issues.push(
+                        LibraryQaReportBuilder.#lintIssue({
+                            code: 'library.symbol.blank-pin-designator',
+                            target,
+                            libraryFileName,
+                            symbolName: name,
+                            blankPinCount,
+                            reason: 'one or more pins had a blank designator'
+                        })
+                    )
+                }
+
+                const unnamedPinCount =
+                    LibraryQaReportBuilder.#blankDesignatorCount(
+                        symbol.pins,
+                        'name'
+                    )
+                if (unnamedPinCount) {
+                    issues.push(
+                        LibraryQaReportBuilder.#lintIssue({
+                            code: 'library.symbol.unnamed-pin',
+                            severity: 'info',
+                            target,
+                            libraryFileName,
+                            symbolName: name,
+                            unnamedPinCount,
+                            reason: 'one or more pins had a blank name'
+                        })
+                    )
+                }
+
+                const duplicatePins =
+                    LibraryQaReportBuilder.#duplicateDesignators(
+                        symbol.pins,
+                        'designator'
+                    )
+                if (duplicatePins.length) {
+                    issues.push(
+                        LibraryQaReportBuilder.#lintIssue({
+                            code: 'library.symbol.duplicate-pin-designator',
+                            target,
+                            libraryFileName,
+                            symbolName: name,
+                            duplicateDesignators: duplicatePins,
+                            reason: 'one or more pin designators were reused'
+                        })
+                    )
+                }
+            }
+        }
+
+        return issues
+    }
+
+    /**
+     * Lints PCB footprint libraries.
+     * @param {object[]} pcbLibraries PCB libraries.
+     * @returns {object[]}
+     */
+    static #footprintLintIssues(pcbLibraries) {
+        const issues = []
+
+        for (const library of pcbLibraries || []) {
+            const libraryFileName = library.fileName || ''
+            for (const [index, footprint] of (
+                library.pcbLibrary?.footprints || []
+            ).entries()) {
+                const name = String(footprint.name || '').trim()
+                const target = name || libraryFileName + '#' + index
+
+                if (!name) {
+                    issues.push(
+                        LibraryQaReportBuilder.#lintIssue({
+                            code: 'library.footprint.empty-name',
+                            target,
+                            libraryFileName,
+                            footprintName: name,
+                            reason: 'footprint name was blank'
+                        })
+                    )
+                }
+
+                if (!Array.isArray(footprint.pads)) {
+                    continue
+                }
+
+                if (footprint.pads.length === 0) {
+                    issues.push(
+                        LibraryQaReportBuilder.#lintIssue({
+                            code: 'library.footprint.no-pads',
+                            target,
+                            libraryFileName,
+                            footprintName: name,
+                            reason: 'footprint declared an empty pad list'
+                        })
+                    )
+                }
+
+                const blankPadCount =
+                    LibraryQaReportBuilder.#blankDesignatorCount(
+                        footprint.pads,
+                        'designator'
+                    )
+                if (blankPadCount) {
+                    issues.push(
+                        LibraryQaReportBuilder.#lintIssue({
+                            code: 'library.footprint.blank-pad-designator',
+                            target,
+                            libraryFileName,
+                            footprintName: name,
+                            blankPadCount,
+                            reason: 'one or more pads had a blank designator'
+                        })
+                    )
+                }
+
+                const duplicatePads =
+                    LibraryQaReportBuilder.#duplicateDesignators(
+                        footprint.pads,
+                        'designator'
+                    )
+                if (duplicatePads.length) {
+                    issues.push(
+                        LibraryQaReportBuilder.#lintIssue({
+                            code: 'library.footprint.duplicate-pad-designator',
+                            target,
+                            libraryFileName,
+                            footprintName: name,
+                            duplicateDesignators: duplicatePads,
+                            reason: 'one or more pad designators were reused'
+                        })
+                    )
+                }
+            }
+        }
+
+        return issues
+    }
+
+    /**
+     * Finds linked symbol/footprint pin-pad count mismatches.
+     * @param {object[]} schematicLibraries Schematic libraries.
+     * @param {object[]} pcbLibraries PCB libraries.
+     * @returns {object[]}
+     */
+    static #symbolFootprintMismatchIssues(schematicLibraries, pcbLibraries) {
+        const footprintsByName =
+            LibraryQaReportBuilder.#footprintsByName(pcbLibraries)
+        const issues = []
+
+        for (const library of schematicLibraries || []) {
+            const libraryFileName = library.fileName || ''
+            for (const symbol of library.schematicLibrary?.symbols || []) {
+                if (!Array.isArray(symbol.pins)) {
+                    continue
+                }
+
+                for (const implementation of symbol.implementations || []) {
+                    const modelName = String(
+                        implementation.modelName || ''
+                    ).trim()
+                    const footprint = footprintsByName.get(modelName)
+
+                    if (!modelName || !Array.isArray(footprint?.pads)) {
+                        continue
+                    }
+
+                    if (symbol.pins.length === footprint.pads.length) {
+                        continue
+                    }
+
+                    issues.push(
+                        LibraryQaReportBuilder.#lintIssue({
+                            code: 'library.symbol-footprint.pin-pad-count-mismatch',
+                            target: symbol.name || modelName,
+                            libraryFileName,
+                            symbolName: symbol.name || '',
+                            footprintName: footprint.name || modelName,
+                            pinCount: symbol.pins.length,
+                            padCount: footprint.pads.length,
+                            modelName,
+                            reason: 'symbol pin count differs from the linked footprint pad count'
+                        })
+                    )
+                }
+            }
+        }
+
+        return issues
+    }
+
+    /**
+     * Builds a lookup of footprint names to footprint rows.
+     * @param {object[]} pcbLibraries PCB libraries.
+     * @returns {Map<string, object>}
+     */
+    static #footprintsByName(pcbLibraries) {
+        const footprintsByName = new Map()
+
+        for (const library of pcbLibraries || []) {
+            for (const footprint of library.pcbLibrary?.footprints || []) {
+                const name = String(footprint.name || '').trim()
+                if (name && !footprintsByName.has(name)) {
+                    footprintsByName.set(name, footprint)
+                }
+            }
+        }
+
+        return footprintsByName
+    }
+
+    /**
+     * Counts explicitly blank designator fields.
+     * @param {object[]} rows Rows with optional designators.
+     * @param {string} key Designator key.
+     * @returns {number}
+     */
+    static #blankDesignatorCount(rows, key) {
+        return (rows || []).filter(
+            (row) =>
+                Object.prototype.hasOwnProperty.call(row, key) &&
+                String(row[key] || '').trim() === ''
+        ).length
+    }
+
+    /**
+     * Finds reused non-empty designators.
+     * @param {object[]} rows Rows with optional designators.
+     * @param {string} key Designator key.
+     * @returns {string[]}
+     */
+    static #duplicateDesignators(rows, key) {
+        const counts = new Map()
+
+        for (const row of rows || []) {
+            const value = String(row?.[key] || '').trim()
+            if (!value) continue
+            counts.set(value, (counts.get(value) || 0) + 1)
+        }
+
+        return [...counts.entries()]
+            .filter(([, count]) => count > 1)
+            .map(([value]) => value)
+            .sort((left, right) => left.localeCompare(right))
+    }
+
+    /**
+     * Builds one detailed lint issue.
+     * @param {object} issue Issue fields.
+     * @returns {object}
+     */
+    static #lintIssue(issue) {
+        return LibraryQaReportBuilder.#stripEmpty({
+            severity: 'warning',
+            ...issue
+        })
+    }
+
+    /**
+     * Counts issues by severity with stable keys.
+     * @param {object[]} issues Issue rows.
+     * @returns {{ error: number, warning: number, info: number }}
+     */
+    static #issueSeverityCounts(issues) {
+        const counts = {
+            error: 0,
+            warning: 0,
+            info: 0
+        }
+
+        for (const issue of issues || []) {
+            const severity = String(issue.severity || 'warning').toLowerCase()
+            if (Object.prototype.hasOwnProperty.call(counts, severity)) {
+                counts[severity] += 1
+            } else {
+                counts.warning += 1
+            }
+        }
+
+        return counts
     }
 
     /**

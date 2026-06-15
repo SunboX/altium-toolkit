@@ -4,6 +4,7 @@
 
 import { AsciiRecordParser } from './AsciiRecordParser.mjs'
 import { EmbeddedFileInventoryBuilder } from './EmbeddedFileInventoryBuilder.mjs'
+import { NativeStreamInventoryBuilder } from './NativeStreamInventoryBuilder.mjs'
 import { PcbBinaryPrimitiveParser } from './PcbBinaryPrimitiveParser.mjs'
 import { PcbCustomPadShapeParser } from './PcbCustomPadShapeParser.mjs'
 import { PcbEmbeddedFontExtractor } from './PcbEmbeddedFontExtractor.mjs'
@@ -11,11 +12,44 @@ import { PcbEmbeddedModelExtractor } from './PcbEmbeddedModelExtractor.mjs'
 import { PcbExtendedPrimitiveInformationParser } from './PcbExtendedPrimitiveInformationParser.mjs'
 import { PcbPrimitiveParameterParser } from './PcbPrimitiveParameterParser.mjs'
 import { PcbRawRecordRegistry } from './PcbRawRecordRegistry.mjs'
+import { PcbSidecarRecordParser } from './PcbSidecarRecordParser.mjs'
 import { PcbUnionParser } from './PcbUnionParser.mjs'
 import { PcbViaStructureParser } from './PcbViaStructureParser.mjs'
 import { PcbWideStringTableParser } from './PcbWideStringTableParser.mjs'
 import { OleCompoundDocument } from '../ole/OleCompoundDocument.mjs'
 import { OleConstants } from '../ole/OleConstants.mjs'
+
+const KNOWN_PCB_STREAM_STORAGES = new Set([
+    'Board6',
+    'Nets6',
+    'Arcs6',
+    'Pads6',
+    'Vias6',
+    'Tracks6',
+    'Texts',
+    'Texts6',
+    'Fills6',
+    'Regions6',
+    'ShapeBasedRegions6',
+    'BoardRegions',
+    'ComponentBodies6',
+    'Polygons6',
+    'Components6',
+    'Classes6',
+    'DifferentialPairs6',
+    'EmbeddedBoards6',
+    'Rooms6',
+    'Rules6',
+    'WideStrings6',
+    'PrimitiveParameters',
+    'ViaStructures',
+    'ViaStructureManager',
+    'ExtendedPrimitiveInformation',
+    'CustomShapes',
+    'UnionNames',
+    'SmartUnions',
+    'Models'
+])
 
 /**
  * Extracts stream-scoped printable and binary PCB content from OLE-backed
@@ -99,12 +133,15 @@ export class PcbStreamExtractor {
                 continue
             }
 
-            const recordBuffer = PcbStreamExtractor.#toArrayBuffer(bytes)
-            const streamRecords = AsciiRecordParser.parse(recordBuffer).map(
-                (record) => ({
-                    ...record,
-                    sourceStream: name
-                })
+            if (
+                PcbStreamExtractor.#isSupersededLegacyDataStream(name, streams)
+            ) {
+                continue
+            }
+
+            const streamRecords = PcbStreamExtractor.#parseDataStreamRecords(
+                name,
+                bytes
             )
 
             if (!streamRecords.length) {
@@ -335,11 +372,23 @@ export class PcbStreamExtractor {
             usedStreamNames.add(diagnostic.sourceStream)
         )
 
+        const nativeStreams = NativeStreamInventoryBuilder.buildFromStreams(
+            streams,
+            {
+                source: 'pcbdoc',
+                consumedStreamNames: usedStreamNames,
+                knownStreamNames: [...streams.keys()].filter((streamName) =>
+                    PcbStreamExtractor.#isKnownNativeStream(streamName)
+                )
+            }
+        )
+
         return {
             records,
             streamNames: [...usedStreamNames].sort((left, right) =>
                 left.localeCompare(right)
             ),
+            nativeStreams,
             binaryPrimitives,
             primitiveParameters,
             wideStrings,
@@ -396,6 +445,38 @@ export class PcbStreamExtractor {
     }
 
     /**
+     * Parses a data stream as length-prefixed sidecar records when needed, with
+     * printable-record fallback for regular pipe-delimited streams.
+     * @param {string} name Stream path.
+     * @param {Uint8Array} bytes Stream bytes.
+     * @returns {Array<{ raw?: string, fields: Record<string, string | string[]>, sourceStream: string, recordIndex?: number }>}
+     */
+    static #parseDataStreamRecords(name, bytes) {
+        if (PcbStreamExtractor.#isLengthPrefixedPrintableStream(name)) {
+            const sidecarRecords =
+                PcbSidecarRecordParser.parseLengthPrefixedRecords(bytes, name)
+            if (sidecarRecords.length) {
+                return sidecarRecords
+            }
+        }
+
+        const recordBuffer = PcbStreamExtractor.#toArrayBuffer(bytes)
+        return AsciiRecordParser.parse(recordBuffer).map((record) => ({
+            ...record,
+            sourceStream: name
+        }))
+    }
+
+    /**
+     * Returns true for printable sidecar streams that may use length prefixes.
+     * @param {string} name Stream path.
+     * @returns {boolean}
+     */
+    static #isLengthPrefixedPrintableStream(name) {
+        return name === 'EmbeddedBoards6/Data' || name === 'Rooms6/Data'
+    }
+
+    /**
      * Returns true for binary sidecar streams with printable-looking payloads.
      * @param {string} name
      * @returns {boolean}
@@ -411,6 +492,34 @@ export class PcbStreamExtractor {
             name === 'UnionNames/Data' ||
             name === 'SmartUnions/Data'
         )
+    }
+
+    /**
+     * Returns true when a legacy printable stream has a versioned companion.
+     * @param {string} name Stream path.
+     * @param {Map<string, Uint8Array>} streams Source stream map.
+     * @returns {boolean}
+     */
+    static #isSupersededLegacyDataStream(name, streams) {
+        const suffix = '/Data'
+        if (!name.endsWith(suffix)) {
+            return false
+        }
+
+        const storagePath = name.slice(0, -suffix.length)
+        const separatorIndex = storagePath.lastIndexOf('/')
+        const parentPath =
+            separatorIndex >= 0 ? storagePath.slice(0, separatorIndex + 1) : ''
+        const storageName =
+            separatorIndex >= 0
+                ? storagePath.slice(separatorIndex + 1)
+                : storagePath
+
+        if (!storageName || /\d$/u.test(storageName)) {
+            return false
+        }
+
+        return streams.has(parentPath + storageName + '6' + suffix)
     }
 
     /**
@@ -436,5 +545,20 @@ export class PcbStreamExtractor {
         return [...(unions.userUnions || []), ...(unions.smartUnions || [])]
             .map((record) => record.sourceStream)
             .filter(Boolean)
+    }
+
+    /**
+     * Returns true when a native stream name belongs to a recognized PCB
+     * storage.
+     * @param {string} streamName Native stream name.
+     * @returns {boolean}
+     */
+    static #isKnownNativeStream(streamName) {
+        if (streamName === 'FileHeader') {
+            return true
+        }
+
+        const storageName = String(streamName || '').split('/')[0]
+        return KNOWN_PCB_STREAM_STORAGES.has(storageName)
     }
 }

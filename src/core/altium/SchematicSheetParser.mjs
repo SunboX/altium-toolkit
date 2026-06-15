@@ -13,7 +13,7 @@ export class SchematicSheetParser {
     /**
      * Parses sheet symbols and their child entries from schematic records.
      * @param {{ fields: Record<string, string | string[]>, recordIndex: number }[]} records
-     * @returns {{ sheetSymbols: { x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, ownerIndex?: string, uniqueId: string, renderOrder: number, sourceRecordIndex: number, indexInSheet: number | null }[], sheetEntries: { ownerIndex: string, name: string, side: 'left' | 'right' | 'top' | 'bottom', direction: 'unspecified' | 'output' | 'input' | 'bidirectional', style: number, x: number, y: number, color: string, fill: string, textColor: string, harnessType: string, renderOrder: number }[] }}
+     * @returns {{ sheetSymbols: { x: number, y: number, width: number, height: number, name?: string, fileName?: string, color: string, fill: string, isSolid: boolean, transparent: boolean, ownerIndex?: string, uniqueId: string, renderOrder: number, sourceRecordIndex: number, indexInSheet: number | null }[], sheetEntries: { ownerIndex: string, name: string, side: 'left' | 'right' | 'top' | 'bottom', direction: 'unspecified' | 'output' | 'input' | 'bidirectional', style: number, x: number, y: number, color: string, fill: string, textColor: string, harnessType: string, renderOrder: number }[] }}
      */
     static parse(records) {
         const sheetSymbols = records
@@ -38,7 +38,7 @@ export class SchematicSheetParser {
     /**
      * Normalizes one `RECORD=15` sheet symbol.
      * @param {{ fields: Record<string, string | string[]>, recordIndex: number }} record
-     * @returns {{ x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, ownerIndex?: string, uniqueId: string, renderOrder: number, sourceRecordIndex: number, indexInSheet: number | null } | null}
+     * @returns {{ x: number, y: number, width: number, height: number, name?: string, fileName?: string, color: string, fill: string, isSolid: boolean, transparent: boolean, ownerIndex?: string, uniqueId: string, renderOrder: number, sourceRecordIndex: number, indexInSheet: number | null } | null}
      */
     static #parseSheetSymbolRecord(record) {
         if (getField(record.fields, 'RECORD') !== '15') {
@@ -61,6 +61,12 @@ export class SchematicSheetParser {
             y,
             width,
             height,
+            ...(getField(record.fields, 'Name')
+                ? { name: getField(record.fields, 'Name') }
+                : {}),
+            ...(getField(record.fields, 'FileName')
+                ? { fileName: getField(record.fields, 'FileName') }
+                : {}),
             color: toColor(record.fields.Color, '#a44a1b'),
             fill: toColor(record.fields.AreaColor, '#ffe16f'),
             isSolid: parseBoolean(record.fields.IsSolid),

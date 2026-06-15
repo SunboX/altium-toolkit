@@ -110,6 +110,7 @@ test('machine-readable normalized model schema declares the emitted contract id'
         'schematic',
         'pcb',
         'pcb-library',
+        'schematic-library',
         'project',
         'project-script',
         'project-annotation',
@@ -121,6 +122,7 @@ test('machine-readable normalized model schema declares the emitted contract id'
         'SchDoc',
         'PcbDoc',
         'PcbLib',
+        'SchLib',
         'PrjPcb',
         'PrjScr',
         'Annotation',
@@ -156,6 +158,10 @@ test('machine-readable normalized model schema declares parser detail contracts'
     assert.equal(
         schema.properties.schematic.properties.ownership.$ref,
         '#/$defs/ownershipSidecar'
+    )
+    assert.equal(
+        schema.properties.schematic.properties.hyperlinks.items.$ref,
+        '#/$defs/schematicHyperlink'
     )
     assert.equal(
         schema.properties.pcb.properties.vias.items.$ref,
@@ -230,6 +236,10 @@ test('machine-readable normalized model schema declares parser detail contracts'
     assert.equal(
         schema.properties.pcbLibrary.properties.parityReport.$ref,
         '#/$defs/pcbLibraryParityReport'
+    )
+    assert.equal(
+        schema.properties.schematicLibrary.properties.qa.$ref,
+        '#/$defs/libraryQaReport'
     )
     assert.equal(
         schema.properties.pcb.properties.components.items.properties
@@ -337,6 +347,36 @@ test('machine-readable contract schemas are split for downstream consumers', () 
             'altium-toolkit.parser-compatibility-fuzz.a1'
         ],
         [
+            '../../docs/schemas/altium_toolkit/parser_diagnostics_a1.schema.json',
+            'altium-toolkit.parser-diagnostics.a1',
+            'altium-toolkit.parser-diagnostics.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/parser_value_verification_a1.schema.json',
+            'altium-toolkit.parser-value-verification.a1',
+            'altium-toolkit.parser-value-verification.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/parameter_record_inventory_a1.schema.json',
+            'altium-toolkit.parameter-record-inventory.a1',
+            'altium-toolkit.parameter-record-inventory.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/geometry_bounds_a1.schema.json',
+            'altium-toolkit.geometry-bounds.a1',
+            'altium-toolkit.geometry-bounds.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/fixture_coverage_matrix_a1.schema.json',
+            'altium-toolkit.fixture-coverage-matrix.a1',
+            'altium-toolkit.fixture-coverage-matrix.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/unsupported_features_a1.schema.json',
+            'altium-toolkit.unsupported-features.a1',
+            'altium-toolkit.unsupported-features.a1'
+        ],
+        [
             '../../docs/schemas/altium_toolkit/host_capabilities_a1.schema.json',
             'altium-toolkit.host-capabilities.a1',
             'altium-toolkit.host-capabilities.a1'
@@ -370,6 +410,36 @@ test('machine-readable contract schemas are split for downstream consumers', () 
             '../../docs/schemas/altium_toolkit/library_merge_plan_a1.schema.json',
             'altium-toolkit.library.merge-plan.a1',
             'altium-toolkit.library.merge-plan.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/library_diff_a1.schema.json',
+            'altium-toolkit.library.diff.a1',
+            'altium-toolkit.library.diff.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/library_inspection_a1.schema.json',
+            'altium-toolkit.library.inspection.a1',
+            'altium-toolkit.library.inspection.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/embedded_assets_a1.schema.json',
+            'altium-toolkit.embedded-assets.a1',
+            'altium-toolkit.embedded-assets.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/pcb_net_membership_a1.schema.json',
+            'altium-toolkit.pcb.net-membership.a1',
+            'altium-toolkit.pcb.net-membership.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/pcb_class_report_a1.schema.json',
+            'altium-toolkit.pcb.class-report.a1',
+            'altium-toolkit.pcb.class-report.a1'
+        ],
+        [
+            '../../docs/schemas/altium_toolkit/pcb_inspection_a1.schema.json',
+            'altium-toolkit.pcb.inspection.a1',
+            'altium-toolkit.pcb.inspection.a1'
         ],
         [
             '../../docs/schemas/altium_toolkit/schematic_render_ops_a1.schema.json',

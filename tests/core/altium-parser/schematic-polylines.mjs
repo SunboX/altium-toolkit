@@ -44,6 +44,32 @@ test('parseAltiumArrayBuffer carries omitted schematic polyline coordinates', ()
 })
 
 /**
+ * Verifies schematic line-width codes are normalized to drawing stroke widths
+ * instead of being treated as literal thicknesses.
+ */
+test('parseAltiumArrayBuffer normalizes schematic line-width codes', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=220|CustomY=160|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=27|Color=128|LocationCount=2|X1=20|Y1=120|X2=80|Y2=120',
+        '|RECORD=27|LineWidth=1|Color=128|LocationCount=2|X1=20|Y1=100|X2=80|Y2=100',
+        '|RECORD=27|LineWidth=2|Color=128|LocationCount=2|X1=20|Y1=80|X2=80|Y2=80',
+        '|RECORD=27|LineWidth=3|Color=128|LocationCount=2|X1=20|Y1=60|X2=80|Y2=60'
+    ]
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'line-width-codes.SchDoc',
+        new TextEncoder().encode(records.join('')).buffer
+    )
+
+    assert.deepEqual(
+        documentModel.schematic.lines.map((line) => line.width),
+        [0.4, 1, 2, 4]
+    )
+})
+
+/**
  * Verifies a collapsed final wire segment can recover its omitted coordinate
  * from the nearest compatible pin endpoint.
  */
@@ -298,7 +324,7 @@ test('parseAltiumArrayBuffer exposes schematic bezier and pie primitives', () =>
             fill: '#ffff00',
             isSolid: true,
             transparent: false,
-            lineWidth: 3,
+            lineWidth: 4,
             renderOrder: 12
         }
     ])
@@ -406,6 +432,68 @@ test('parseAltiumArrayBuffer preserves schematic polyline endpoint markers', () 
     assert.match(
         markup,
         /marker-end="url\(#schematic-marker-filled-arrow-10\)"/
+    )
+})
+
+/**
+ * Verifies native endpoint marker codes 3-6 map to tail, filled-tail, circle,
+ * and square markers instead of shifting the circular/square cases down.
+ */
+test('parseAltiumArrayBuffer maps schematic polyline endpoint marker codes', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=220|CustomY=160|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=6|IndexInSheet=7|LineWidth=1|Color=128|LocationCount=2' +
+            '|X1=20|Y1=80|X2=120|Y2=80|StartLineShape=3|StartLineShapeSize=6|EndLineShape=4|EndLineShapeSize=8',
+        '|RECORD=6|IndexInSheet=8|LineWidth=1|Color=128|LocationCount=2' +
+            '|X1=20|Y1=60|X2=120|Y2=60|StartLineShape=5|StartLineShapeSize=10|EndLineShape=6|EndLineShapeSize=12'
+    ]
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'line-marker-codes.SchDoc',
+        new TextEncoder().encode(records.join('')).buffer
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.deepEqual(
+        documentModel.schematic.lines.map((line) => [
+            line.startMarker.shapeName,
+            line.endMarker.shapeName
+        ]),
+        [
+            ['tail', 'filled-tail'],
+            ['circle', 'square']
+        ]
+    )
+    assert.match(markup, /marker-start="url\(#schematic-marker-tail-6\)"/)
+    assert.match(markup, /marker-end="url\(#schematic-marker-filled-tail-8\)"/)
+    assert.match(markup, /marker-start="url\(#schematic-marker-circle-10\)"/)
+    assert.match(markup, /marker-end="url\(#schematic-marker-square-12\)"/)
+})
+
+/**
+ * Verifies elliptical arc angles are projected through the ellipse instead of
+ * treating the stored physical angles as raw parametric SVG angles.
+ */
+test('renderSchematicSvg projects elliptical arc angles through the ellipse', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=220|CustomY=200|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=11|IndexInSheet=7|Location.X=100|Location.Y=100|Radius=40|SecondaryRadius=20' +
+            '|StartAngle=45|EndAngle=135|LineWidth=1|Color=128'
+    ]
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'elliptical-arc-angle.SchDoc',
+        new TextEncoder().encode(records.join('')).buffer
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.match(
+        markup,
+        /<path class="schematic-arc" d="M 117\.89 82\.11 A 40 20 0 0 0 82\.11 82\.11"/
     )
 })
 

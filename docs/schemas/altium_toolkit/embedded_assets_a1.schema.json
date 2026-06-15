@@ -1,0 +1,56 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.embedded-assets.a1",
+    "title": "Altium Toolkit Embedded Assets A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "summary", "assets"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.embedded-assets.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "assets": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": [
+                    "modelFileName",
+                    "modelKind",
+                    "kind",
+                    "name",
+                    "format",
+                    "sourceStream",
+                    "byteLength"
+                ],
+                "properties": {
+                    "modelFileName": {
+                        "type": "string"
+                    },
+                    "modelKind": {
+                        "type": "string"
+                    },
+                    "kind": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "format": {
+                        "type": "string"
+                    },
+                    "sourceStream": {
+                        "type": "string"
+                    },
+                    "byteLength": {
+                        "type": "number"
+                    }
+                }
+            }
+        }
+    }
+}

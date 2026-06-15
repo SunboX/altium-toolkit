@@ -1,0 +1,65 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.library.catalog.a1",
+    "title": "Altium Toolkit Library Catalog A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "summary", "entries", "searchIndex", "html"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.library.catalog.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "entries": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "key",
+                    "kind",
+                    "name",
+                    "libraryFileName",
+                    "issueCodes",
+                    "searchText"
+                ],
+                "properties": {
+                    "key": {
+                        "type": "string"
+                    },
+                    "kind": {
+                        "enum": ["symbol", "footprint"]
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "libraryFileName": {
+                        "type": "string"
+                    },
+                    "outputSvgKey": {
+                        "type": "string"
+                    },
+                    "issueCodes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "searchText": {
+                        "type": "string"
+                    }
+                },
+                "additionalProperties": true
+            }
+        },
+        "searchIndex": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "html": {
+            "type": "string"
+        }
+    }
+}

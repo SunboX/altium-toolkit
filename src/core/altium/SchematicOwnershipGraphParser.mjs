@@ -15,7 +15,7 @@ export class SchematicOwnershipGraphParser {
     /**
      * Parses record parent/child links from raw schematic records.
      * @param {{ fields: Record<string, string | string[]>, recordIndex?: number }[]} records Schematic records.
-     * @returns {{ schema: string, records: object[], recordsByIndexInSheet: Record<string, object>, childrenByParentKey: Record<string, object[]>, parentsByChildKey: Record<string, object> }}
+     * @returns {{ schema: string, records: object[], hierarchy: object[], recordsByRecordIndex: Record<string, object>, recordsByIndexInSheet: Record<string, object>, childrenByParentKey: Record<string, object[]>, parentsByChildKey: Record<string, object> }}
      */
     static parse(records) {
         const entries = (records || []).map((record, fallbackIndex) =>
@@ -54,10 +54,73 @@ export class SchematicOwnershipGraphParser {
             records: entries.map((entry) =>
                 SchematicOwnershipGraphParser.#publicRecord(entry)
             ),
+            hierarchy: SchematicOwnershipGraphParser.#hierarchy(
+                entries,
+                parentsByChildKey
+            ),
+            recordsByRecordIndex:
+                SchematicOwnershipGraphParser.#recordsByRecordIndex(entries),
             recordsByIndexInSheet:
                 SchematicOwnershipGraphParser.#recordsByIndexInSheet(entries),
             childrenByParentKey,
             parentsByChildKey
+        }
+    }
+
+    /**
+     * Builds a nested public hierarchy from resolved parent links.
+     * @param {object[]} entries Record sidecar rows.
+     * @param {Record<string, { parentKey: string }>} parentsByChildKey Resolved parent links.
+     * @returns {object[]}
+     */
+    static #hierarchy(entries, parentsByChildKey) {
+        const entriesByKey = new Map(entries.map((entry) => [entry.key, entry]))
+        const childrenByParentKey = new Map()
+        const childKeys = new Set()
+
+        for (const [childKey, parentLink] of Object.entries(
+            parentsByChildKey
+        )) {
+            const child = entriesByKey.get(childKey)
+            const parent = entriesByKey.get(parentLink.parentKey)
+
+            if (!child || !parent) {
+                continue
+            }
+
+            childKeys.add(childKey)
+            if (!childrenByParentKey.has(parent.key)) {
+                childrenByParentKey.set(parent.key, [])
+            }
+
+            childrenByParentKey.get(parent.key).push(child)
+        }
+
+        return entries
+            .filter((entry) => !childKeys.has(entry.key))
+            .map((entry) =>
+                SchematicOwnershipGraphParser.#hierarchyNode(
+                    entry,
+                    childrenByParentKey
+                )
+            )
+    }
+
+    /**
+     * Builds one nested hierarchy node.
+     * @param {object} entry Record sidecar row.
+     * @param {Map<string, object[]>} childrenByParentKey Child rows by parent key.
+     * @returns {object}
+     */
+    static #hierarchyNode(entry, childrenByParentKey) {
+        return {
+            ...SchematicOwnershipGraphParser.#publicRecord(entry),
+            children: (childrenByParentKey.get(entry.key) || []).map((child) =>
+                SchematicOwnershipGraphParser.#hierarchyNode(
+                    child,
+                    childrenByParentKey
+                )
+            )
         }
     }
 
@@ -83,7 +146,8 @@ export class SchematicOwnershipGraphParser {
                 getField(record?.fields, 'UniqueID') ||
                 getField(record?.fields, 'UniqueId'),
             name: getField(record?.fields, 'Name'),
-            text: getField(record?.fields, 'Text')
+            text: getField(record?.fields, 'Text'),
+            fields: SchematicOwnershipGraphParser.#publicFields(record?.fields)
         }
     }
 
@@ -139,7 +203,8 @@ export class SchematicOwnershipGraphParser {
             ownerIndex: entry.ownerIndex,
             uniqueId: entry.uniqueId,
             name: entry.name,
-            text: entry.text
+            text: entry.text,
+            fields: entry.fields
         })
     }
 
@@ -160,6 +225,22 @@ export class SchematicOwnershipGraphParser {
     }
 
     /**
+     * Indexes records by parser record index.
+     * @param {object[]} entries Record sidecar rows.
+     * @returns {Record<string, object>}
+     */
+    static #recordsByRecordIndex(entries) {
+        const index = {}
+
+        for (const entry of entries) {
+            index[String(entry.recordIndex)] =
+                SchematicOwnershipGraphParser.#publicRecord(entry)
+        }
+
+        return index
+    }
+
+    /**
      * Indexes records by native IndexInSheet values.
      * @param {object[]} entries Record sidecar rows.
      * @returns {Record<string, object>}
@@ -175,6 +256,24 @@ export class SchematicOwnershipGraphParser {
         }
 
         return index
+    }
+
+    /**
+     * Copies source fields into a stable plain object for read-only consumers.
+     * @param {Record<string, string | string[]> | undefined} fields Source fields.
+     * @returns {Record<string, string | string[]>}
+     */
+    static #publicFields(fields) {
+        if (!fields || typeof fields !== 'object') {
+            return {}
+        }
+
+        return Object.fromEntries(
+            Object.entries(fields).map(([key, value]) => [
+                key,
+                Array.isArray(value) ? [...value] : value
+            ])
+        )
     }
 
     /**

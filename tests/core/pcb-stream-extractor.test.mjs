@@ -643,6 +643,52 @@ test('PcbStreamExtractor extracts primitive parameters and WideStrings6 text', (
 })
 
 /**
+ * Verifies legacy compatibility streams do not duplicate printable records
+ * when the same storage family also exposes a versioned stream.
+ */
+test('PcbStreamExtractor prefers versioned printable streams over legacy companions', () => {
+    const extracted = PcbStreamExtractor.extractFromStreams(
+        new Map([
+            [
+                'Components/Data',
+                new TextEncoder().encode(
+                    '|RECORD=Component|SOURCEDESIGNATOR=OLD1|X=1'
+                )
+            ],
+            [
+                'Components6/Data',
+                new TextEncoder().encode(
+                    '|RECORD=Component|SOURCEDESIGNATOR=NEW1|X=1'
+                )
+            ],
+            [
+                'Board/Data',
+                new TextEncoder().encode(
+                    '|RECORD=Board|V9_STACK_LAYER1_NAME=Legacy Layer|X=1'
+                )
+            ],
+            [
+                'Board6/Data',
+                new TextEncoder().encode(
+                    '|RECORD=Board|V9_STACK_LAYER1_NAME=Active Layer|X=1'
+                )
+            ]
+        ])
+    )
+
+    assert.deepEqual(
+        extracted.records.map((record) => record.sourceStream),
+        ['Components6/Data', 'Board6/Data']
+    )
+    assert.deepEqual(
+        extracted.records.map((record) => record.fields.SOURCEDESIGNATOR || ''),
+        ['NEW1', '']
+    )
+    assert.deepEqual(extracted.streamNames, ['Board6/Data', 'Components6/Data'])
+    assert.equal(extracted.diagnostics.printableStreamCount, 2)
+})
+
+/**
  * Verifies via-protection sidecar records are parsed and attached to the
  * corresponding via primitive.
  */

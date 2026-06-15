@@ -23,6 +23,7 @@
                 "schematic",
                 "pcb",
                 "pcb-library",
+                "schematic-library",
                 "project",
                 "project-script",
                 "project-annotation",
@@ -36,6 +37,7 @@
                 "SchDoc",
                 "PcbDoc",
                 "PcbLib",
+                "SchLib",
                 "PrjPcb",
                 "PrjScr",
                 "Annotation",
@@ -63,9 +65,21 @@
                         "type": "string"
                     },
                     "severity": {
-                        "enum": ["info", "warning"]
+                        "enum": ["info", "warning", "error"]
                     },
                     "message": {
+                        "type": "string"
+                    },
+                    "fileName": {
+                        "type": "string"
+                    },
+                    "sourceStream": {
+                        "type": "string"
+                    },
+                    "recordType": {
+                        "type": ["number", "string"]
+                    },
+                    "errorKind": {
                         "type": "string"
                     }
                 },
@@ -81,11 +95,35 @@
                         "$ref": "#/$defs/schematicRecordType"
                     }
                 },
+                "nets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/schematicNet"
+                    }
+                },
                 "images": {
                     "type": "array",
                     "items": {
                         "$ref": "#/$defs/schematicImage"
                     }
+                },
+                "thumbnails": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/schematicThumbnail"
+                    }
+                },
+                "hyperlinks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/schematicHyperlink"
+                    }
+                },
+                "opaqueRecords": {
+                    "$ref": "#/$defs/opaqueRecords"
+                },
+                "nativeStreams": {
+                    "$ref": "#/$defs/nativeStreamInventory"
                 },
                 "roundedRectangles": {
                     "type": "array",
@@ -103,6 +141,15 @@
                 },
                 "renderDiagnostics": {
                     "$ref": "#/$defs/schematicRenderDiagnostics"
+                },
+                "qa": {
+                    "type": "object",
+                    "properties": {
+                        "fieldCoverage": {
+                            "$ref": "#/$defs/schematicFieldCoverage"
+                        }
+                    },
+                    "additionalProperties": true
                 },
                 "directiveSemantics": {
                     "type": "object",
@@ -200,6 +247,20 @@
                         "$ref": "#/$defs/pcbDifferentialPairClass"
                     }
                 },
+                "embeddedBoards": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "rooms": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
                 "pickPlace": {
                     "$ref": "#/$defs/pickPlaceModel"
                 },
@@ -217,6 +278,9 @@
                 },
                 "rawRecords": {
                     "$ref": "#/$defs/rawRecords"
+                },
+                "nativeStreams": {
+                    "$ref": "#/$defs/nativeStreamInventory"
                 },
                 "layerSubstacks": {
                     "$ref": "#/$defs/layerSubstacks"
@@ -315,6 +379,52 @@
                 },
                 "parityReport": {
                     "$ref": "#/$defs/pcbLibraryParityReport"
+                },
+                "nativeStreams": {
+                    "$ref": "#/$defs/nativeStreamInventory"
+                }
+            },
+            "additionalProperties": true
+        },
+        "schematicLibrary": {
+            "type": "object",
+            "properties": {
+                "libraryHeader": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "sectionKeys": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "symbols": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "indexes": {
+                    "$ref": "#/$defs/libraryIndexes"
+                },
+                "renderManifest": {
+                    "$ref": "#/$defs/libraryRenderManifest"
+                },
+                "embeddedFiles": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "opaqueRecords": {
+                    "$ref": "#/$defs/opaqueRecords"
+                },
+                "nativeStreams": {
+                    "$ref": "#/$defs/nativeStreamInventory"
+                },
+                "qa": {
+                    "$ref": "#/$defs/libraryQaReport"
                 }
             },
             "additionalProperties": true
@@ -385,6 +495,9 @@
         },
         "schematic_hierarchy": {
             "$ref": "#/$defs/schematicHierarchy"
+        },
+        "schematicHierarchyReport": {
+            "$ref": "#/$defs/projectHierarchyReport"
         },
         "nets": {
             "type": "array",
@@ -457,6 +570,17 @@
                 },
                 "fileType": {
                     "const": "PcbLib"
+                }
+            }
+        },
+        {
+            "required": ["schematicLibrary"],
+            "properties": {
+                "kind": {
+                    "const": "schematic-library"
+                },
+                "fileType": {
+                    "const": "SchLib"
                 }
             }
         },
@@ -545,6 +669,27 @@
             "properties": {
                 "schema": {
                     "type": "string"
+                }
+            },
+            "additionalProperties": true
+        },
+        "nativeStreamInventory": {
+            "type": "object",
+            "required": ["schema", "summary", "streams"],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.native-stream-inventory.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "streams": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
                 }
             },
             "additionalProperties": true
@@ -809,6 +954,160 @@
             },
             "additionalProperties": true
         },
+        "schematicFieldCoverage": {
+            "type": "object",
+            "required": ["schema", "summary", "recordTypes"],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.schematic.field-coverage.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "properties": {
+                        "recordTypeCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "unrecognizedFieldCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "unrecognizedOccurrenceCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        }
+                    },
+                    "additionalProperties": true
+                },
+                "recordTypes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "recordType",
+                            "name",
+                            "family",
+                            "supported",
+                            "recordCount",
+                            "unrecognizedFields"
+                        ],
+                        "properties": {
+                            "recordType": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "family": {
+                                "type": "string"
+                            },
+                            "supported": {
+                                "type": "boolean"
+                            },
+                            "recordCount": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "unrecognizedFields": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "required": ["name", "count", "recordKeys"],
+                                    "properties": {
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "count": {
+                                            "type": "integer",
+                                            "minimum": 1
+                                        },
+                                        "recordKeys": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "additionalProperties": true
+                                }
+                            }
+                        },
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "schematicHyperlink": {
+            "type": "object",
+            "required": ["key", "recordKey"],
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "recordKey": {
+                    "type": "string"
+                },
+                "indexInSheet": {
+                    "type": "number"
+                },
+                "ownerIndex": {
+                    "type": "string"
+                },
+                "ownerPartId": {
+                    "type": "number"
+                },
+                "uniqueId": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "x": {
+                    "type": "number"
+                },
+                "y": {
+                    "type": "number"
+                },
+                "fontId": {
+                    "type": "string"
+                },
+                "fontSize": {
+                    "type": "number"
+                },
+                "fontFamily": {
+                    "type": "string"
+                },
+                "fontWeight": {
+                    "type": "number"
+                },
+                "fontStyle": {
+                    "type": "string"
+                },
+                "color": {
+                    "type": "string"
+                },
+                "areaColor": {
+                    "type": "string"
+                },
+                "orientation": {
+                    "type": "number"
+                },
+                "rotation": {
+                    "type": "number"
+                },
+                "justification": {
+                    "type": "number"
+                },
+                "isNotAccessible": {
+                    "type": "boolean"
+                }
+            },
+            "additionalProperties": true
+        },
         "schematicImage": {
             "type": "object",
             "required": [
@@ -865,6 +1164,42 @@
                     "type": "number"
                 },
                 "diagnosticState": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": true
+        },
+        "schematicThumbnail": {
+            "type": "object",
+            "required": [
+                "kind",
+                "width",
+                "height",
+                "mimeType",
+                "dataBase64",
+                "sourceStream",
+                "pixelFormat"
+            ],
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "width": {
+                    "type": "number"
+                },
+                "height": {
+                    "type": "number"
+                },
+                "mimeType": {
+                    "type": "string"
+                },
+                "dataBase64": {
+                    "type": "string"
+                },
+                "sourceStream": {
+                    "type": "string"
+                },
+                "pixelFormat": {
                     "type": "string"
                 }
             },
@@ -1457,6 +1792,46 @@
                     },
                     "parsed": {
                         "type": "boolean"
+                    },
+                    "rawBase64": {
+                        "type": "string"
+                    }
+                },
+                "additionalProperties": true
+            }
+        },
+        "opaqueRecords": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "source",
+                    "frameType",
+                    "recordIndex",
+                    "byteLength",
+                    "rawBase64"
+                ],
+                "properties": {
+                    "source": {
+                        "type": "string"
+                    },
+                    "sourceStorage": {
+                        "type": "string"
+                    },
+                    "sourceStream": {
+                        "type": "string"
+                    },
+                    "frameType": {
+                        "type": "number"
+                    },
+                    "typeId": {
+                        "type": ["number", "null"]
+                    },
+                    "recordIndex": {
+                        "type": "number"
+                    },
+                    "byteLength": {
+                        "type": "number"
                     },
                     "rawBase64": {
                         "type": "string"
@@ -2479,6 +2854,85 @@
             },
             "additionalProperties": true
         },
+        "projectHierarchyReport": {
+            "type": "object",
+            "required": [
+                "schema",
+                "summary",
+                "hierarchyMode",
+                "sheets",
+                "links",
+                "roots",
+                "diagnostics"
+            ],
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.project.hierarchy.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "hierarchyMode": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "sheets": {
+                    "type": "array"
+                },
+                "links": {
+                    "type": "array"
+                },
+                "roots": {
+                    "type": "array"
+                },
+                "diagnostics": {
+                    "type": "array"
+                }
+            },
+            "additionalProperties": true
+        },
+        "schematicNet": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "autoName": {
+                    "type": "string"
+                },
+                "autoNameSource": {
+                    "type": "string",
+                    "enum": [
+                        "component-pin",
+                        "component-pin-name",
+                        "owner-pin",
+                        "owner-pin-name",
+                        "pin-name"
+                    ]
+                },
+                "aliasCandidates": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "pins": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "componentDesignator": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
         "designBundleNet": {
             "type": "object",
             "required": ["bundleIndex", "name", "schematic", "pcb", "pins"],
@@ -2835,8 +3289,64 @@
         "libraryIndexes": {
             "type": "object",
             "properties": {
+                "symbolsByName": {
+                    "type": "object"
+                },
                 "footprintsByName": {
                     "type": "object"
+                }
+            },
+            "additionalProperties": true
+        },
+        "libraryQaReport": {
+            "type": "object",
+            "properties": {
+                "schema": {
+                    "const": "altium-toolkit.library.qa.a1"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "duplicates": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "staleImplementations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "missingModels": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "multipartMismatches": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "mergePlan": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "libraryLint": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
                 }
             },
             "additionalProperties": true

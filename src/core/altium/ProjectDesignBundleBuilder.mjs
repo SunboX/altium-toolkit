@@ -4,6 +4,7 @@
 
 import { NormalizedModelSchema } from './NormalizedModelSchema.mjs'
 import { ProjectBomPnpReconciliationBuilder } from './ProjectBomPnpReconciliationBuilder.mjs'
+import { ProjectHierarchyReportBuilder } from './ProjectHierarchyReportBuilder.mjs'
 import { ProjectVariantViewBuilder } from './ProjectVariantViewBuilder.mjs'
 
 /**
@@ -102,6 +103,10 @@ export class ProjectDesignBundleBuilder {
                     schematicModels,
                     documents
                 ),
+            schematicHierarchyReport: ProjectHierarchyReportBuilder.build({
+                projectModel,
+                documentModels: schematicModels
+            }),
             pnp,
             nets,
             annotations,
@@ -262,7 +267,17 @@ export class ProjectDesignBundleBuilder {
                     fileName: model.fileName,
                     pins: net.pins || [],
                     labels: net.labels || [],
+                    powerPorts: net.powerPorts || [],
+                    ports: net.ports || [],
                     segments: net.segments || [],
+                    sheetEntries: net.sheetEntries || [],
+                    ...(net.autoName ? { autoName: net.autoName } : {}),
+                    ...(net.autoNameSource
+                        ? { autoNameSource: net.autoNameSource }
+                        : {}),
+                    ...(net.aliasCandidates?.length
+                        ? { aliasCandidates: net.aliasCandidates }
+                        : {}),
                     ...(model.schematic?.harnesses
                         ? { harnesses: model.schematic.harnesses.connectors }
                         : {})

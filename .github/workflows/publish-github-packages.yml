@@ -1,0 +1,50 @@
+name: Publish GitHub Package
+
+on:
+    release:
+        types: [published]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    packages: write
+
+jobs:
+    publish:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '20.x'
+                  registry-url: 'https://npm.pkg.github.com'
+                  scope: '@sunbox'
+
+            - run: npm ci
+
+            - run: npm test
+
+            - name: Prepare GitHub Packages metadata
+              run: |
+                  node --input-type=module <<'NODE'
+                  import { readFile, writeFile } from 'node:fs/promises'
+
+                  const packageJsonPath = new URL('./package.json', import.meta.url)
+                  const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8'))
+
+                  packageJson.name = '@sunbox/altium-toolkit'
+                  packageJson.publishConfig = {
+                      ...packageJson.publishConfig,
+                      registry: 'https://npm.pkg.github.com'
+                  }
+
+                  await writeFile(
+                      packageJsonPath,
+                      `${JSON.stringify(packageJson, null, 4)}\n`
+                  )
+                  NODE
+
+            - run: npm publish
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

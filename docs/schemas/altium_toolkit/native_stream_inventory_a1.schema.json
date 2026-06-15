@@ -1,0 +1,66 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.native-stream-inventory.a1",
+    "title": "Altium Toolkit Native Stream Inventory A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["schema", "summary", "streams"],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.native-stream-inventory.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "streams": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "sourceStream",
+                    "leafName",
+                    "byteLength",
+                    "known",
+                    "consumed",
+                    "classification",
+                    "checksum"
+                ],
+                "properties": {
+                    "source": {
+                        "type": "string"
+                    },
+                    "sourceStorage": {
+                        "type": "string"
+                    },
+                    "sourceStream": {
+                        "type": "string"
+                    },
+                    "leafName": {
+                        "type": "string"
+                    },
+                    "byteLength": {
+                        "type": "number"
+                    },
+                    "known": {
+                        "type": "boolean"
+                    },
+                    "consumed": {
+                        "type": "boolean"
+                    },
+                    "classification": {
+                        "type": "string"
+                    },
+                    "consumedBy": {
+                        "type": "string"
+                    },
+                    "checksum": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "additionalProperties": true
+            }
+        }
+    }
+}

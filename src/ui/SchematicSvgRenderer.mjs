@@ -45,7 +45,7 @@ export class SchematicSvgRenderer {
 
     /**
      * Renders a normalized schematic model into SVG markup.
-     * @param {{ fileName?: string, summary: { title?: string }, schematic?: { sheet: { width: number, height: number, sourceWidth?: number, sourceHeight?: number, paperSize?: string, borderOn?: boolean, titleBlockOn?: boolean, marginWidth?: number, xZones?: number, yZones?: number, titleBlock?: { title?: string, revision?: string, documentNumber?: string, sheetNumber?: string, sheetTotal?: string, date?: string, drawnBy?: string } }, lines: { x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle?: number, isBus?: boolean, ownerIndex?: string, renderOrder?: number, recordType?: string }[], polygons?: { points: { x: number, y: number }[], color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], rectangles?: { x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], regions?: { x: number, y: number, width: number, height: number, color: string, fill: string, renderOrder?: number }[], ellipses?: { x: number, y: number, radiusX: number, radiusY: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, color: string, width: number, ownerIndex?: string, renderOrder?: number }[], directives?: { x: number, y: number, color: string, name: string, orientation?: number }[], texts: { x: number, y: number, text: string, color: string, recordType?: string, style?: number, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, anchor?: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }[], components: { x: number, y: number, designator: string }[], pins?: { x: number, y: number, length: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color: string, labelColor?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', ownerIndex?: string }[], ports?: { x: number, y: number, width: number, height: number, name: string, fill: string, color: string, direction?: 'left' | 'right' | 'up' | 'down', shape?: 'single' | 'double' | 'plain' }[], crosses?: { x: number, y: number, size: number, color: string }[] } }} documentModel
+     * @param {{ fileName?: string, summary: { title?: string }, schematic?: { sheet: { width: number, height: number, sourceWidth?: number, sourceHeight?: number, paperSize?: string, borderOn?: boolean, titleBlockOn?: boolean, marginWidth?: number, xZones?: number, yZones?: number, titleBlock?: { title?: string, revision?: string, documentNumber?: string, sheetNumber?: string, sheetTotal?: string, date?: string, drawnBy?: string } }, lines: { x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle?: number, isBus?: boolean, ownerIndex?: string, renderOrder?: number, recordType?: string }[], polygons?: { points: { x: number, y: number }[], color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], rectangles?: { x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], regions?: { x: number, y: number, width: number, height: number, color: string, fill: string, renderOrder?: number }[], ellipses?: { x: number, y: number, radiusX: number, radiusY: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, color: string, width: number, ownerIndex?: string, renderOrder?: number }[], directives?: { x: number, y: number, color: string, name: string, orientation?: number }[], texts: { x: number, y: number, text: string, textSegments?: { text: string, overline: boolean }[], color: string, recordType?: string, style?: number, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, anchor?: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }[], components: { x: number, y: number, designator: string }[], pins?: { x: number, y: number, length: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color: string, labelColor?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', ownerIndex?: string }[], ports?: { x: number, y: number, width: number, height: number, name: string, fill: string, color: string, direction?: 'left' | 'right' | 'up' | 'down', shape?: 'single' | 'double' | 'plain' }[], crosses?: { x: number, y: number, size: number, color: string }[] } }} documentModel
      * @param {{ projectParameters?: Record<string, string | number | boolean | null | undefined>, colorizeImages?: boolean, colorize_images?: boolean }} options Render options.
      * @returns {string}
      */
@@ -1081,7 +1081,9 @@ export class SchematicSvgRenderer {
         const id = SchematicSvgRenderer.#schematicLineMarkerId(marker)
         const shapeName = String(marker?.shapeName || '')
         const fill =
-            shapeName === 'filled-arrow' || shapeName === 'square'
+            shapeName === 'filled-arrow' ||
+            shapeName === 'filled-tail' ||
+            shapeName === 'square'
                 ? 'context-stroke'
                 : 'none'
         const shape =
@@ -1089,9 +1091,13 @@ export class SchematicSvgRenderer {
                 ? '<circle cx="5" cy="5" r="3.2" fill="none" stroke="context-stroke" stroke-width="1.4" />'
                 : shapeName === 'square'
                   ? '<rect x="2" y="2" width="6" height="6" fill="context-stroke" stroke="context-stroke" stroke-width="1" />'
-                  : '<path d="M 1 1 L 9 5 L 1 9" fill="' +
-                    fill +
-                    '" stroke="context-stroke" stroke-width="1.4" stroke-linejoin="round" />'
+                  : shapeName === 'tail' || shapeName === 'filled-tail'
+                    ? '<path d="M 9 1 L 1 5 L 9 9" fill="' +
+                      fill +
+                      '" stroke="context-stroke" stroke-width="1.4" stroke-linejoin="round" />'
+                    : '<path d="M 1 1 L 9 5 L 1 9" fill="' +
+                      fill +
+                      '" stroke="context-stroke" stroke-width="1.4" stroke-linejoin="round" />'
 
         return (
             '<marker id="' +
@@ -2608,7 +2614,7 @@ export class SchematicSvgRenderer {
 
     /**
      * Builds one free text primitive with font metadata.
-     * @param {{ x: number, y: number, text: string, color: string, recordType?: string, style?: number, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, anchor?: 'start' | 'middle' | 'end', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }} text
+     * @param {{ x: number, y: number, text: string, textSegments?: { text: string, overline: boolean }[], color: string, recordType?: string, style?: number, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, anchor?: 'start' | 'middle' | 'end', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }} text
      * @param {number} sheetHeight
      * @param {{ x1: number, y1: number, x2: number, y2: number }[]} lines
      * @param {{ x: number, y: number, length: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
@@ -2696,7 +2702,7 @@ export class SchematicSvgRenderer {
 
     /**
      * Resolves final text placement for schematic free-text annotations.
-     * @param {{ x: number, y: number, text: string, ownerIndex?: string, recordType?: string, fontSize?: number, rotation?: number, anchor?: 'start' | 'middle' | 'end' }} text
+     * @param {{ x: number, y: number, text: string, ownerIndex?: string, recordType?: string, fontSize?: number, rotation?: number, anchor?: 'start' | 'middle' | 'end', verticalAnchor?: 'top' }} text
      * @param {number} sheetHeight
      * @param {{ x1: number, y1: number, x2: number, y2: number, lineStyle?: number }[]} lines
      * @param {{ x: number, y: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' } | null} matchedOwnerPin
@@ -2737,8 +2743,17 @@ export class SchematicSvgRenderer {
                 matchedOwnerPin,
                 ownerTextBodyBounds
             )
+        const verticalAnchorBaselineOffset =
+            SchematicSvgRenderer.#resolveVerticalAnchorBaselineOffset(
+                text,
+                fontSize
+            )
 
-        const unclampedY = projectedY - baselineLift + ownerBodyBaselineOffset
+        const unclampedY =
+            projectedY -
+            baselineLift +
+            ownerBodyBaselineOffset +
+            verticalAnchorBaselineOffset
 
         return {
             x,
@@ -2804,6 +2819,20 @@ export class SchematicSvgRenderer {
             sheetHeight,
             fontSize
         )
+    }
+
+    /**
+     * Converts top-anchored text coordinates into SVG baseline coordinates.
+     * @param {{ verticalAnchor?: 'top' }} text Text primitive.
+     * @param {number} fontSize Viewer font size.
+     * @returns {number}
+     */
+    static #resolveVerticalAnchorBaselineOffset(text, fontSize) {
+        if (text?.verticalAnchor !== 'top') {
+            return 0
+        }
+
+        return Number.isFinite(fontSize) && fontSize > 0 ? fontSize : 0
     }
 
     /**

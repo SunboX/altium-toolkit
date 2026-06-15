@@ -890,7 +890,7 @@ test('parseAltiumArrayBuffer keeps listed rectangle frames filled and dashed', (
             fill: '#ffffff',
             isSolid: true,
             transparent: false,
-            lineWidth: 1,
+            lineWidth: 0.4,
             lineStyle: 1,
             renderOrder: 2,
             ownerIndex: undefined
@@ -898,11 +898,11 @@ test('parseAltiumArrayBuffer keeps listed rectangle frames filled and dashed', (
     ])
     assert.match(
         markup,
-        /<rect class="schematic-rectangle"[^>]*fill="var\(--schematic-fill-light-color\)" stroke="var\(--schematic-alert-color\)" stroke-width="1" stroke-dasharray="8 5" stroke-linecap="round" \/>/
+        /<rect class="schematic-rectangle"[^>]*fill="var\(--schematic-fill-light-color\)" stroke="var\(--schematic-alert-color\)" stroke-width="0.80" stroke-dasharray="8 5" stroke-linecap="round" \/>/
     )
     assert.doesNotMatch(
         markup,
-        /<line x1="40" y1="220" x2="160" y2="140" stroke="var\(--schematic-alert-color\)" stroke-width="1" stroke-dasharray="8 5" stroke-linecap="round" \/>/
+        /<line x1="40" y1="220" x2="160" y2="140" stroke="var\(--schematic-alert-color\)"[^>]*\/>/
     )
 })
 
@@ -973,7 +973,7 @@ test('parseAltiumArrayBuffer restores binary-tailed rectangle frames as dashed b
             fill: '#ffffff',
             isSolid: true,
             transparent: false,
-            lineWidth: 1,
+            lineWidth: 0.4,
             lineStyle: 1,
             renderOrder: 9,
             ownerIndex: undefined
@@ -981,10 +981,10 @@ test('parseAltiumArrayBuffer restores binary-tailed rectangle frames as dashed b
     ])
     assert.match(
         markup,
-        /<rect class="schematic-rectangle"[^>]*fill="var\(--schematic-fill-light-color\)" stroke="var\(--schematic-alert-color\)" stroke-width="1" stroke-dasharray="8 5" stroke-linecap="round" \/>/
+        /<rect class="schematic-rectangle"[^>]*fill="var\(--schematic-fill-light-color\)" stroke="var\(--schematic-alert-color\)" stroke-width="0.80" stroke-dasharray="8 5" stroke-linecap="round" \/>/
     )
     assert.doesNotMatch(
         markup,
-        /<line x1="40" y1="220" x2="160" y2="140" stroke="var\(--schematic-alert-color\)" stroke-width="1" stroke-dasharray="8 5" stroke-linecap="round" \/>/
+        /<line x1="40" y1="220" x2="160" y2="140" stroke="var\(--schematic-alert-color\)"[^>]*\/>/
     )
 })

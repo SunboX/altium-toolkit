@@ -1,0 +1,79 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.project.hierarchy.a1",
+    "title": "Altium Toolkit Project Hierarchy A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "summary",
+        "hierarchyMode",
+        "sheets",
+        "links",
+        "roots",
+        "diagnostics"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.project.hierarchy.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "hierarchyMode": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "sheets": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "links": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "parentSheetFileName",
+                    "childSheetFileName",
+                    "status"
+                ],
+                "properties": {
+                    "parentSheetFileName": {
+                        "type": "string"
+                    },
+                    "childSheetFileName": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "enum": ["resolved", "missing", "cycle", "repeated"]
+                    },
+                    "sheetEntryNames": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "additionalProperties": true
+            }
+        },
+        "roots": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "diagnostics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    }
+}

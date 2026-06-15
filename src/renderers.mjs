@@ -9,6 +9,7 @@ export { PcbFootprintPrimitiveSelector } from './ui/PcbFootprintPrimitiveSelecto
 export { PcbInteractionIndex } from './ui/PcbInteractionIndex.mjs'
 export { PcbInteractionItemRegistry } from './ui/PcbInteractionItemRegistry.mjs'
 export { PcbInteractionLayerModel } from './ui/PcbInteractionLayerModel.mjs'
+export { PcbLayerGroups } from './core/altium/PcbLayerGroups.mjs'
 export {
     PcbSideResolvedRenderModel,
     isCopperPrimitive,
