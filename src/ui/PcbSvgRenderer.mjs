@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbArcUtils } from './PcbArcUtils.mjs'
+import { PcbDimensionPrimitiveRenderer } from './PcbDimensionPrimitiveRenderer.mjs'
 import { PcbEdgeFacingGlyphNormalizer } from './PcbEdgeFacingGlyphNormalizer.mjs'
 import { PcbEmbeddedFontFaceRenderer } from './PcbEmbeddedFontFaceRenderer.mjs'
 import { PcbFootprintPrimitiveSelector } from './PcbFootprintPrimitiveSelector.mjs'
@@ -54,6 +55,7 @@ export class PcbSvgRenderer {
             : regions
         const vias = pcb.vias || []
         const pads = pcb.pads || []
+        const dimensions = pcb.dimensions || []
         const components = pcb.components.slice(0, 260)
         const stackLayers = Array.isArray(pcb.layers) ? pcb.layers : []
         const primitiveLayers = pcb.primitiveLayers || []
@@ -131,7 +133,8 @@ export class PcbSvgRenderer {
                 ...footprintPrimitives.regions
             ],
             vias,
-            pads
+            pads,
+            dimensions
         )
         const layerMarkup = displayLayers
             .slice(0, 10)
@@ -376,6 +379,22 @@ export class PcbSvgRenderer {
         const textMarkup = PcbTextPrimitiveRenderer.render(texts, {
             semanticContext
         })
+        const dimensionMarkup = PcbDimensionPrimitiveRenderer.buildMarkup(
+            dimensions,
+            {
+                attributes: (dimension, index) =>
+                    PcbSvgRenderer.#dimensionAttributes(
+                        dimension,
+                        PcbSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'dimensions',
+                            dimension,
+                            index
+                        ),
+                        semanticContext
+                    )
+            }
+        )
         const textGeometryMarkup = viewOptions.includeTextGeometrySidecar
             ? PcbSvgRenderer.#buildTextGeometryMetadataMarkup(
                   texts,
@@ -536,6 +555,7 @@ export class PcbSvgRenderer {
             '>' +
             textMarkup +
             '</g>' +
+            dimensionMarkup +
             '<path class="board-outline board-outline--stroke pcb-layer pcb-layer--edge-cuts" data-layer-name="Edge.Cuts"' +
             PcbSvgRenderer.#renderDataAttributes({
                 'data-primitive': 'board-outline',
@@ -685,6 +705,7 @@ export class PcbSvgRenderer {
             regions: (pcb?.regions || []).filter(filter),
             shapeBasedRegions: (pcb?.shapeBasedRegions || []).filter(filter),
             texts: (pcb?.texts || []).filter(filter),
+            dimensions: (pcb?.dimensions || []).filter(filter),
             components: (pcb?.components || []).filter(filter)
         }
     }
@@ -812,6 +833,9 @@ export class PcbSvgRenderer {
                 vias: PcbSvgRenderer.#objectIndexMap(pcb?.vias || []),
                 pads: PcbSvgRenderer.#objectIndexMap(pcb?.pads || []),
                 texts: PcbSvgRenderer.#objectIndexMap(pcb?.texts || []),
+                dimensions: PcbSvgRenderer.#objectIndexMap(
+                    pcb?.dimensions || []
+                ),
                 components: PcbSvgRenderer.#objectIndexMap(
                     pcb?.components || []
                 )
@@ -876,6 +900,12 @@ export class PcbSvgRenderer {
                     'text',
                     'texts',
                     pcb?.texts || [],
+                    semanticContext
+                ),
+                ...PcbSvgRenderer.#semanticMetadataEntries(
+                    'dimension',
+                    'dimensions',
+                    pcb?.dimensions || [],
                     semanticContext
                 ),
                 ...PcbSvgRenderer.#semanticMetadataEntries(
@@ -1137,6 +1167,22 @@ export class PcbSvgRenderer {
                 textRole:
                     primitiveKind === 'text'
                         ? primitive?.role || primitive?.textRole
+                        : undefined,
+                dimensionKind:
+                    primitiveKind === 'dimension'
+                        ? primitive?.kind || 'linear'
+                        : undefined,
+                measuredValue:
+                    primitiveKind === 'dimension'
+                        ? (primitive?.measuredValue ?? undefined)
+                        : undefined,
+                angleValue:
+                    primitiveKind === 'dimension'
+                        ? (primitive?.angleValue ?? undefined)
+                        : undefined,
+                text:
+                    primitiveKind === 'dimension'
+                        ? primitive?.text || undefined
                         : undefined
             })
         })
@@ -1191,6 +1237,32 @@ export class PcbSvgRenderer {
                     ? PcbSvgRenderer.#padNumber(primitive)
                     : undefined
         })
+    }
+
+    /**
+     * Renders semantic data attributes for one dimension SVG group.
+     * @param {object} dimension Dimension record.
+     * @param {number} index Stable dimension index.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #dimensionAttributes(dimension, index, semanticContext) {
+        return (
+            PcbSvgRenderer.#semanticAttributes(
+                'dimension',
+                dimension,
+                index,
+                semanticContext
+            ) +
+            PcbSvgRenderer.#renderDataAttributes({
+                'data-dimension-kind': dimension?.kind || 'linear',
+                'data-dimension-name': dimension?.name,
+                'data-dimension-text': dimension?.text,
+                'data-measured-value': dimension?.measuredValue,
+                'data-angle-value': dimension?.angleValue,
+                'data-unit': dimension?.unit
+            })
+        )
     }
 
     /**
@@ -1344,6 +1416,7 @@ export class PcbSvgRenderer {
             'vias',
             'pads',
             'texts',
+            'dimensions',
             'components',
             'regions',
             'shapeBasedRegions'
@@ -1688,6 +1761,7 @@ export class PcbSvgRenderer {
      * @param {{ points?: { x: number, y: number }[], holes?: { x: number, y: number }[][] }[]} regions
      * @param {{ x: number, y: number, diameter: number }[]} vias
      * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number, holeDiameter?: number }[]} pads
+     * @param {{ references?: { x: number, y: number }[], textLocation?: { x: number, y: number } }[]} dimensions
      * @returns {string}
      */
     static #buildViewBox(
@@ -1699,7 +1773,8 @@ export class PcbSvgRenderer {
         arcs,
         regions,
         vias,
-        pads
+        pads,
+        dimensions
     ) {
         const xs = [outline.minX, outline.minX + outline.widthMil]
         const ys = [outline.minY, outline.minY + outline.heightMil]
@@ -1743,6 +1818,7 @@ export class PcbSvgRenderer {
             xs.push(pad.x - size.width / 2, pad.x + size.width / 2)
             ys.push(pad.y - size.height / 2, pad.y + size.height / 2)
         }
+        PcbDimensionPrimitiveRenderer.pushExtents(xs, ys, dimensions)
         for (const component of components) {
             const bodyGeometry = PcbSvgRenderer.#footprintSize(
                 component.pattern

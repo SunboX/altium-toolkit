@@ -10,7 +10,7 @@ export class SchematicConnectivityQaBuilder {
 
     /**
      * Builds connectivity QA from the normalized single-sheet net model.
-     * @param {{ nets?: object[], texts?: object[], pins?: object[], ports?: object[], junctions?: object[], lines?: object[] }} schematic Normalized schematic fragments.
+     * @param {{ nets?: object[], texts?: object[], pins?: object[], ports?: object[], junctions?: object[], lines?: object[], sheetEntries?: object[], harnesses?: object | null }} schematic Normalized schematic fragments.
      * @returns {object}
      */
     static build(schematic) {
@@ -24,6 +24,10 @@ export class SchematicConnectivityQaBuilder {
         const junctions = Array.isArray(schematic?.junctions)
             ? schematic.junctions
             : []
+        const sheetEntries = Array.isArray(schematic?.sheetEntries)
+            ? schematic.sheetEntries
+            : []
+        const harnesses = schematic?.harnesses || null
         const findings = [
             ...SchematicConnectivityQaBuilder.#implicitNetFindings(nets),
             ...SchematicConnectivityQaBuilder.#danglingLabelFindings(
@@ -42,7 +46,12 @@ export class SchematicConnectivityQaBuilder {
             ...SchematicConnectivityQaBuilder.#unjunctionedTeeContactFindings(
                 lines,
                 junctions
-            )
+            ),
+            ...SchematicConnectivityQaBuilder.#harnessFindings(
+                sheetEntries,
+                harnesses
+            ),
+            ...SchematicConnectivityQaBuilder.#pinInterpretationFindings(pins)
         ]
 
         return {
@@ -214,12 +223,401 @@ export class SchematicConnectivityQaBuilder {
                 'schematic.connectivity.ambiguous-junction'
             )
         }
+        const harnessFindingCount = SchematicConnectivityQaBuilder.#countCode(
+            findings,
+            'schematic.connectivity.harness-sheet-entry-unresolved-type'
+        )
+        const unlinkedHarnessEntryCount =
+            SchematicConnectivityQaBuilder.#countCode(
+                findings,
+                'schematic.connectivity.harness-entry-unlinked-signal'
+            )
+        const harnessTypeMismatchCount =
+            SchematicConnectivityQaBuilder.#countCode(
+                findings,
+                'schematic.connectivity.harness-type-mismatch'
+            )
 
         if (unjunctionedTeeContactCount) {
             summary.unjunctionedTeeContactCount = unjunctionedTeeContactCount
         }
+        if (
+            harnessFindingCount ||
+            unlinkedHarnessEntryCount ||
+            harnessTypeMismatchCount
+        ) {
+            summary.harnessFindingCount =
+                harnessFindingCount +
+                unlinkedHarnessEntryCount +
+                harnessTypeMismatchCount
+            summary.unresolvedHarnessTypeCount = harnessFindingCount
+            summary.unlinkedHarnessEntryCount = unlinkedHarnessEntryCount
+        }
+        if (harnessTypeMismatchCount) {
+            summary.harnessTypeMismatchCount = harnessTypeMismatchCount
+        }
+        SchematicConnectivityQaBuilder.#assignPinInterpretationCounts(
+            summary,
+            findings
+        )
 
         return summary
+    }
+
+    /**
+     * Adds pin interpretation counters to the summary when present.
+     * @param {Record<string, number>} summary Mutable summary row.
+     * @param {object[]} findings QA findings.
+     * @returns {void}
+     */
+    static #assignPinInterpretationCounts(summary, findings) {
+        const hiddenPinLabelCount = [
+            'schematic.pin.hidden-labels',
+            'schematic.pin.hidden-name',
+            'schematic.pin.hidden-number'
+        ].reduce(
+            (count, code) =>
+                count +
+                SchematicConnectivityQaBuilder.#countCode(findings, code),
+            0
+        )
+        const powerElectricalAmbiguityCount =
+            SchematicConnectivityQaBuilder.#countCode(
+                findings,
+                'schematic.pin.power-like-name-non-power-electrical'
+            )
+        const pinEndpointSymbolCount =
+            SchematicConnectivityQaBuilder.#countCode(
+                findings,
+                'schematic.pin.endpoint-symbol'
+            )
+
+        if (hiddenPinLabelCount) {
+            summary.hiddenPinLabelCount = hiddenPinLabelCount
+        }
+        if (powerElectricalAmbiguityCount) {
+            summary.powerElectricalAmbiguityCount =
+                powerElectricalAmbiguityCount
+        }
+        if (pinEndpointSymbolCount) {
+            summary.pinEndpointSymbolCount = pinEndpointSymbolCount
+        }
+    }
+
+    /**
+     * Builds QA findings for recovered pin display/electrical metadata.
+     * @param {object[]} pins Normalized pins.
+     * @returns {object[]}
+     */
+    static #pinInterpretationFindings(pins) {
+        const findings = []
+
+        for (const pin of pins || []) {
+            findings.push(
+                ...SchematicConnectivityQaBuilder.#pinLabelFindings(pin)
+            )
+            const powerFinding =
+                SchematicConnectivityQaBuilder.#powerElectricalFinding(pin)
+            if (powerFinding) {
+                findings.push(powerFinding)
+            }
+            const endpointFinding =
+                SchematicConnectivityQaBuilder.#endpointSymbolFinding(pin)
+            if (endpointFinding) {
+                findings.push(endpointFinding)
+            }
+        }
+
+        return findings
+    }
+
+    /**
+     * Builds findings for pin name/number display suppression.
+     * @param {object} pin Normalized pin.
+     * @returns {object[]}
+     */
+    static #pinLabelFindings(pin) {
+        const labelMode = String(pin?.labelMode || 'name-and-number')
+        const hasName = String(pin?.name || '').trim().length > 0
+        const hasNumber = String(pin?.designator || '').trim().length > 0
+
+        if (labelMode === 'hidden' && (hasName || hasNumber)) {
+            return [
+                SchematicConnectivityQaBuilder.#pinFinding(
+                    'schematic.pin.hidden-labels',
+                    'info',
+                    pin
+                )
+            ]
+        }
+        if (labelMode === 'number-only' && hasName) {
+            return [
+                SchematicConnectivityQaBuilder.#pinFinding(
+                    'schematic.pin.hidden-name',
+                    'info',
+                    pin
+                )
+            ]
+        }
+        if (labelMode === 'name-only' && hasNumber) {
+            return [
+                SchematicConnectivityQaBuilder.#pinFinding(
+                    'schematic.pin.hidden-number',
+                    'info',
+                    pin
+                )
+            ]
+        }
+
+        return []
+    }
+
+    /**
+     * Builds a finding when a power-like pin name does not use a power type.
+     * @param {object} pin Normalized pin.
+     * @returns {object | null}
+     */
+    static #powerElectricalFinding(pin) {
+        if (
+            !SchematicConnectivityQaBuilder.#isPowerLikePinName(pin?.name) ||
+            SchematicConnectivityQaBuilder.#isPowerElectricalType(
+                pin?.electrical
+            )
+        ) {
+            return null
+        }
+
+        return SchematicConnectivityQaBuilder.#pinFinding(
+            'schematic.pin.power-like-name-non-power-electrical',
+            'warning',
+            pin,
+            {
+                electrical: pin?.electrical
+            }
+        )
+    }
+
+    /**
+     * Builds a finding when a pin carries an endpoint symbol marker.
+     * @param {object} pin Normalized pin.
+     * @returns {object | null}
+     */
+    static #endpointSymbolFinding(pin) {
+        const symbolOuter = Number(pin?.symbolOuter)
+        if (!Number.isFinite(symbolOuter) || symbolOuter === 0) {
+            return null
+        }
+
+        return SchematicConnectivityQaBuilder.#pinFinding(
+            'schematic.pin.endpoint-symbol',
+            'info',
+            pin,
+            {
+                symbolOuter
+            }
+        )
+    }
+
+    /**
+     * Builds one pin finding row.
+     * @param {string} code Stable finding code.
+     * @param {'info' | 'warning'} severity Finding severity.
+     * @param {object} pin Normalized pin.
+     * @param {object} [details] Additional finding fields.
+     * @returns {object}
+     */
+    static #pinFinding(code, severity, pin, details = {}) {
+        return SchematicConnectivityQaBuilder.#stripEmpty({
+            code,
+            severity,
+            ownerIndex: pin?.ownerIndex,
+            designator: pin?.designator,
+            name: pin?.name,
+            x: pin?.x,
+            y: pin?.y,
+            labelMode: pin?.labelMode,
+            ...details
+        })
+    }
+
+    /**
+     * Builds harness-specific connectivity findings.
+     * @param {object[]} sheetEntries Sheet entry records.
+     * @param {object | null} harnesses Harness read model.
+     * @returns {object[]}
+     */
+    static #harnessFindings(sheetEntries, harnesses) {
+        return [
+            ...SchematicConnectivityQaBuilder.#unresolvedHarnessTypeFindings(
+                sheetEntries,
+                harnesses
+            ),
+            ...SchematicConnectivityQaBuilder.#unlinkedHarnessEntryFindings(
+                harnesses
+            ),
+            ...SchematicConnectivityQaBuilder.#harnessTypeMismatchFindings(
+                harnesses
+            )
+        ]
+    }
+
+    /**
+     * Reports sheet entries that name a harness type not present locally.
+     * @param {object[]} sheetEntries Sheet entry records.
+     * @param {object | null} harnesses Harness read model.
+     * @returns {object[]}
+     */
+    static #unresolvedHarnessTypeFindings(sheetEntries, harnesses) {
+        const knownTypes =
+            SchematicConnectivityQaBuilder.#knownHarnessTypes(harnesses)
+
+        return (sheetEntries || [])
+            .filter((entry) => {
+                const harnessType =
+                    SchematicConnectivityQaBuilder.#normalizeHarnessType(
+                        entry?.harnessType
+                    )
+                return harnessType && !knownTypes.has(harnessType)
+            })
+            .map((entry) => ({
+                code: 'schematic.connectivity.harness-sheet-entry-unresolved-type',
+                severity: 'warning',
+                name: entry.name,
+                harnessType: entry.harnessType,
+                x: entry.x,
+                y: entry.y
+            }))
+    }
+
+    /**
+     * Reports harness entries that have no linked signal-harness geometry.
+     * @param {object | null} harnesses Harness read model.
+     * @returns {object[]}
+     */
+    static #unlinkedHarnessEntryFindings(harnesses) {
+        const linksByConnector = new Map(
+            (harnesses?.bundleLinks || []).map((link) => [
+                link.connectorKey,
+                link
+            ])
+        )
+        const findings = []
+
+        for (const connector of harnesses?.connectors || []) {
+            const link = linksByConnector.get(connector.key)
+            if (link?.signalHarnessKeys?.length) {
+                continue
+            }
+
+            for (const entry of connector.entries || []) {
+                findings.push({
+                    code: 'schematic.connectivity.harness-entry-unlinked-signal',
+                    severity: 'warning',
+                    connectorKey: connector.key,
+                    entryKey: entry.key,
+                    name: entry.name,
+                    harnessType: entry.harnessType
+                })
+            }
+        }
+
+        return findings
+    }
+
+    /**
+     * Reports connectors whose type label disagrees with entry harness types.
+     * @param {object | null} harnesses Harness read model.
+     * @returns {object[]}
+     */
+    static #harnessTypeMismatchFindings(harnesses) {
+        const findings = []
+
+        for (const connector of harnesses?.connectors || []) {
+            const labelType =
+                SchematicConnectivityQaBuilder.#normalizeHarnessType(
+                    connector.typeLabel?.text
+                )
+            if (!labelType) {
+                continue
+            }
+
+            for (const entry of connector.entries || []) {
+                const entryType =
+                    SchematicConnectivityQaBuilder.#normalizeHarnessType(
+                        entry.harnessType
+                    )
+                if (!entryType || entryType === labelType) {
+                    continue
+                }
+
+                findings.push({
+                    code: 'schematic.connectivity.harness-type-mismatch',
+                    severity: 'warning',
+                    connectorKey: connector.key,
+                    entryKey: entry.key,
+                    labelHarnessType: connector.typeLabel?.text,
+                    entryHarnessType: entry.harnessType,
+                    name: entry.name
+                })
+            }
+        }
+
+        return findings
+    }
+
+    /**
+     * Collects known local harness type names.
+     * @param {object | null} harnesses Harness read model.
+     * @returns {Set<string>}
+     */
+    static #knownHarnessTypes(harnesses) {
+        const knownTypes = new Set()
+
+        for (const connector of harnesses?.connectors || []) {
+            SchematicConnectivityQaBuilder.#addHarnessType(
+                knownTypes,
+                connector.typeLabel?.text
+            )
+            for (const entry of connector.entries || []) {
+                SchematicConnectivityQaBuilder.#addHarnessType(
+                    knownTypes,
+                    entry.harnessType
+                )
+            }
+        }
+        for (const link of harnesses?.bundleLinks || []) {
+            SchematicConnectivityQaBuilder.#addHarnessType(
+                knownTypes,
+                link.harnessType
+            )
+        }
+
+        return knownTypes
+    }
+
+    /**
+     * Adds one normalized harness type to a set.
+     * @param {Set<string>} knownTypes Known type set.
+     * @param {unknown} value Raw harness type.
+     * @returns {void}
+     */
+    static #addHarnessType(knownTypes, value) {
+        const normalized =
+            SchematicConnectivityQaBuilder.#normalizeHarnessType(value)
+        if (normalized) {
+            knownTypes.add(normalized)
+        }
+    }
+
+    /**
+     * Normalizes one harness type for local comparisons.
+     * @param {unknown} value Raw harness type.
+     * @returns {string}
+     */
+    static #normalizeHarnessType(value) {
+        return String(value || '')
+            .trim()
+            .toUpperCase()
     }
 
     /**
@@ -309,6 +707,34 @@ export class SchematicConnectivityQaBuilder {
     }
 
     /**
+     * Returns true when a pin name resembles a power rail label.
+     * @param {unknown} value Pin name.
+     * @returns {boolean}
+     */
+    static #isPowerLikePinName(value) {
+        const name = String(value || '')
+            .trim()
+            .toUpperCase()
+
+        return (
+            /^(GND|AGND|DGND|PGND|VCC|VDD|VSS|VEE|VBAT|VBUS)$/u.test(name) ||
+            /^[+-]?\d+(?:\.\d+)?V(?:_[A-Z0-9]+)?$/u.test(name) ||
+            /^V(?:IN|OUT|REF|CORE|IO|A|D|P)(?:_[A-Z0-9]+)?$/u.test(name)
+        )
+    }
+
+    /**
+     * Returns true when an electrical type code represents a power pin.
+     * @param {unknown} value Electrical type code.
+     * @returns {boolean}
+     */
+    static #isPowerElectricalType(value) {
+        const electrical = Number(value)
+
+        return electrical === 7 || electrical === 8
+    }
+
+    /**
      * Counts findings with one code.
      * @param {object[]} findings QA findings.
      * @param {string} code Diagnostic code.
@@ -316,6 +742,20 @@ export class SchematicConnectivityQaBuilder {
      */
     static #countCode(findings, code) {
         return findings.filter((finding) => finding.code === code).length
+    }
+
+    /**
+     * Removes empty fields while preserving zeros and false.
+     * @param {Record<string, unknown>} row Input row.
+     * @returns {Record<string, unknown>}
+     */
+    static #stripEmpty(row) {
+        return Object.fromEntries(
+            Object.entries(row || {}).filter(([, value]) => {
+                if (Array.isArray(value)) return value.length > 0
+                return value !== undefined && value !== null && value !== ''
+            })
+        )
     }
 
     /**

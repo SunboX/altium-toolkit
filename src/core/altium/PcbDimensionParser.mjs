@@ -173,6 +173,7 @@ export class PcbDimensionParser {
     static #normalizeKind(kindCode) {
         const normalized = String(kindCode || '').toLowerCase()
         if (/ang/u.test(normalized)) return 'angular'
+        if (/diam/u.test(normalized)) return 'diameter'
         if (/radial|radius/u.test(normalized)) return 'radial'
         if (/datum/u.test(normalized)) return 'datum'
         if (/baseline/u.test(normalized)) return 'baseline'

@@ -310,6 +310,165 @@ test('PcbScene3dBuilder emits embedded external placements from normalized body 
     })
 })
 
+test('PcbScene3dBuilder emits static shape-body placements', () => {
+    const scene = PcbScene3dBuilder.build({
+        fileName: 'demo.PcbDoc',
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 1000,
+                heightMil: 500,
+                segments: []
+            },
+            pads: [],
+            tracks: [],
+            arcs: [],
+            fills: [],
+            vias: [],
+            polygons: [],
+            componentBodies: [
+                {
+                    sourceStream: 'ShapeBasedComponentBodies6/Data',
+                    layer: 'MECHANICAL1',
+                    identifier: 'BODY_A',
+                    positionMil: { x: 200, y: 250 },
+                    rotationDeg: 90,
+                    standoffHeightMil: 10,
+                    staticGeometry: {
+                        kind: 'extruded-polygon',
+                        status: 'complete',
+                        units: 'mil',
+                        heightMil: 30,
+                        standoffHeightMil: 10,
+                        verticesMil: [
+                            { x: 0, y: 0 },
+                            { x: 100, y: 0 },
+                            { x: 100, y: 50 },
+                            { x: 0, y: 50 }
+                        ]
+                    }
+                },
+                {
+                    sourceStream: 'ShapeBasedComponentBodies6/Data',
+                    layer: 'MECHANICAL1',
+                    identifier: 'BODY_B',
+                    positionMil: { x: 300, y: 200 },
+                    standoffHeightMil: 5,
+                    staticGeometry: {
+                        kind: 'cylinder',
+                        status: 'complete',
+                        units: 'mil',
+                        radiusMil: 25,
+                        heightMil: 80,
+                        standoffHeightMil: 5
+                    }
+                },
+                {
+                    sourceStream: 'ShapeBasedComponentBodies6/Data',
+                    layer: 'MECHANICAL2',
+                    identifier: 'BODY_C',
+                    positionMil: { x: 400, y: 200 },
+                    staticGeometry: {
+                        kind: 'cone',
+                        status: 'complete',
+                        units: 'mil',
+                        radiusMil: 20,
+                        heightMil: 70,
+                        standoffHeightMil: 0
+                    }
+                },
+                {
+                    sourceStream: 'ShapeBasedComponentBodies6/Data',
+                    layer: 'MECHANICAL1',
+                    identifier: 'BODY_D',
+                    positionMil: { x: 500, y: 200 },
+                    staticGeometry: {
+                        kind: 'sphere',
+                        status: 'complete',
+                        units: 'mil',
+                        radiusMil: 30,
+                        standoffHeightMil: 0
+                    }
+                }
+            ],
+            components: []
+        }
+    })
+
+    assert.deepEqual(
+        scene.staticBodyPlacements.map((placement) => ({
+            designator: placement.designator,
+            mountSide: placement.mountSide,
+            rotationDeg: placement.rotationDeg,
+            positionMil: placement.positionMil,
+            geometry: placement.geometry
+        })),
+        [
+            {
+                designator: 'BODY_A',
+                mountSide: 'top',
+                rotationDeg: 90,
+                positionMil: { x: -300, y: 0, z: 56.5 },
+                geometry: {
+                    kind: 'extruded-polygon',
+                    status: 'complete',
+                    units: 'mil',
+                    heightMil: 30,
+                    standoffHeightMil: 10,
+                    verticesMil: [
+                        { x: 0, y: 0 },
+                        { x: 100, y: 0 },
+                        { x: 100, y: 50 },
+                        { x: 0, y: 50 }
+                    ]
+                }
+            },
+            {
+                designator: 'BODY_B',
+                mountSide: 'top',
+                rotationDeg: 0,
+                positionMil: { x: -200, y: -50, z: 76.5 },
+                geometry: {
+                    kind: 'cylinder',
+                    status: 'complete',
+                    units: 'mil',
+                    radiusMil: 25,
+                    heightMil: 80,
+                    standoffHeightMil: 5
+                }
+            },
+            {
+                designator: 'BODY_C',
+                mountSide: 'bottom',
+                rotationDeg: 0,
+                positionMil: { x: -100, y: -50, z: -66.5 },
+                geometry: {
+                    kind: 'cone',
+                    status: 'complete',
+                    units: 'mil',
+                    radiusMil: 20,
+                    heightMil: 70,
+                    standoffHeightMil: 0
+                }
+            },
+            {
+                designator: 'BODY_D',
+                mountSide: 'top',
+                rotationDeg: 0,
+                positionMil: { x: 0, y: -50, z: 61.5 },
+                geometry: {
+                    kind: 'sphere',
+                    status: 'complete',
+                    units: 'mil',
+                    radiusMil: 30,
+                    standoffHeightMil: 0
+                }
+            }
+        ]
+    )
+})
+
 /**
  * Verifies explicit external placements use authored 3D model yaw after
  * matching to a component designator.

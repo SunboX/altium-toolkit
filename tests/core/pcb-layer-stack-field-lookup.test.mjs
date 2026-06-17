@@ -4,6 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { PcbLayerStackReadModelBuilder } from '../../src/core/altium/PcbLayerStackReadModelBuilder.mjs'
 import { PcbLayerStackSourceMetadataParser } from '../../src/core/altium/PcbLayerStackSourceMetadataParser.mjs'
 
 /**
@@ -116,5 +117,74 @@ test('PcbLayerStackSourceMetadataParser exposes manufacturing layer properties',
         materialFrequency: '1GHz',
         frequency: '2GHz',
         constructions: '1080'
+    })
+})
+
+test('PcbLayerStackReadModelBuilder orders fallback layers from Board6 links', () => {
+    const readModel = PcbLayerStackReadModelBuilder.build({
+        fileName: 'native-order.PcbDoc',
+        boardRecords: [
+            {
+                sourceStream: 'Board6/Data',
+                fields: {
+                    LAYER1NAME: 'Top Layer',
+                    LAYER1PREV: '0',
+                    LAYER1NEXT: '39',
+                    LAYER39NAME: 'Plane 1',
+                    LAYER39PREV: '1',
+                    LAYER39NEXT: '2',
+                    LAYER2NAME: 'Mid Layer 1',
+                    LAYER2PREV: '39',
+                    LAYER2NEXT: '32',
+                    LAYER32NAME: 'Bottom Layer',
+                    LAYER32PREV: '2',
+                    LAYER32NEXT: '0'
+                }
+            }
+        ],
+        layers: [],
+        primitiveLayers: [
+            { layerId: 2, name: 'Mid Layer 1', kind: 'signal' },
+            { layerId: 32, name: 'Bottom Layer', kind: 'signal' },
+            { layerId: 1, name: 'Top Layer', kind: 'signal' },
+            { layerId: 39, name: 'Plane 1', kind: 'power' }
+        ],
+        layerSubstacks: [],
+        boardRegions: []
+    })
+
+    assert.deepEqual(
+        readModel.layers.map((layer) => ({
+            index: layer.index,
+            layerId: layer.layerId,
+            name: layer.name,
+            nativeOrderIndex: layer.nativeOrderIndex
+        })),
+        [
+            {
+                index: 1,
+                layerId: 1,
+                name: 'Top Layer',
+                nativeOrderIndex: 1
+            },
+            { index: 2, layerId: 39, name: 'Plane 1', nativeOrderIndex: 2 },
+            {
+                index: 3,
+                layerId: 2,
+                name: 'Mid Layer 1',
+                nativeOrderIndex: 3
+            },
+            {
+                index: 4,
+                layerId: 32,
+                name: 'Bottom Layer',
+                nativeOrderIndex: 4
+            }
+        ]
+    )
+    assert.deepEqual(readModel.nativeLayerOrder, {
+        source: 'Board6/Data',
+        layerIds: [1, 39, 2, 32],
+        complete: true
     })
 })

@@ -142,6 +142,8 @@
     --pcb-via-hole-fill: #0f746c;
     --pcb-footprint-fill: rgba(247, 230, 117, 0.14);
     --pcb-footprint-track-color: rgba(237, 172, 36, 1);
+    --pcb-dimension-color: rgba(39, 88, 111, 0.78);
+    --pcb-dimension-text: #22343b;
     --pcb-text-knockout-fill: rgba(248, 246, 239, 0.96);
     --pcb-component-top-fill: rgba(244, 219, 198, 0.92);
     --pcb-component-bottom-fill: rgba(15, 116, 108, 0.84);
@@ -267,6 +269,40 @@
 .pcb-footprint-track,
 .pcb-footprint-arc {
     stroke: var(--pcb-footprint-track-color);
+}
+
+.pcb-dimensions {
+    pointer-events: none;
+}
+
+.pcb-dimension__measure,
+.pcb-dimension__extension,
+.pcb-dimension__leader,
+.pcb-dimension__arc {
+    fill: none;
+    stroke: var(--pcb-dimension-color);
+    stroke-width: 5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.pcb-dimension__extension,
+.pcb-dimension__leader {
+    stroke-width: 3;
+    stroke-dasharray: 16 10;
+}
+
+.pcb-dimension__center {
+    fill: var(--pcb-dimension-color);
+}
+
+.pcb-dimension__label {
+    fill: var(--pcb-dimension-text);
+    font-family: Arial, sans-serif;
+    font-size: 30px;
+    font-weight: 700;
+    text-anchor: middle;
+    dominant-baseline: central;
 }
 
 .pcb-component__body {

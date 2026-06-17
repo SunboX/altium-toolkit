@@ -170,10 +170,23 @@ possible unrouted pad-only nets are split into deterministic lists.
 `PcbClassReportBuilder.build()` emits
 `altium-toolkit.pcb.class-report.a1` reports that summarize PCB classes by
 kind, enabled state, member resolution, empty classes, and unresolved members.
+`PcbDimensionReportBuilder.build()` emits
+`altium-toolkit.pcb.dimensions.a1` reports that classify recovered PCB
+dimensions as renderable or unresolved from reference geometry and summarize
+dimension kinds. `PcbRuleImpactReportBuilder.build()` emits
+`altium-toolkit.pcb.rule-impact.a1` reports that group design rules by enabled
+state, affected primitive families, scope predicates, manufacturing category,
+and length-valued constraints.
+`PcbFabricationReadinessReportBuilder.build()` emits
+`altium-toolkit.pcb.fabrication-readiness.a1` reports that summarize pad/via
+fabrication review items such as non-simple pad stack modes, local pad
+offsets, slotted and non-plated holes, mask overrides, thermal relief, via
+spans, via protection, and microvia-like geometry.
 `PcbInspectionReportBuilder.build()` emits `altium-toolkit.pcb.inspection.a1`
 reports that compose board statistics, primitive counts, design-rule counts,
-diagnostics, net membership, class membership, and route-analysis summaries
-into one inspection artifact.
+diagnostics, net membership, class membership, dimension QA, rule-impact,
+review metadata, fabrication-readiness, and route-analysis summaries into one
+inspection artifact.
 
 `PcbLayerGroups` provides stable layer-group names, deterministic display
 colors, and draw priorities for legacy PCB layer ids. `AltiumUnits` provides
@@ -254,7 +267,12 @@ multi-sheet design netlist.
 `schematic.connectivityQa` reports read-only connectivity findings, including
 implicit generated net names, dangling labels, orphan ports, unconnected pins,
 ambiguous junctions, and un-junctioned tee contacts where one wire endpoint
-touches another wire interior without an authored junction.
+touches another wire interior without an authored junction. Harness-specific
+findings flag sheet entries whose local harness type cannot be resolved,
+harness entries without linked signal-harness geometry, and connector type-label
+mismatches. Pin interpretation findings flag hidden name/number labels,
+endpoint symbol markers, and power-like pin names whose recovered electrical
+type is not a power pin.
 
 Embedded schematic images preserve the raw record geometry and expose
 browser-facing payload metadata. When an embedded stream contains a native
@@ -262,6 +280,10 @@ PNG/JPEG/GIF/SVG/WebP payload alongside a preview, `mimeType` and `dataBase64`
 refer to the native payload while `sourceMimeType` records the preview format.
 Alpha-bearing 32-bit BMP previews are converted to PNG and marked with
 `hasAlpha` so SVG renderers can display transparency deterministically.
+`schematic.imageDiagnostics` reports embedded payload counts, external image
+references, missing embedded payloads, unsupported MIME states, converted
+preview/native payloads, and alpha-bearing images without attempting any file
+system lookups.
 When a schematic OLE container exposes preview metadata, `schematic.thumbnails`
 contains PNG thumbnail sidecars with `kind`, dimensions, `sourceStream`,
 `pixelFormat`, `mimeType`, and `dataBase64` fields.
@@ -378,9 +400,11 @@ consumers.
 
 PCB dimensions from `Dimensions6/Data` are exposed through `pcb.dimensions`.
 Dimension entries preserve native kind codes and raw fields while adding a
-normalized `kind` (`linear`, `angular`, `radial`, `datum`, `baseline`, or
-`ordinate`), reference points, optional text location, prefix/suffix, precision,
-measured value, angle value, and unit.
+normalized `kind` (`linear`, `angular`, `radial`, `diameter`, `datum`,
+`baseline`, or `ordinate`), reference points, optional text location,
+prefix/suffix, precision, measured value, angle value, and unit. PCB SVG output
+renders dimensions with sufficient reference geometry as static mechanical
+dimension primitives and includes them in the semantic sidecar.
 
 `pcb.extendedPrimitiveInformation` exposes
 `ExtendedPrimitiveInformation/Data` entries keyed by primitive index and, when
@@ -454,7 +478,9 @@ preserves raw mixed-format primitive records with the same registry metadata
 shape used by PcbDoc raw records. Library-level `embeddedFonts` uses the same
 payload and metric shape as PCB documents. Library-level `embeddedModels` and
 `componentBodies` preserve embedded 3D payloads and body references when
-present.
+present. Shape-based component bodies may include `staticGeometry` for
+extruded-polygon, cone, cylinder, and sphere bodies, with dimensions and
+vertices expressed in mils when native evidence is available.
 `pcbLibrary.indexes.footprintsByName` provides read-only footprint lookup and
 search metadata, including source storage, primitive counts, pad/text counts,
 and keyword tokens from footprint and component parameters. Footprint entries
@@ -540,7 +566,10 @@ External model placements in the 3D scene description include a `projection`
 diagnostic object. The `source` explains whether bounds came from an authored
 projection override, resolved model bounds, nearby pad-span fallback,
 procedural component fallback, or model-anchor fallback. The diagnostic does
-not alter placement coordinates.
+not alter placement coordinates. Shape-based component bodies with complete
+static geometry are exposed separately as `staticBodyPlacements`, using the
+same board-centered coordinate convention as component and external-model
+placements.
 
 ## Integrated Library Fields
 

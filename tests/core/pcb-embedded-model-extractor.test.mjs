@@ -63,9 +63,67 @@ class PcbEmbeddedModelTestFactory {
                     'MODEL.3D.ROTZ=270.000',
                     'MODEL.3D.DZ=11.811mil',
                     'MODEL.MODELTYPE=1',
+                    'BODYCOLOR3D=65280',
+                    'BODYOPACITY3D=0.500',
                     'MODEL.MODELSOURCE=Undefined'
                 ].join('|')
             )
+        )
+
+        return streams
+    }
+
+    /**
+     * Creates one synthetic stream map with shape-based body records.
+     * @returns {Map<string, Uint8Array>}
+     */
+    static createShapeBasedStreamMap() {
+        const streams = new Map()
+
+        streams.set(
+            'ShapeBasedComponentBodies6/Data',
+            PcbEmbeddedModelTestFactory.concatBytes([
+                PcbEmbeddedModelTestFactory.createShapeBasedBodyRecord({
+                    fields: [
+                        'V7_LAYER=MECHANICAL1',
+                        'IDENTIFIER=66,79,68,89,95,65',
+                        'MODELID={STATIC-A}',
+                        'MODEL.NAME=body-a.step',
+                        'MODEL.2D.X=200mil',
+                        'MODEL.2D.Y=250mil',
+                        'MODEL.2D.ROTATION=90.000',
+                        'MODEL.MODELTYPE=0',
+                        'MODEL.EXTRUDED.MINZ=5mil',
+                        'MODEL.EXTRUDED.MAXZ=35mil',
+                        'STANDOFFHEIGHT=10mil',
+                        'OVERALLHEIGHT=40mil',
+                        'BODYCOLOR3D=255',
+                        'BODYOPACITY3D=0.750'
+                    ],
+                    verticesMil: [
+                        { x: 0, y: 0 },
+                        { x: 100, y: 0 },
+                        { x: 100, y: 50 },
+                        { x: 0, y: 50 }
+                    ]
+                }),
+                PcbEmbeddedModelTestFactory.createShapeBasedBodyRecord({
+                    fields: [
+                        'V7_LAYER=MECHANICAL1',
+                        'IDENTIFIER=66,79,68,89,95,66',
+                        'MODELID={STATIC-B}',
+                        'MODEL.NAME=body-b.step',
+                        'MODEL.2D.X=300mil',
+                        'MODEL.2D.Y=350mil',
+                        'MODEL.MODELTYPE=2',
+                        'MODEL.CYLINDER.RADIUS=25mil',
+                        'MODEL.CYLINDER.HEIGHT=80mil',
+                        'STANDOFFHEIGHT=5mil',
+                        'BODYCOLOR3D=65280'
+                    ],
+                    verticesMil: []
+                })
+            ])
         )
 
         return streams
@@ -93,6 +151,65 @@ class PcbEmbeddedModelTestFactory {
             offset += 4
             output.set(bytes, offset)
             offset += bytes.byteLength
+        }
+
+        return output
+    }
+
+    /**
+     * Encodes one shape-based component-body record.
+     * @param {{ fields: string[], verticesMil: { x: number, y: number }[] }} input
+     * @returns {Uint8Array}
+     */
+    static createShapeBasedBodyRecord(input) {
+        const textBytes = new TextEncoder().encode(
+            input.fields.join('|') + '\u0000'
+        )
+        const vertexCount = input.verticesMil.length
+        const dataByteLength = Math.max(vertexCount, 1) * 37
+        const record = new Uint8Array(
+            22 + textBytes.byteLength + 4 + dataByteLength
+        )
+        const view = new DataView(record.buffer)
+
+        view.setInt32(18, textBytes.byteLength, true)
+        record.set(textBytes, 22)
+        view.setInt32(22 + textBytes.byteLength, vertexCount, true)
+
+        const dataOffset = 22 + textBytes.byteLength + 4
+        for (let index = 0; index < vertexCount; index += 1) {
+            const vertexOffset = dataOffset + index * 37
+            view.setInt32(
+                vertexOffset + 1,
+                Math.trunc(input.verticesMil[index].x * 10000),
+                true
+            )
+            view.setInt32(
+                vertexOffset + 5,
+                Math.trunc(input.verticesMil[index].y * 10000),
+                true
+            )
+        }
+
+        return record
+    }
+
+    /**
+     * Concatenates byte arrays.
+     * @param {Uint8Array[]} chunks
+     * @returns {Uint8Array}
+     */
+    static concatBytes(chunks) {
+        const totalLength = chunks.reduce(
+            (sum, chunk) => sum + chunk.byteLength,
+            0
+        )
+        const output = new Uint8Array(totalLength)
+        let offset = 0
+
+        for (const chunk of chunks) {
+            output.set(chunk, offset)
+            offset += chunk.byteLength
         }
 
         return output
@@ -144,9 +261,64 @@ test('PcbEmbeddedModelExtractor extracts embedded STEP payloads and body placeme
             modelRotationDeg: { x: 0, y: 0, z: 270 },
             dzMil: 11.811,
             overallHeightMil: 39.3701,
-            standoffHeightMil: -0.0684
+            standoffHeightMil: -0.0684,
+            modelType: 1,
+            modelTypeName: 'cone',
+            bodyColor: {
+                raw: 65280,
+                hex: '#00ff00',
+                rgb: { red: 0, green: 255, blue: 0 }
+            },
+            bodyOpacity: 0.5
         }
     ])
+})
+
+test('PcbEmbeddedModelExtractor extracts shape-based static body geometry', () => {
+    const extracted = PcbEmbeddedModelExtractor.extractFromStreams(
+        PcbEmbeddedModelTestFactory.createShapeBasedStreamMap()
+    )
+
+    assert.deepEqual(
+        extracted.componentBodies.map((body) => ({
+            identifier: body.identifier,
+            modelTypeName: body.modelTypeName,
+            staticGeometry: body.staticGeometry
+        })),
+        [
+            {
+                identifier: 'BODY_A',
+                modelTypeName: 'extruded-polygon',
+                staticGeometry: {
+                    kind: 'extruded-polygon',
+                    status: 'complete',
+                    units: 'mil',
+                    minZMil: 5,
+                    maxZMil: 35,
+                    heightMil: 30,
+                    standoffHeightMil: 10,
+                    verticesMil: [
+                        { x: 0, y: 0 },
+                        { x: 100, y: 0 },
+                        { x: 100, y: 50 },
+                        { x: 0, y: 50 }
+                    ]
+                }
+            },
+            {
+                identifier: 'BODY_B',
+                modelTypeName: 'cylinder',
+                staticGeometry: {
+                    kind: 'cylinder',
+                    status: 'complete',
+                    units: 'mil',
+                    radiusMil: 25,
+                    heightMil: 80,
+                    standoffHeightMil: 5
+                }
+            }
+        ]
+    )
 })
 
 /**

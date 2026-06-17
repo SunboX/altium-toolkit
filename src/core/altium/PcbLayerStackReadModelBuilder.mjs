@@ -25,10 +25,17 @@ export class PcbLayerStackReadModelBuilder {
         const fields = PcbLayerStackReadModelBuilder.#mergeFields(
             input.boardRecords || []
         )
+        const nativeLayerOrder = (input.layers || []).length
+            ? null
+            : PcbLayerStackReadModelBuilder.#nativeLayerOrder(
+                  fields,
+                  input.primitiveLayers || []
+              )
         const layers = PcbLayerStackReadModelBuilder.#layers(
             input.layers || [],
             input.primitiveLayers || [],
-            fields
+            fields,
+            nativeLayerOrder
         )
         const layerById = new Map(
             layers
@@ -85,6 +92,9 @@ export class PcbLayerStackReadModelBuilder {
             cavityRegionCount: cavityReport.cavityRegionCount,
             stiffenerLayerCount: cavityReport.stiffenerLayerCount,
             adhesiveLayerCount: cavityReport.adhesiveLayerCount,
+            ...(nativeLayerOrder
+                ? { nativeLayerOrderCount: nativeLayerOrder.layerIds.length }
+                : {}),
             diagnosticCount: diagnostics.length
         }
 
@@ -101,6 +111,7 @@ export class PcbLayerStackReadModelBuilder {
                 topLevelBendLines,
                 cavityReport
             ),
+            ...(nativeLayerOrder ? { nativeLayerOrder } : {}),
             layers,
             substacks,
             branches,
@@ -160,9 +171,10 @@ export class PcbLayerStackReadModelBuilder {
      * @param {object[]} layers Parsed physical layers.
      * @param {object[]} primitiveLayers Primitive layer map.
      * @param {Record<string, string | string[]>} fields Source fields.
+     * @param {{ layerIds: number[] } | null} nativeLayerOrder Native order.
      * @returns {object[]}
      */
-    static #layers(layers, primitiveLayers, fields) {
+    static #layers(layers, primitiveLayers, fields, nativeLayerOrder) {
         if (layers.length) {
             return layers.map((layer) =>
                 PcbLayerStackReadModelBuilder.#stripUndefined({
@@ -187,7 +199,19 @@ export class PcbLayerStackReadModelBuilder {
             )
         }
 
-        return (primitiveLayers || []).map((layer, index) =>
+        const nativeOrderByLayerId = new Map(
+            (nativeLayerOrder?.layerIds || []).map((layerId, index) => [
+                layerId,
+                index + 1
+            ])
+        )
+        const orderedPrimitiveLayers =
+            PcbLayerStackReadModelBuilder.#orderPrimitiveLayers(
+                primitiveLayers || [],
+                nativeLayerOrder
+            )
+
+        return orderedPrimitiveLayers.map((layer, index) =>
             PcbLayerStackReadModelBuilder.#stripUndefined({
                 index: index + 1,
                 layerId: layer.layerId,
@@ -196,12 +220,123 @@ export class PcbLayerStackReadModelBuilder {
                     : undefined,
                 name: layer.name,
                 kind: layer.kind || layer.role,
+                nativeOrderIndex: nativeOrderByLayerId.get(layer.layerId),
                 ...PcbLayerStackSourceMetadataParser.layerSourceFields(
                     fields,
                     index + 1
                 )
             })
         )
+    }
+
+    /**
+     * Parses the native layer linked-list order stored in Board6 records.
+     * @param {Record<string, string | string[]>} fields Board fields.
+     * @param {object[]} primitiveLayers Primitive layer fallbacks.
+     * @returns {{ source: string, layerIds: number[], complete: boolean } | null}
+     */
+    static #nativeLayerOrder(fields, primitiveLayers) {
+        const layerIds = new Set(
+            (primitiveLayers || [])
+                .map((layer) => Number(layer.layerId))
+                .filter(Number.isFinite)
+        )
+        if (!layerIds.size) return null
+
+        const links = PcbLayerStackReadModelBuilder.#nativeLayerLinks(fields)
+        const firstLayerId = [...links.entries()].find(
+            ([, link]) => link.prev === 0 && link.next !== 0
+        )?.[0]
+        if (!firstLayerId) return null
+
+        const orderedLayerIds = []
+        const visited = new Set()
+        let currentLayerId = firstLayerId
+
+        while (
+            Number.isFinite(currentLayerId) &&
+            currentLayerId !== 0 &&
+            !visited.has(currentLayerId)
+        ) {
+            visited.add(currentLayerId)
+
+            if (layerIds.has(currentLayerId)) {
+                orderedLayerIds.push(currentLayerId)
+            }
+
+            const nextLayerId = links.get(currentLayerId)?.next || 0
+            currentLayerId = Number(nextLayerId)
+        }
+
+        if (!orderedLayerIds.length) return null
+
+        return {
+            source: 'Board6/Data',
+            layerIds: orderedLayerIds,
+            complete: orderedLayerIds.length === layerIds.size
+        }
+    }
+
+    /**
+     * Builds native layer link rows from Board6 LAYERnNEXT/PREV fields.
+     * @param {Record<string, string | string[]>} fields Board fields.
+     * @returns {Map<number, { next: number, prev: number }>}
+     */
+    static #nativeLayerLinks(fields) {
+        const layerIndexes = PcbLayerStackReadModelBuilder.#indexedRows(
+            fields,
+            [/^LAYER(\d+)NEXT$/iu, /^LAYER(\d+)PREV$/iu]
+        )
+        const links = new Map()
+
+        for (const layerIndex of layerIndexes) {
+            const next = Number(
+                PcbLayerStackReadModelBuilder.#field(
+                    fields,
+                    'LAYER' + layerIndex + 'NEXT'
+                ) || 0
+            )
+            const prev = Number(
+                PcbLayerStackReadModelBuilder.#field(
+                    fields,
+                    'LAYER' + layerIndex + 'PREV'
+                ) || 0
+            )
+
+            if (Number.isFinite(next) || Number.isFinite(prev)) {
+                links.set(layerIndex, {
+                    next: Number.isFinite(next) ? next : 0,
+                    prev: Number.isFinite(prev) ? prev : 0
+                })
+            }
+        }
+
+        return links
+    }
+
+    /**
+     * Orders primitive fallback layers with native linked-list evidence first.
+     * @param {object[]} primitiveLayers Primitive layer rows.
+     * @param {{ layerIds: number[] } | null} nativeLayerOrder Native order.
+     * @returns {object[]}
+     */
+    static #orderPrimitiveLayers(primitiveLayers, nativeLayerOrder) {
+        if (!nativeLayerOrder?.layerIds?.length) return primitiveLayers
+
+        const layerById = new Map(
+            primitiveLayers
+                .filter((layer) => Number.isFinite(Number(layer.layerId)))
+                .map((layer) => [Number(layer.layerId), layer])
+        )
+        const orderedLayers = nativeLayerOrder.layerIds
+            .map((layerId) => layerById.get(layerId))
+            .filter(Boolean)
+        const orderedIds = new Set(nativeLayerOrder.layerIds)
+        const remainingLayers = primitiveLayers.filter(
+            (layer) => !orderedIds.has(Number(layer.layerId))
+        )
+
+        return [...orderedLayers, ...remainingLayers]
     }
 
     /**

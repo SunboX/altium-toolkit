@@ -7,3 +7,4 @@ docs/.superpowers/
 docs/superpowers/
 .DS_Store
 npm-debug.log*
+.npmrc

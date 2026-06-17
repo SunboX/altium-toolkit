@@ -91,3 +91,88 @@ test('PcbInspectionReportBuilder composes board, net, class, rule, and diagnosti
     assert.equal(report.netMembership.summary.possibleUnroutedNetCount, 1)
     assert.equal(report.classes.summary.netClassCount, 1)
 })
+
+test('PcbInspectionReportBuilder includes review metadata and fabrication readiness summaries', () => {
+    const report = PcbInspectionReportBuilder.build({
+        fileName: 'aggregate-review.PcbDoc',
+        pcb: {
+            boardOutline: {
+                widthMil: 900,
+                heightMil: 500,
+                segments: []
+            },
+            layers: [{ id: 1, name: 'Top Layer', role: 'signal' }],
+            primitiveLayers: [],
+            nets: [{ name: 'PWR_A' }],
+            pads: [
+                {
+                    designator: '1',
+                    netName: 'PWR_A',
+                    padMode: 2,
+                    padModeName: 'full-stack',
+                    localStack: {
+                        layers: [
+                            {
+                                layerKey: 'L1',
+                                offsetX: 2,
+                                offsetY: 0
+                            }
+                        ]
+                    }
+                }
+            ],
+            tracks: [
+                {
+                    netName: 'PWR_A',
+                    layerId: 1,
+                    x1: 0,
+                    y1: 0,
+                    x2: 100,
+                    y2: 0,
+                    polygonIndex: 4
+                }
+            ],
+            arcs: [],
+            vias: [
+                {
+                    netName: 'PWR_A',
+                    diameter: 18,
+                    holeDiameter: 6,
+                    drillLayerPairType: 3
+                }
+            ],
+            fills: [],
+            regions: [],
+            polygons: [
+                {
+                    netName: 'PWR_A',
+                    layerId: 1,
+                    polygonIndex: 4
+                }
+            ],
+            components: [],
+            classes: [],
+            differentialPairs: [],
+            rules: []
+        }
+    })
+
+    assert.equal(
+        report.reviewMetadata.schema,
+        'altium-toolkit.pcb.review-metadata.a1'
+    )
+    assert.deepEqual(report.reviewMetadata.summary, {
+        routeGroupCount: 0,
+        boardAssemblyViewCount: 0,
+        polygonRealizationCount: 1,
+        routeHighlightProfileCount: 1,
+        drillOverlayCount: 1
+    })
+    assert.equal(
+        report.fabricationReadiness.schema,
+        'altium-toolkit.pcb.fabrication-readiness.a1'
+    )
+    assert.equal(report.fabricationReadiness.summary.reviewItemCount, 4)
+    assert.equal(report.summary.polygonRealizationCount, 1)
+    assert.equal(report.summary.fabricationReviewItemCount, 4)
+})

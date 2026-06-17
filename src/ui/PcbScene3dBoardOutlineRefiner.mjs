@@ -70,6 +70,12 @@ export class PcbScene3dBoardOutlineRefiner {
                     sceneDescription?.externalPlacements,
                     board,
                     refinedBoard
+                ),
+            staticBodyPlacements:
+                PcbScene3dBoardOutlineRefiner.#realignLocalPlacements(
+                    sceneDescription?.staticBodyPlacements,
+                    board,
+                    refinedBoard
                 )
         }
     }

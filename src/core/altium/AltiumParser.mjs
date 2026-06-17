@@ -32,6 +32,7 @@ import { SchematicSheetParser } from './SchematicSheetParser.mjs'
 import { SchematicJunctionParser } from './SchematicJunctionParser.mjs'
 import { SchematicBusEntryParser } from './SchematicBusEntryParser.mjs'
 import { SchematicImageParser } from './SchematicImageParser.mjs'
+import { SchematicImageDiagnosticsBuilder } from './SchematicImageDiagnosticsBuilder.mjs'
 import { SchematicNetlistBuilder } from './SchematicNetlistBuilder.mjs'
 import { SchematicRecordTypeRegistry } from './SchematicRecordTypeRegistry.mjs'
 import { SchematicComponentTextResolver } from './SchematicComponentTextResolver.mjs'
@@ -617,6 +618,9 @@ export class AltiumParser {
                 recordIndexAwareRecords,
                 arrayBuffer
             )
+        const imageDiagnosticsReport = SchematicImageDiagnosticsBuilder.build({
+            images
+        })
         const { thumbnails, diagnostics: thumbnailDiagnostics } =
             SchematicThumbnailParser.parse(arrayBuffer)
         const template = SchematicTemplateParser.parse(
@@ -832,7 +836,9 @@ export class AltiumParser {
             texts: anchoredTexts,
             pins,
             ports,
-            junctions
+            junctions,
+            sheetEntries,
+            harnesses
         })
         const embeddedFiles = schematicExtraction?.embeddedFiles || null
         const nativeStreams = schematicExtraction?.nativeStreams || null
@@ -905,6 +911,7 @@ export class AltiumParser {
                 junctions,
                 busEntries,
                 images,
+                imageDiagnostics: imageDiagnosticsReport,
                 ...(thumbnails.length ? { thumbnails } : {}),
                 nets,
                 ownership,

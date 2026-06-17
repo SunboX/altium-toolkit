@@ -6,7 +6,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { PcbReviewMetadataBuilder } from '../../src/core/altium/PcbReviewMetadataBuilder.mjs'
 import { PcbReviewRouteHighlightProfileBuilder } from '../../src/core/altium/PcbReviewRouteHighlightProfileBuilder.mjs'
-import { PcbModelParser } from '../../src/parser.mjs'
+import {
+    PcbModelParser,
+    PcbReviewPolygonRealizationBuilder
+} from '../../src/parser.mjs'
 
 /**
  * Creates a minimal printable PCB record.
@@ -371,6 +374,35 @@ test('PcbReviewMetadataBuilder indexes route groups without repeated net scans',
 
     assert.equal(reviewMetadata.summary.routeGroupCount, 2)
     assert.equal(filterCalls, 0)
+})
+
+test('PcbReviewPolygonRealizationBuilder is exported for direct review sidecars', () => {
+    const rows = PcbReviewPolygonRealizationBuilder.build({
+        layers: [{ id: 1, name: 'Top Layer' }],
+        polygons: [
+            {
+                layer: 'Top Layer',
+                polygonIndex: 2
+            }
+        ],
+        tracks: [
+            {
+                layerId: 1,
+                polygonIndex: 2
+            }
+        ]
+    })
+
+    assert.deepEqual(rows, [
+        {
+            key: 'polygon-realization-2-main-none',
+            polygonIndex: 2,
+            classification: 'copper-pour',
+            layerKeys: ['L1'],
+            primitiveKeys: ['polygon-0', 'track-0'],
+            realizedPrimitiveKinds: ['polygon', 'track']
+        }
+    ])
 })
 
 test('PcbReviewRouteHighlightProfileBuilder sorts route keys without locale collation', () => {

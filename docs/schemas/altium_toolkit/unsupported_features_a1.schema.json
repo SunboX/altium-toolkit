@@ -10,7 +10,8 @@
         "recordTypes",
         "rawRecords",
         "opaqueRecords",
-        "diagnostics"
+        "diagnostics",
+        "edgeCases"
     ],
     "properties": {
         "schema": {
@@ -25,6 +26,7 @@
                 "rawRecordCount",
                 "opaqueRecordCount",
                 "diagnosticCount",
+                "edgeCaseCount",
                 "itemCount",
                 "status"
             ],
@@ -42,6 +44,9 @@
                     "type": "number"
                 },
                 "diagnosticCount": {
+                    "type": "number"
+                },
+                "edgeCaseCount": {
                     "type": "number"
                 },
                 "itemCount": {
@@ -74,6 +79,12 @@
             "type": "array",
             "items": {
                 "$ref": "#/$defs/diagnostic"
+            }
+        },
+        "edgeCases": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/edgeCase"
             }
         }
     },
@@ -180,6 +191,52 @@
                     "type": "string"
                 },
                 "code": {
+                    "type": "string"
+                },
+                "severity": {
+                    "enum": ["info", "warning", "error"]
+                },
+                "message": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "sourceStream": {
+                    "type": "string"
+                },
+                "sourceStorage": {
+                    "type": "string"
+                },
+                "recordIndex": {
+                    "type": "number"
+                },
+                "recordType": {
+                    "type": "number"
+                },
+                "errorKind": {
+                    "type": "string"
+                }
+            }
+        },
+        "edgeCase": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["code"],
+            "properties": {
+                "fileName": {
+                    "type": "string"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "feature": {
+                    "type": "string"
+                },
+                "supportState": {
                     "type": "string"
                 },
                 "severity": {

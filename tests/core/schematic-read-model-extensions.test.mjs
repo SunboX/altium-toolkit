@@ -259,6 +259,39 @@ test('parseAltiumArrayBuffer exposes schematic QA report', () => {
     )
 })
 
+test('parseAltiumArrayBuffer exposes schematic image diagnostics', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CustomX=300|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|RECORD=30|IndexInSheet=10|Location.X=20|Location.Y=30|Corner.X=120|Corner.Y=80' +
+            '|EmbedImage=F|KeepAspect=T|FileName=linked-diagram.png' +
+            '|RECORD=30|IndexInSheet=11|Location.X=130|Location.Y=30|Corner.X=180|Corner.Y=80' +
+            '|EmbedImage=T|KeepAspect=T|FileName=missing-icon.bmp'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'image-diagnostics.SchDoc',
+        arrayBuffer
+    )
+
+    assert.equal(
+        documentModel.schematic.imageDiagnostics.schema,
+        'altium-toolkit.schematic.image-diagnostics.a1'
+    )
+    assert.deepEqual(documentModel.schematic.imageDiagnostics.summary, {
+        imageCount: 2,
+        embeddedImageCount: 1,
+        embeddedPayloadCount: 0,
+        externalReferenceCount: 1,
+        missingPayloadCount: 1,
+        unsupportedMimeTypeCount: 0,
+        convertedPayloadCount: 0,
+        alphaPayloadCount: 0,
+        findingCount: 2
+    })
+})
+
 /**
  * Verifies auxiliary code-symbol style records are preserved as a read-only
  * sidecar instead of falling through as unsupported native records.
@@ -714,6 +747,56 @@ test('parseAltiumArrayBuffer exposes schematic connectivity QA graph', () => {
             'schematic.connectivity.orphan-port',
             'schematic.connectivity.unconnected-pin',
             'schematic.connectivity.ambiguous-junction'
+        ]
+    )
+})
+
+/**
+ * Verifies harness metadata contributes explicit review findings when local
+ * harness connectivity cannot be resolved from the recovered sheet model.
+ */
+test('parseAltiumArrayBuffer reports harness connectivity QA findings', () => {
+    const arrayBuffer = new TextEncoder().encode(
+        '|HEADER=Schematic Document' +
+            '|RECORD=31|CustomX=320|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|RECORD=15|IndexInSheet=40|Location.X=50|Location.Y=150|XSize=80|YSize=50' +
+            '|Name=Child|FileName=child.SchDoc|Color=128|AreaColor=16777215' +
+            '|RECORD=16|OwnerIndex=40|Name=DATA|Side=0|DistanceFromTop=2' +
+            '|HarnessType=MISSING_GROUP|TextColor=255' +
+            '|RECORD=215|IndexInSheet=120|Location.X=180|Location.Y=130|XSize=70|YSize=40' +
+            '|Side=1|PrimaryConnectionPosition=20|LineWidth=1|Color=128|AreaColor=16777215' +
+            '|RECORD=216|OwnerIndex=120|Name=CTRL_A|Side=0|DistanceFromTop=1' +
+            '|HarnessType=CTRL_GROUP|TextStyle=Short|TextColor=255' +
+            '|RECORD=217|OwnerIndex=120|Location.X=180|Location.Y=140|Text=CTRL_GROUP|Color=8388608'
+    ).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'harness-connectivity-qa.SchDoc',
+        arrayBuffer
+    )
+
+    assert.equal(
+        documentModel.schematic.connectivityQa.summary.harnessFindingCount,
+        2
+    )
+    assert.equal(
+        documentModel.schematic.connectivityQa.summary
+            .unresolvedHarnessTypeCount,
+        1
+    )
+    assert.equal(
+        documentModel.schematic.connectivityQa.summary
+            .unlinkedHarnessEntryCount,
+        1
+    )
+    assert.deepEqual(
+        documentModel.schematic.connectivityQa.findings.map(
+            (finding) => finding.code
+        ),
+        [
+            'schematic.connectivity.harness-sheet-entry-unresolved-type',
+            'schematic.connectivity.harness-entry-unlinked-signal'
         ]
     )
 })

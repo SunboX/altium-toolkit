@@ -3,8 +3,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbClassReportBuilder } from './PcbClassReportBuilder.mjs'
+import { PcbDimensionReportBuilder } from './PcbDimensionReportBuilder.mjs'
+import { PcbFabricationReadinessReportBuilder } from './PcbFabricationReadinessReportBuilder.mjs'
 import { PcbNetMembershipReportBuilder } from './PcbNetMembershipReportBuilder.mjs'
+import { PcbReviewMetadataBuilder } from './PcbReviewMetadataBuilder.mjs'
 import { PcbRouteAnalysisBuilder } from './PcbRouteAnalysisBuilder.mjs'
+import { PcbRuleImpactReportBuilder } from './PcbRuleImpactReportBuilder.mjs'
 import { PcbStatisticsBuilder } from './PcbStatisticsBuilder.mjs'
 
 /**
@@ -37,6 +41,25 @@ export class PcbInspectionReportBuilder {
             input.classReport ||
             pcb.classReport ||
             PcbClassReportBuilder.build(pcb)
+        const dimensions =
+            input.dimensionReport ||
+            pcb.dimensionReport ||
+            PcbDimensionReportBuilder.build(pcb)
+        const ruleImpact =
+            input.ruleImpact ||
+            pcb.ruleImpact ||
+            PcbRuleImpactReportBuilder.build(pcb)
+        const reviewMetadata =
+            input.reviewMetadata ||
+            pcb.reviewMetadata ||
+            PcbReviewMetadataBuilder.build({
+                ...pcb,
+                routeAnalysis
+            })
+        const fabricationReadiness =
+            input.fabricationReadiness ||
+            pcb.fabricationReadiness ||
+            PcbFabricationReadinessReportBuilder.build(pcb)
         const rules = PcbInspectionReportBuilder.#rules(pcb?.rules || [])
         const primitives = PcbInspectionReportBuilder.#primitives(pcb)
         const diagnosticSummary =
@@ -49,7 +72,11 @@ export class PcbInspectionReportBuilder {
             rules,
             diagnosticSummary,
             netMembership,
-            classes
+            classes,
+            dimensions,
+            ruleImpact,
+            reviewMetadata,
+            fabricationReadiness
         })
 
         return {
@@ -72,6 +99,22 @@ export class PcbInspectionReportBuilder {
             },
             netMembership,
             classes,
+            dimensions: {
+                schema: dimensions.schema,
+                summary: dimensions.summary || {}
+            },
+            ruleImpact: {
+                schema: ruleImpact.schema,
+                summary: ruleImpact.summary || {}
+            },
+            reviewMetadata: {
+                schema: reviewMetadata.schema,
+                summary: reviewMetadata.summary || {}
+            },
+            fabricationReadiness: {
+                schema: fabricationReadiness.schema,
+                summary: fabricationReadiness.summary || {}
+            },
             routeAnalysis: {
                 schema: routeAnalysis.schema,
                 summary: routeAnalysis.summary || {}
@@ -261,7 +304,9 @@ export class PcbInspectionReportBuilder {
             parts.diagnosticSummary.warningCount +
             Number(parts.netMembership.summary.undeclaredNetCount || 0) +
             Number(parts.netMembership.summary.unownedPrimitiveCount || 0) +
-            Number(parts.classes.summary.unresolvedMemberCount || 0)
+            Number(parts.classes.summary.unresolvedMemberCount || 0) +
+            Number(parts.dimensions.summary.unresolvedCount || 0) +
+            Number(parts.fabricationReadiness.summary.reviewItemCount || 0)
 
         return {
             fileName: parts.input.fileName || '',
@@ -282,7 +327,15 @@ export class PcbInspectionReportBuilder {
             warningCount: parts.diagnosticSummary.warningCount,
             possibleUnroutedNetCount:
                 parts.netMembership.summary.possibleUnroutedNetCount || 0,
-            classIssueCount: parts.classes.summary.issueCount || 0
+            classIssueCount: parts.classes.summary.issueCount || 0,
+            dimensionCount: parts.dimensions.summary.dimensionCount || 0,
+            dimensionIssueCount: parts.dimensions.summary.unresolvedCount || 0,
+            manufacturingRuleCount:
+                parts.ruleImpact.summary.manufacturingRuleCount || 0,
+            polygonRealizationCount:
+                parts.reviewMetadata.summary.polygonRealizationCount || 0,
+            fabricationReviewItemCount:
+                parts.fabricationReadiness.summary.reviewItemCount || 0
         }
     }
 

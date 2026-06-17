@@ -76,8 +76,10 @@ Specialized parser helpers are exported for lower-level integrations, including
 `EmbeddedAssetReportBuilder`, `LibraryDiffReportBuilder`,
 `LibraryInspectionReportBuilder`,
 `PcbBoardRegionSemanticsParser`, `PcbComponentPrimitiveIndexer`,
-`PcbCustomPadShapeParser`, `PcbDimensionParser`, `PcbEmbeddedFontExtractor`,
-`PcbExtendedPrimitiveInformationParser`, `PcbFontMetricsParser`,
+`PcbCustomPadShapeParser`, `PcbDimensionParser`,
+`PcbDimensionReportBuilder`, `PcbEmbeddedFontExtractor`,
+`PcbExtendedPrimitiveInformationParser`,
+`PcbFabricationReadinessReportBuilder`, `PcbFontMetricsParser`,
 `LibraryRenderManifestBuilder`, `LibraryCatalogArtifactBuilder`,
 `LibrarySearchIndex`, `SchLibModelParser`, `SchLibStreamExtractor`,
 `PcbBomProfileBuilder`, `PcbClassReportBuilder`,
@@ -88,8 +90,10 @@ Specialized parser helpers are exported for lower-level integrations, including
 `ProjectDesignBundleBuilder`, `ProjectHierarchyReportBuilder`,
 `ProjectNetlistExporter`, `ProjectVariantViewBuilder`,
 `PcbMechanicalLayerPairParser`, `PcbSpecialStringResolver`, `PcbUnionParser`,
-`PcbViaStackParser`, `PcbRuleParser`, `PcbRawRecordRegistry`,
+`PcbViaStackParser`, `PcbRuleImpactReportBuilder`, `PcbRuleParser`,
+`PcbRawRecordRegistry`, `PcbReviewPolygonRealizationBuilder`,
 `PcbStatisticsBuilder`, `SchematicCodeSymbolParser`,
+`SchematicConnectivityQaBuilder`, `SchematicImageDiagnosticsBuilder`,
 `SchematicOwnershipGraphParser`,
 `SchematicProjectParameterResolver`, `SchematicRecordStreamParser`, and
 `SchematicTextRunParser`.
@@ -100,6 +104,15 @@ the native component-index grouping used to populate
 rule helpers expose the same mask/cache, stack, and typed-constraint
 normalization used by `.PcbDoc` parsing. `PcbDimensionParser` exposes the
 parser-only Dimensions6 normalization used by `.PcbDoc` parsing.
+`PcbDimensionReportBuilder` classifies recovered PCB dimensions as renderable
+or unresolved from their reference geometry, and
+`PcbRuleImpactReportBuilder` summarizes enabled/disabled design rules by
+affected primitive family, scope predicate, manufacturing category, and
+length-valued constraints. `PcbFabricationReadinessReportBuilder` summarizes
+pad/via fabrication review items such as local pad stacks, offsets, slots,
+mask overrides, thermal relief, via spans, and via protection metadata.
+`PcbReviewPolygonRealizationBuilder` exposes the polygon-pour realization rows
+used by `pcb.reviewMetadata`.
 `SchematicOwnershipGraphParser` and `PcbOwnershipGraphBuilder` expose the
 read-only ownership sidecars that parser roots attach under
 `schematic.ownership` and `pcb.ownership`.
@@ -190,10 +203,16 @@ implementation child rows where available.
 `LibrarySearchIndex` expose deterministic SchLib/PcbLib render/export
 manifests, static catalog artifacts, search metadata, plus exact, keyword, and
 fuzzy lookup helpers. `PcbStatisticsBuilder`, `PcbNetMembershipReportBuilder`,
-`PcbClassReportBuilder`, and `PcbInspectionReportBuilder` emit board QA,
-net-ownership, class-membership, and combined inspection artifacts for
-`.PcbDoc` models. `SchematicProjectParameterResolver` resolves dot-prefixed and
-equals-prefixed schematic special strings for parser and SVG integrations.
+`PcbClassReportBuilder`, `PcbDimensionReportBuilder`,
+`PcbRuleImpactReportBuilder`, `PcbFabricationReadinessReportBuilder`, and
+`PcbInspectionReportBuilder` emit board QA, net-ownership, class-membership,
+dimension QA, rule-impact, fabrication-readiness, and combined inspection
+artifacts for `.PcbDoc` models. `SchematicImageDiagnosticsBuilder` and
+`SchematicConnectivityQaBuilder` expose the same image payload and connectivity
+QA sidecars attached to parsed schematic models.
+`SchematicProjectParameterResolver`
+resolves dot-prefixed and equals-prefixed schematic special strings for parser
+and SVG integrations.
 `SchematicTextRunParser` parses schematic backslash suffix markers into display
 text plus overline run metadata reused by pin and text rendering.
 
@@ -303,13 +322,14 @@ available. The embedded `schematic-semantic-metadata` JSON sidecar uses schema
 components, and pins for downstream highlighting.
 
 PCB SVG output includes stable semantic `data-*` attributes on recovered board,
-copper, pad, via, component, and text elements. The embedded
+copper, pad, via, component, text, and dimension elements. The embedded
 `pcb-semantic-metadata` JSON sidecar uses schema
 `altium-toolkit.pcb.svg.semantics.a1` and links SVG element keys to primitive
-kind, layer, net/class, component, pad number, hole ownership, and board-outline
-identity where that metadata is available. The same sidecar also records view
-context, including board centroid, included layer ids, layer roles, cutouts, and
-pad/via drill render state (`open`, `covered`, `filled`, or `capped`).
+kind, layer, net/class, component, pad number, dimension kind/text, hole
+ownership, and board-outline identity where that metadata is available. The
+same sidecar also records view context, including board centroid, included layer
+ids, layer roles, cutouts, and pad/via drill render state (`open`, `covered`,
+`filled`, or `capped`).
 `PcbSvgRenderer.renderLayerSvgs()` uses the same semantic sidecar shape with
 `view.kind: 'layer'` and a layer-specific `layerSet`.
 
@@ -331,7 +351,8 @@ import {
   `drillCutouts` plus fill holes for drilled pads and vias. External model
   placements include `projection` diagnostics indicating whether bounds came
   from authored overrides, resolved model bounds, nearby pad spans, procedural
-  component fallback, or only the model anchor.
+  component fallback, or only the model anchor. Shape-based 3D bodies with
+  complete native geometry are exposed as `staticBodyPlacements`.
 - `PcbScene3dModelRegistry` resolves embedded or session model candidates for
   component placements.
 - `PcbScene3dScenePreparator.prepare(documentModel, options)` prepares the same

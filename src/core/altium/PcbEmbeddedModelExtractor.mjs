@@ -7,6 +7,7 @@
 // specifier.
 import { unzlibSync } from 'fflate'
 import { PrintableTextDecoder } from './PrintableTextDecoder.mjs'
+import { PcbShapeBasedBodyGeometryParser } from './PcbShapeBasedBodyGeometryParser.mjs'
 
 /**
  * Extracts embedded 3D model payloads and component-body placement metadata
@@ -17,7 +18,7 @@ export class PcbEmbeddedModelExtractor {
      * Extracts embedded model payloads and component-body placements from one
      * stream map.
      * @param {Map<string, Uint8Array>} streams
-     * @returns {{ models: { id: string, checksum: number, name: string, format: string, payloadText: string, sourceStream: string, transform: { rotationDeg: { x: number, y: number, z: number }, dzMil: number } }[], componentBodies: { sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null }[] }}
+     * @returns {{ models: { id: string, checksum: number, name: string, format: string, payloadText: string, sourceStream: string, transform: { rotationDeg: { x: number, y: number, z: number }, dzMil: number } }[], componentBodies: { sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null, modelType?: number, modelTypeName?: string, bodyColor?: object, bodyOpacity?: number, staticGeometry?: object }[] }}
      */
     static extractFromStreams(streams) {
         const modelStreamPrefix =
@@ -51,7 +52,7 @@ export class PcbEmbeddedModelExtractor {
                     streams.get('ComponentBodies6/Data'),
                     'ComponentBodies6/Data'
                 ),
-                ...PcbEmbeddedModelExtractor.#parseComponentBodyStream(
+                ...PcbEmbeddedModelExtractor.#parseShapeBasedComponentBodyStream(
                     streams.get('ShapeBasedComponentBodies6/Data'),
                     'ShapeBasedComponentBodies6/Data'
                 )
@@ -134,9 +135,10 @@ export class PcbEmbeddedModelExtractor {
      * Parses one component-body printable stream into model-placement records.
      * @param {Uint8Array | undefined} bytes
      * @param {string} sourceStream
-     * @returns {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null }[]}
+     * @param {{ inferStaticGeometry?: boolean }} [options]
+     * @returns {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null, modelType?: number, modelTypeName?: string, bodyColor?: object, bodyOpacity?: number, staticGeometry?: object }[]}
      */
-    static #parseComponentBodyStream(bytes, sourceStream) {
+    static #parseComponentBodyStream(bytes, sourceStream, options = {}) {
         if (!(bytes instanceof Uint8Array) || !bytes.byteLength) {
             return []
         }
@@ -153,10 +155,51 @@ export class PcbEmbeddedModelExtractor {
             .map((fields) =>
                 PcbEmbeddedModelExtractor.#normalizeComponentBody(
                     fields,
-                    sourceStream
+                    sourceStream,
+                    options.inferStaticGeometry
+                        ? {
+                              staticGeometry:
+                                  PcbShapeBasedBodyGeometryParser.buildStaticGeometry(
+                                      fields,
+                                      []
+                                  )
+                          }
+                        : {}
                 )
             )
             .filter(Boolean)
+    }
+
+    /**
+     * Parses shape-based component bodies, including optional vertex payloads.
+     * @param {Uint8Array | undefined} bytes
+     * @param {string} sourceStream
+     * @returns {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null, modelType?: number, modelTypeName?: string, bodyColor?: object, bodyOpacity?: number, staticGeometry?: object }[]}
+     */
+    static #parseShapeBasedComponentBodyStream(bytes, sourceStream) {
+        if (!(bytes instanceof Uint8Array) || !bytes.byteLength) {
+            return []
+        }
+
+        const records = PcbShapeBasedBodyGeometryParser.parse(bytes)
+
+        if (records.length) {
+            return records
+                .map((record) =>
+                    PcbEmbeddedModelExtractor.#normalizeComponentBody(
+                        record.fields,
+                        sourceStream,
+                        { staticGeometry: record.staticGeometry }
+                    )
+                )
+                .filter(Boolean)
+        }
+
+        return PcbEmbeddedModelExtractor.#parseComponentBodyStream(
+            bytes,
+            sourceStream,
+            { inferStaticGeometry: true }
+        )
     }
 
     /**
@@ -266,9 +309,10 @@ export class PcbEmbeddedModelExtractor {
      * Normalizes one component-body record into model-placement metadata.
      * @param {Record<string, string | string[]>} fields
      * @param {string} sourceStream
-     * @returns {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null } | null}
+     * @param {{ staticGeometry?: object }} [extra]
+     * @returns {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null, modelType?: number, modelTypeName?: string, bodyColor?: object, bodyOpacity?: number, staticGeometry?: object } | null}
      */
-    static #normalizeComponentBody(fields, sourceStream) {
+    static #normalizeComponentBody(fields, sourceStream, extra = {}) {
         const modelId = PcbEmbeddedModelExtractor.#getField(fields, 'MODELID')
         const name = PcbEmbeddedModelExtractor.#getField(fields, 'MODEL.NAME')
 
@@ -339,7 +383,82 @@ export class PcbEmbeddedModelExtractor {
             standoffHeightMil: PcbEmbeddedModelExtractor.#parseMilLikeField(
                 fields,
                 'STANDOFFHEIGHT'
-            )
+            ),
+            ...PcbEmbeddedModelExtractor.#shapeBodyMetadata(fields),
+            ...PcbEmbeddedModelExtractor.#stripUndefined(extra)
+        }
+    }
+
+    /**
+     * Normalizes shape-based body display metadata.
+     * @param {Record<string, string | string[]>} fields Native fields.
+     * @returns {object}
+     */
+    static #shapeBodyMetadata(fields) {
+        const modelType = PcbEmbeddedModelExtractor.#parseIntegerField(
+            fields,
+            'MODEL.MODELTYPE'
+        )
+        const bodyColorRaw = PcbEmbeddedModelExtractor.#parseIntegerField(
+            fields,
+            'BODYCOLOR3D'
+        )
+        const bodyOpacity = PcbEmbeddedModelExtractor.#parseNumberField(
+            fields,
+            'BODYOPACITY3D'
+        )
+
+        return PcbEmbeddedModelExtractor.#stripUndefined({
+            modelType: modelType === null ? undefined : modelType,
+            modelTypeName:
+                modelType === null
+                    ? undefined
+                    : PcbEmbeddedModelExtractor.#modelTypeName(modelType),
+            bodyColor:
+                bodyColorRaw === null
+                    ? undefined
+                    : PcbEmbeddedModelExtractor.#decodeBodyColor(bodyColorRaw),
+            bodyOpacity:
+                bodyOpacity === null || !Number.isFinite(bodyOpacity)
+                    ? undefined
+                    : bodyOpacity
+        })
+    }
+
+    /**
+     * Maps a numeric body model type to a stable semantic label.
+     * @param {number} modelType Numeric model type.
+     * @returns {string}
+     */
+    static #modelTypeName(modelType) {
+        const modelTypeNames = new Map([
+            [0, 'extruded-polygon'],
+            [1, 'cone'],
+            [2, 'cylinder'],
+            [3, 'sphere']
+        ])
+
+        return modelTypeNames.get(modelType) || 'unknown-' + modelType
+    }
+
+    /**
+     * Decodes one packed native RGB color value.
+     * @param {number} rawColor Packed color value.
+     * @returns {{ raw: number, hex: string, rgb: { red: number, green: number, blue: number } }}
+     */
+    static #decodeBodyColor(rawColor) {
+        const red = rawColor & 0xff
+        const green = (rawColor >> 8) & 0xff
+        const blue = (rawColor >> 16) & 0xff
+
+        return {
+            raw: rawColor,
+            hex:
+                '#' +
+                [red, green, blue]
+                    .map((component) => component.toString(16).padStart(2, '0'))
+                    .join(''),
+            rgb: { red, green, blue }
         }
     }
 
@@ -359,8 +478,8 @@ export class PcbEmbeddedModelExtractor {
 
     /**
      * Deduplicates shape-based body records shared across body streams.
-     * @param {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null }[]} componentBodies
-     * @returns {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null }[]}
+     * @param {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null, modelType?: number, modelTypeName?: string, bodyColor?: object, bodyOpacity?: number, staticGeometry?: object }[]} componentBodies
+     * @returns {{ sourceStream: string, layer: string, identifier: string, modelId: string, checksum: number | null, embedded: boolean, name: string, positionMil: { x: number, y: number }, rotationDeg: number, modelRotationDeg: { x: number, y: number, z: number }, dzMil: number, overallHeightMil: number | null, standoffHeightMil: number | null, modelType?: number, modelTypeName?: string, bodyColor?: object, bodyOpacity?: number, staticGeometry?: object }[]}
      */
     static #dedupeComponentBodies(componentBodies) {
         const uniqueBodies = new Map()
@@ -745,6 +864,17 @@ export class PcbEmbeddedModelExtractor {
                 .split(',')
                 .map((value) => Number.parseInt(value, 10))
                 .filter(Number.isInteger)
+        )
+    }
+
+    /**
+     * Removes undefined values from a normalized metadata row.
+     * @param {object} row Metadata row.
+     * @returns {object}
+     */
+    static #stripUndefined(row) {
+        return Object.fromEntries(
+            Object.entries(row).filter(([, value]) => value !== undefined)
         )
     }
 }
