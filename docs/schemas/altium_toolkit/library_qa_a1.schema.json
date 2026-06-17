@@ -63,6 +63,9 @@
             "type": "object",
             "additionalProperties": true
         },
+        "compatibility": {
+            "$ref": "library_compatibility_a1.schema.json"
+        },
         "issues": {
             "type": "array",
             "items": {

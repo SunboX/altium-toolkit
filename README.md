@@ -43,9 +43,9 @@ browser or Node-based tools.
 - Build deterministic parser field-coverage matrix, raw-data preservation,
   parameter-record inventory, parser value-verification, normalized
   diagnostics, geometry-bounds, fixture-coverage, embedded-asset,
-  library-diff, library-QA lint, project-hierarchy, and static
-  library-catalog reports, classify PCB layer ids, and convert common Altium
-  length units for downstream QA tooling
+  library-diff, library-compatibility, library-QA lint, project-hierarchy, and
+  static library-catalog reports, classify PCB layer ids, and convert common
+  Altium length units for downstream QA tooling
 - Emit Circuit JSON arrays from parser roots, with non-serialized
   renderer-compatibility fields for existing consumers
 - Render semantically annotated schematic SVG, semantically annotated PCB SVG,
@@ -114,8 +114,10 @@ import 'altium-toolkit/styles/altium-renderers.css'
 - [Geometry Bounds Schema](docs/schemas/altium_toolkit/geometry_bounds_a1.schema.json)
 - [Fixture Coverage Matrix Schema](docs/schemas/altium_toolkit/fixture_coverage_matrix_a1.schema.json)
 - [Unsupported Features Schema](docs/schemas/altium_toolkit/unsupported_features_a1.schema.json)
+- [Library Compatibility Schema](docs/schemas/altium_toolkit/library_compatibility_a1.schema.json)
 - [Testing](docs/testing.md)
 - [Scope](spec/library-scope.md)
+- [Library Compatibility Reports](spec/library-compatibility.md)
 
 ## Examples
 

@@ -73,8 +73,8 @@ Specialized parser helpers are exported for lower-level integrations, including
 `ParserFieldCoverageReportBuilder`, `ParserValueVerificationReportBuilder`,
 `ParserCompatibilityFuzzer`, `NativeStreamInventoryBuilder`,
 `RawDataPreservationReportBuilder`, `UnsupportedFeatureReportBuilder`,
-`EmbeddedAssetReportBuilder`, `LibraryDiffReportBuilder`,
-`LibraryInspectionReportBuilder`,
+`EmbeddedAssetReportBuilder`, `LibraryCompatibilityReportBuilder`,
+`LibraryDiffReportBuilder`, `LibraryInspectionReportBuilder`,
 `PcbBoardRegionSemanticsParser`, `PcbComponentPrimitiveIndexer`,
 `PcbCustomPadShapeParser`, `PcbDimensionParser`,
 `PcbDimensionReportBuilder`, `PcbEmbeddedFontExtractor`,
@@ -192,8 +192,13 @@ opaque-frame preservation for lower-level extractors.
 `ParserCompatibilityFuzzer` runs deterministic malformed,
 wrong-reader, and sparse-input cases against parser entrypoints for parser QA.
 `EmbeddedAssetReportBuilder` emits unified embedded-asset inventories across
-parser roots, and `LibraryDiffReportBuilder` compares parsed symbol and
-footprint libraries by name, counts, and parameters.
+parser roots. `LibraryCompatibilityReportBuilder` emits source-neutral
+schematic-library pin compatibility rows, symbol bounds, field-placement risk
+rows, footprint bounds, pad diagnostics, custom pad outline diagnostics, and
+package-key suggestions with pin-one rotation hints for footprints without
+embedded or body-level model references. `LibraryDiffReportBuilder` compares
+parsed symbol and footprint
+libraries by name, counts, and parameters.
 `LibraryInspectionReportBuilder` composes library inventory and QA findings
 into one stable artifact. `SchLibStreamExtractor` and `SchLibModelParser`
 expose native schematic-symbol library recovery, including section keys,

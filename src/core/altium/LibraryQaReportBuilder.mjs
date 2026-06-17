@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { LibraryCompatibilityReportBuilder } from './LibraryCompatibilityReportBuilder.mjs'
+
 /**
  * Builds deterministic QA reports across parsed schematic and PCB libraries.
  */
@@ -33,6 +35,10 @@ export class LibraryQaReportBuilder {
             schematicLibraries,
             pcbLibraries
         )
+        const compatibility = LibraryCompatibilityReportBuilder.build({
+            schematicLibraries,
+            pcbLibraries
+        })
         const mergePlan =
             LibraryQaReportBuilder.#schematicLibraryMergePlan(
                 schematicLibraries
@@ -74,7 +80,8 @@ export class LibraryQaReportBuilder {
                     diagnostic.symbolName
                 )
             ),
-            ...libraryLint.issues
+            ...libraryLint.issues,
+            ...(compatibility.issues || [])
         ]
         const issuesBySeverity =
             LibraryQaReportBuilder.#issueSeverityCounts(issues)
@@ -91,6 +98,7 @@ export class LibraryQaReportBuilder {
                 multipartMismatchCount: multipartMismatches.length,
                 mergePlanConflictCount: mergePlan.summary.conflictCount,
                 libraryLintIssueCount: libraryLint.summary.issueCount,
+                ...LibraryQaReportBuilder.#compatibilitySummary(compatibility),
                 issuesBySeverity,
                 issueCount: issues.length
             },
@@ -102,6 +110,7 @@ export class LibraryQaReportBuilder {
             missingModels,
             multipartMismatches,
             libraryLint,
+            compatibility,
             mergePlan,
             issues
         }
@@ -678,6 +687,25 @@ export class LibraryQaReportBuilder {
         }
 
         return counts
+    }
+
+    /**
+     * Builds optional compatibility counters for non-empty reports.
+     * @param {object} compatibility Compatibility report.
+     * @returns {object}
+     */
+    static #compatibilitySummary(compatibility) {
+        const summary = compatibility?.summary || {}
+        const issueCount = Number(summary.issueCount || 0)
+
+        if (!issueCount) return {}
+
+        return {
+            compatibilityIssueCount: issueCount,
+            hiddenPinCount: Number(summary.hiddenPinCount || 0),
+            padDiagnosticCount: Number(summary.padDiagnosticCount || 0),
+            modelSuggestionCount: Number(summary.modelSuggestionCount || 0)
+        }
     }
 
     /**

@@ -1,0 +1,116 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "altium-toolkit.library.compatibility.a1",
+    "title": "Altium Toolkit Library Compatibility A1",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "schema",
+        "summary",
+        "symbolPins",
+        "hiddenPins",
+        "symbolBounds",
+        "fieldPlacementRisks",
+        "footprintBounds",
+        "padDiagnostics",
+        "modelSuggestions",
+        "issues"
+    ],
+    "properties": {
+        "schema": {
+            "const": "altium-toolkit.library.compatibility.a1"
+        },
+        "summary": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+                "schematicLibraryCount": {
+                    "type": "number"
+                },
+                "pcbLibraryCount": {
+                    "type": "number"
+                },
+                "symbolPinCount": {
+                    "type": "number"
+                },
+                "hiddenPinCount": {
+                    "type": "number"
+                },
+                "symbolBoundsCount": {
+                    "type": "number"
+                },
+                "fieldPlacementRiskCount": {
+                    "type": "number"
+                },
+                "footprintBoundsCount": {
+                    "type": "number"
+                },
+                "padDiagnosticCount": {
+                    "type": "number"
+                },
+                "modelSuggestionCount": {
+                    "type": "number"
+                },
+                "issueCount": {
+                    "type": "number"
+                }
+            }
+        },
+        "symbolPins": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "hiddenPins": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "symbolBounds": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "fieldPlacementRisks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "footprintBounds": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "padDiagnostics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "modelSuggestions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        },
+        "issues": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    }
+}

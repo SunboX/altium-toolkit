@@ -20,7 +20,7 @@ export class PcbLibModelParser {
     /**
      * Parses one extracted PcbLib into a normalized read-only model.
      * @param {string} fileName
-     * @param {{ libraryHeader?: Record<string, string>, componentParamsToc?: Record<string, object>, sectionKeys?: Record<string, string>, footprints?: object[], embeddedFonts?: { fonts?: object[] }, nativeStreams?: object, streamNames?: string[], diagnostics?: Record<string, number> } | null} extraction
+     * @param {{ libraryHeader?: Record<string, string>, componentParamsToc?: Record<string, object>, sectionKeys?: Record<string, string>, footprints?: object[], embeddedFonts?: { fonts?: object[] }, nativeStreams?: object, streamNames?: string[], diagnostics?: Record<string, number | object[]> } | null} extraction
      * @returns {{ schema: string, kind: 'pcb-library', fileType: 'PcbLib', fileName: string, summary: Record<string, number | string>, diagnostics: { severity: 'info' | 'warning', message: string }[], pcbLibrary: { libraryHeader: Record<string, string>, componentParamsToc: Record<string, object>, sectionKeys: Record<string, string>, footprints: object[], embeddedFonts: object[] }, bom: [] }}
      */
     static parse(fileName, extraction) {
@@ -72,6 +72,7 @@ export class PcbLibModelParser {
             embeddedFonts,
             embeddedModels,
             componentBodies,
+            ...PcbLibModelParser.#storageDiagnostics(safeExtraction),
             ...(safeExtraction.nativeStreams
                 ? { nativeStreams: safeExtraction.nativeStreams }
                 : {}),
@@ -141,7 +142,7 @@ export class PcbLibModelParser {
      * @param {object[]} footprints
      * @param {object[]} embeddedFonts
      * @param {object[]} embeddedModels
-     * @param {{ streamNames?: string[], diagnostics?: Record<string, number> }} extraction
+     * @param {{ streamNames?: string[], diagnostics?: Record<string, number | object[]> }} extraction
      * @returns {{ severity: 'info' | 'warning', message: string }[]}
      */
     static #buildDiagnostics(
@@ -201,6 +202,27 @@ export class PcbLibModelParser {
         }
 
         return diagnostics
+    }
+
+    /**
+     * Builds storage-level diagnostics for the public PCB library model.
+     * @param {{ diagnostics?: Record<string, number | object[]> }} extraction Extracted PcbLib data.
+     * @returns {{ storageDiagnostics?: object }}
+     */
+    static #storageDiagnostics(extraction) {
+        const missingFootprints = Array.isArray(
+            extraction?.diagnostics?.missingFootprints
+        )
+            ? extraction.diagnostics.missingFootprints
+            : []
+
+        return missingFootprints.length
+            ? {
+                  storageDiagnostics: {
+                      missingFootprints
+                  }
+              }
+            : {}
     }
 
     /**

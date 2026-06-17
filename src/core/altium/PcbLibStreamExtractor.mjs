@@ -7,6 +7,7 @@ import { PcbCustomPadShapeParser } from './PcbCustomPadShapeParser.mjs'
 import { PcbEmbeddedFontExtractor } from './PcbEmbeddedFontExtractor.mjs'
 import { PcbEmbeddedModelExtractor } from './PcbEmbeddedModelExtractor.mjs'
 import { PcbExtendedPrimitiveInformationParser } from './PcbExtendedPrimitiveInformationParser.mjs'
+import { PcbLibStorageNameResolver } from './PcbLibStorageNameResolver.mjs'
 import { NativeStreamInventoryBuilder } from './NativeStreamInventoryBuilder.mjs'
 import { PcbRawRecordRegistry } from './PcbRawRecordRegistry.mjs'
 import { OleCompoundDocument } from '../ole/OleCompoundDocument.mjs'
@@ -119,7 +120,7 @@ export class PcbLibStreamExtractor {
     /**
      * Extracts all declared footprints from one PcbLib stream map.
      * @param {Map<string, Uint8Array>} streams
-     * @returns {{ libraryHeader: Record<string, string>, componentParamsToc: Record<string, object>, sectionKeys: Record<string, string>, footprints: object[], streamNames: string[], diagnostics: Record<string, number> }}
+     * @returns {{ libraryHeader: Record<string, string>, componentParamsToc: Record<string, object>, sectionKeys: Record<string, string>, footprints: object[], streamNames: string[], diagnostics: Record<string, number | object[]> }}
      */
     static extractFromStreams(streams) {
         const libraryData = streams.get('Library/Data') || new Uint8Array()
@@ -129,30 +130,24 @@ export class PcbLibStreamExtractor {
             PcbLibStreamExtractor.#parseComponentParamsToc(
                 streams.get('Library/ComponentParamsTOC/Data')
             )
-        const sectionKeys = PcbLibStreamExtractor.#parseSectionKeys(
+        const sectionKeys = PcbLibStorageNameResolver.parseSectionKeys(
             streams.get('SectionKeys')
         )
-        const footprints = parsedLibraryData.footprintNames.flatMap((name) => {
-            const resolvedStorage =
-                PcbLibStreamExtractor.#resolveFootprintStorageName(
-                    streams,
-                    name,
-                    sectionKeys
-                )
-
-            if (!resolvedStorage) {
-                return []
-            }
-
-            return [
+        const storageResolution = PcbLibStorageNameResolver.resolveFootprints(
+            streams,
+            parsedLibraryData.footprintNames,
+            sectionKeys
+        )
+        const footprints = storageResolution.resolvedFootprints.map(
+            ({ name, storageName }) =>
                 PcbLibStreamExtractor.#extractFootprint(
                     streams,
                     name,
-                    resolvedStorage,
+                    storageName,
                     componentParamsToc[name] || {}
                 )
-            ]
-        })
+        )
+        const missingFootprints = storageResolution.missingFootprints
         const primitiveCount = footprints.reduce(
             (sum, footprint) => sum + footprint.primitiveCount,
             0
@@ -198,8 +193,8 @@ export class PcbLibStreamExtractor {
                 embeddedFontCount: embeddedFonts.fonts.length,
                 embeddedModelCount: embeddedModels.models.length,
                 componentBodyCount: embeddedModels.componentBodies.length,
-                missingFootprintCount:
-                    parsedLibraryData.footprintNames.length - footprints.length
+                missingFootprintCount: missingFootprints.length,
+                ...(missingFootprints.length ? { missingFootprints } : {})
             }
         }
     }
@@ -278,68 +273,6 @@ export class PcbLibStreamExtractor {
         }
 
         return entries
-    }
-
-    /**
-     * Parses an optional SectionKeys stream that maps full footprint names to
-     * shortened OLE storage names.
-     * @param {Uint8Array | undefined} bytes
-     * @returns {Record<string, string>}
-     */
-    static #parseSectionKeys(bytes) {
-        if (!bytes || bytes.byteLength < 4) {
-            return {}
-        }
-
-        const count = PcbLibStreamExtractor.#readUint32(bytes, 0)
-        const entries = {}
-        let offset = 4
-
-        for (let index = 0; index < count; index += 1) {
-            const fullName = PcbLibStreamExtractor.#readStringBlockAt(
-                bytes,
-                offset
-            )
-            if (!fullName) {
-                break
-            }
-            offset = fullName.nextOffset
-
-            const storageName = PcbLibStreamExtractor.#readStringBlockAt(
-                bytes,
-                offset
-            )
-            if (!storageName) {
-                break
-            }
-            offset = storageName.nextOffset
-            entries[fullName.text] = storageName.text
-        }
-
-        return entries
-    }
-
-    /**
-     * Resolves the OLE storage name for one declared footprint.
-     * @param {Map<string, Uint8Array>} streams
-     * @param {string} footprintName
-     * @param {Record<string, string>} sectionKeys
-     * @returns {string}
-     */
-    static #resolveFootprintStorageName(streams, footprintName, sectionKeys) {
-        const candidates = [
-            footprintName,
-            PcbLibStreamExtractor.#sanitizeStorageName(footprintName),
-            sectionKeys[footprintName],
-            PcbLibStreamExtractor.#sanitizeStorageName(
-                footprintName.slice(0, 31)
-            )
-        ].filter(Boolean)
-
-        return (
-            candidates.find((candidate) => streams.has(candidate + '/Data')) ||
-            ''
-        )
     }
 
     /**
@@ -1040,17 +973,6 @@ export class PcbLibStreamExtractor {
                 'CustomShapes'
             ].includes(leafName)
         })
-    }
-
-    /**
-     * Sanitizes one footprint name for legacy OLE storage lookup.
-     * @param {string} name
-     * @returns {string}
-     */
-    static #sanitizeStorageName(name) {
-        return String(name || '')
-            .replace(/[/:\\]/gu, '_')
-            .slice(0, 31)
     }
 
     /**

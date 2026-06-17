@@ -41,6 +41,7 @@ export { DraftsmanBoardViewMetadataBuilder } from './core/altium/DraftsmanBoardV
 export { DraftsmanDigestParser } from './core/altium/DraftsmanDigestParser.mjs'
 export { LibraryRenderManifestBuilder } from './core/altium/LibraryRenderManifestBuilder.mjs'
 export { LibraryCatalogArtifactBuilder } from './core/altium/LibraryCatalogArtifactBuilder.mjs'
+export { LibraryCompatibilityReportBuilder } from './core/altium/LibraryCompatibilityReportBuilder.mjs'
 export { LibraryDiffReportBuilder } from './core/altium/LibraryDiffReportBuilder.mjs'
 export { LibraryInspectionReportBuilder } from './core/altium/LibraryInspectionReportBuilder.mjs'
 export { LibraryQaReportBuilder } from './core/altium/LibraryQaReportBuilder.mjs'

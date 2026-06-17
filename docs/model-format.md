@@ -154,9 +154,17 @@ known/unknown classification, and consumed status.
 `EmbeddedAssetReportBuilder.build()` emits
 `altium-toolkit.embedded-assets.a1` reports that normalize schematic images,
 embedded file inventories, PCB font/model payloads, and integrated-library
-source entries into one stable asset table. `LibraryDiffReportBuilder.build()`
-emits `altium-toolkit.library.diff.a1` reports comparing parsed symbol and
-footprint libraries by item name, counts, and parameter values.
+source entries into one stable asset table.
+`LibraryCompatibilityReportBuilder.build()` emits
+`altium-toolkit.library.compatibility.a1` reports for schematic-library pin
+roles and edge markers, hidden-pin hints, symbol bounds, field-placement risk
+rows, footprint bounds, pad diagnostics, custom pad outline diagnostics, and
+package-key suggestions with pin-one rotation hints for missing model
+references. The report is read-only and is also composed into library QA when
+it emits issues.
+`LibraryDiffReportBuilder.build()` emits `altium-toolkit.library.diff.a1`
+reports comparing parsed symbol and footprint libraries by item name, counts,
+and parameter values.
 `LibraryInspectionReportBuilder.build()` emits
 `altium-toolkit.library.inspection.a1` reports that combine library inventory
 rows with duplicate, stale-link, missing-model, lint, and merge-plan QA
@@ -478,7 +486,10 @@ preserves raw mixed-format primitive records with the same registry metadata
 shape used by PcbDoc raw records. Library-level `embeddedFonts` uses the same
 payload and metric shape as PCB documents. Library-level `embeddedModels` and
 `componentBodies` preserve embedded 3D payloads and body references when
-present. Shape-based component bodies may include `staticGeometry` for
+present. When declared footprint names cannot be resolved to storage names,
+`pcbLibrary.storageDiagnostics.missingFootprints` lists the declared name,
+attempted storage candidates, and reason. Shape-based component bodies may
+include `staticGeometry` for
 extruded-polygon, cone, cylinder, and sphere bodies, with dimensions and
 vertices expressed in mils when native evidence is available.
 `pcbLibrary.indexes.footprintsByName` provides read-only footprint lookup and

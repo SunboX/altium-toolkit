@@ -134,6 +134,42 @@ class PcbLibStreamTestFactory {
     }
 
     /**
+     * Creates one stream map with a declared footprint that has no matching
+     * storage, including names that require legacy storage sanitization.
+     * @returns {Map<string, Uint8Array>}
+     */
+    static createStreamMapWithMissingFootprintStorage() {
+        const streams = new Map()
+        const missingName = 'BAD/FOOT:NAME*LONG'
+
+        streams.set(
+            'Library/Data',
+            PcbLibStreamTestFactory.#createLibraryData([
+                'PAD_TRACK_SAMPLE',
+                missingName
+            ])
+        )
+        streams.set(
+            'PAD_TRACK_SAMPLE/Header',
+            PcbLibStreamTestFactory.#createCountHeader(1)
+        )
+        streams.set(
+            'PAD_TRACK_SAMPLE/Parameters',
+            PcbLibStreamTestFactory.#createProperties({
+                PATTERN: 'PAD_TRACK_SAMPLE'
+            })
+        )
+        streams.set(
+            'PAD_TRACK_SAMPLE/Data',
+            PcbLibStreamTestFactory.#createFootprintData('PAD_TRACK_SAMPLE', [
+                PcbBinaryPrimitiveTestFactory.createPadStream().dataBytes
+            ])
+        )
+
+        return streams
+    }
+
+    /**
      * Creates one `Library/Data` stream body.
      * @param {string[]} footprintNames
      * @returns {Uint8Array}
@@ -385,6 +421,39 @@ test('PcbLibStreamExtractor extracts declared footprint storages', () => {
     assert.equal(extraction.diagnostics.footprintCount, 2)
     assert.equal(extraction.diagnostics.primitiveCount, 6)
     assert.equal(extraction.diagnostics.rawRecordCount, 7)
+})
+
+/**
+ * Verifies unresolved declared footprint storages expose their lookup
+ * candidates so callers can inspect name-normalization failures.
+ */
+test('PcbLibStreamExtractor reports missing footprint storage candidates', () => {
+    const extraction = PcbLibStreamExtractor.extractFromStreams(
+        PcbLibStreamTestFactory.createStreamMapWithMissingFootprintStorage()
+    )
+
+    assert.equal(extraction.diagnostics.missingFootprintCount, 1)
+    assert.deepEqual(extraction.diagnostics.missingFootprints, [
+        {
+            footprintName: 'BAD/FOOT:NAME*LONG',
+            candidates: ['BAD/FOOT:NAME*LONG', 'BAD_FOOT_NAME_LONG'],
+            reason: 'no matching footprint Data stream'
+        }
+    ])
+
+    const model = PcbLibModelParser.parse(
+        'storage-diagnostics.PcbLib',
+        extraction
+    )
+    assert.deepEqual(model.pcbLibrary.storageDiagnostics, {
+        missingFootprints: [
+            {
+                footprintName: 'BAD/FOOT:NAME*LONG',
+                candidates: ['BAD/FOOT:NAME*LONG', 'BAD_FOOT_NAME_LONG'],
+                reason: 'no matching footprint Data stream'
+            }
+        ]
+    })
 })
 
 /**

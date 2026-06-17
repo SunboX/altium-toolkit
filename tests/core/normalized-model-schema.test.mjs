@@ -407,6 +407,11 @@ test('machine-readable contract schemas are split for downstream consumers', () 
             'altium-toolkit.library.qa.a1'
         ],
         [
+            '../../docs/schemas/altium_toolkit/library_compatibility_a1.schema.json',
+            'altium-toolkit.library.compatibility.a1',
+            'altium-toolkit.library.compatibility.a1'
+        ],
+        [
             '../../docs/schemas/altium_toolkit/library_merge_plan_a1.schema.json',
             'altium-toolkit.library.merge-plan.a1',
             'altium-toolkit.library.merge-plan.a1'
