@@ -5,7 +5,11 @@
 import { PcbEdgeFacingGlyphNormalizer } from './PcbEdgeFacingGlyphNormalizer.mjs'
 import { PcbScene3dBoardOutlineRefiner } from './PcbScene3dBoardOutlineRefiner.mjs'
 import { PcbScene3dDrillCutoutBuilder } from './PcbScene3dDrillCutoutBuilder.mjs'
+import { AltiumScene3dExternalPlacementAdapter } from './AltiumScene3dExternalPlacementAdapter.mjs'
+import { AltiumScene3dBottomPadRotationAdapter } from './AltiumScene3dBottomPadRotationAdapter.mjs'
+import { AltiumScene3dComponentBodyAdapter } from './AltiumScene3dComponentBodyAdapter.mjs'
 import { PcbFootprintPrimitiveSelector } from './PcbFootprintPrimitiveSelector.mjs'
+import { PcbScene3dPadLocalSpanResolver } from './PcbScene3dPadLocalSpanResolver.mjs'
 import { PcbScene3dPackages } from './PcbScene3dPackages.mjs'
 import { PcbScene3dPlacementSideResolver } from './PcbScene3dPlacementSideResolver.mjs'
 import { PcbScene3dStaticBodyPlacementBuilder } from './PcbScene3dStaticBodyPlacementBuilder.mjs'
@@ -167,9 +171,17 @@ export class PcbScene3dBuilder {
             }
         }
 
-        return PcbScene3dBoardOutlineRefiner.refine(
-            sceneDescription,
-            documentModel
+        return AltiumScene3dBottomPadRotationAdapter.apply(
+            AltiumScene3dComponentBodyAdapter.apply(
+                AltiumScene3dExternalPlacementAdapter.apply(
+                    PcbScene3dBoardOutlineRefiner.refine(
+                        sceneDescription,
+                        documentModel
+                    ),
+                    documentModel
+                ),
+                documentModel
+            )
         )
     }
 
@@ -189,10 +201,7 @@ export class PcbScene3dBuilder {
         thicknessMil,
         modelRegistry
     ) {
-        const mountSide =
-            String(component.layer || 'TOP').toUpperCase() === 'BOTTOM'
-                ? 'bottom'
-                : 'top'
+        const mountSide = PcbScene3dBuilder.#resolveMountSide(component)
         const padSpan = PcbScene3dBuilder.#resolvePadSpan(component, pads)
         const body = PcbScene3dPackages.resolve(component, padSpan)
         const halfBoardThickness = thicknessMil / 2
@@ -1424,33 +1433,66 @@ export class PcbScene3dBuilder {
     }
 
     /**
-     * Resolves a rough pad-span box around one component.
-     * @param {{ x: number, y: number }} component
+     * Resolves the owned or nearby pad-span box around one component.
+     * @param {{ x: number, y: number, componentIndex?: number, layer?: string }} component
      * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[]} pads
      * @returns {{ width: number, depth: number }}
      */
     static #resolvePadSpan(component, pads) {
+        const componentPads = PcbScene3dBuilder.#componentPads(component, pads)
         const nearbyPads = pads.filter((pad) =>
             PcbScene3dBuilder.#isPadNearComponent(component, pad)
         )
+        const spanPads = componentPads.length ? componentPads : nearbyPads
 
-        if (!nearbyPads.length) {
+        if (!spanPads.length) {
             return { width: 0, depth: 0 }
         }
 
-        const xs = []
-        const ys = []
+        const mountSide = PcbScene3dBuilder.#resolveMountSide(component)
+        return (
+            PcbScene3dPadLocalSpanResolver.resolve(
+                component,
+                spanPads,
+                mountSide
+            ) || { width: 0, depth: 0 }
+        )
+    }
 
-        for (const pad of nearbyPads) {
-            const size = PcbScene3dBuilder.#resolvePadSize(pad)
-            xs.push(pad.x - size.width / 2, pad.x + size.width / 2)
-            ys.push(pad.y - size.depth / 2, pad.y + size.depth / 2)
+    /**
+     * Resolves pads explicitly owned by one component, preferring pads on the
+     * mounted surface when paste-mask side metadata is available.
+     * @param {{ componentIndex?: number, layer?: string }} component PCB component.
+     * @param {object[]} pads PCB pads.
+     * @returns {object[]}
+     */
+    static #componentPads(component, pads) {
+        const componentIndex = Number(component?.componentIndex)
+        if (!Number.isFinite(componentIndex)) {
+            return []
         }
 
-        return {
-            width: Math.max(...xs) - Math.min(...xs),
-            depth: Math.max(...ys) - Math.min(...ys)
-        }
+        const ownedPads = pads.filter(
+            (pad) => Number(pad?.componentIndex) === componentIndex
+        )
+        const mountSide = PcbScene3dBuilder.#resolveMountSide(component)
+        const surfacePads = ownedPads.filter((pad) =>
+            PcbScene3dBuilder.#isSurfacePad(pad, mountSide)
+        )
+
+        return surfacePads.length ? surfacePads : ownedPads
+    }
+
+    /**
+     * Checks whether one pad belongs to the requested component surface.
+     * @param {object} pad PCB pad.
+     * @param {'top' | 'bottom'} mountSide Component mount side.
+     * @returns {boolean}
+     */
+    static #isSurfacePad(pad, mountSide) {
+        return mountSide === 'bottom'
+            ? Boolean(pad?.hasBottomPasteMaskOpening)
+            : Boolean(pad?.hasTopPasteMaskOpening)
     }
 
     /**
@@ -1467,19 +1509,14 @@ export class PcbScene3dBuilder {
     }
 
     /**
-     * Resolves one visible pad size.
-     * @param {{ sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }} pad
-     * @returns {{ width: number, depth: number }}
+     * Resolves the PCB surface a component is mounted on.
+     * @param {{ layer?: string }} component PCB component.
+     * @returns {'top' | 'bottom'}
      */
-    static #resolvePadSize(pad) {
-        return {
-            width:
-                Number(pad.sizeTopX || pad.sizeMidX || pad.sizeBottomX || 24) ||
-                24,
-            depth:
-                Number(pad.sizeTopY || pad.sizeMidY || pad.sizeBottomY || 24) ||
-                24
-        }
+    static #resolveMountSide(component) {
+        return String(component?.layer || 'TOP').toUpperCase() === 'BOTTOM'
+            ? 'bottom'
+            : 'top'
     }
 
     /**

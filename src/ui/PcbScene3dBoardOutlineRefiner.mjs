@@ -202,34 +202,77 @@ export class PcbScene3dBoardOutlineRefiner {
             .filter((region) =>
                 PcbScene3dBoardOutlineRefiner.#isBoardRegionCandidate(region)
             )
-            .map((region) =>
-                PcbScene3dBoardOutlineRefiner.#buildOutlineFromPoints(
+            .map((region) => ({
+                region,
+                outline: PcbScene3dBoardOutlineRefiner.#buildOutlineFromPoints(
                     region.points
                 )
-            )
-            .filter(Boolean)
-            .filter((outline) =>
+            }))
+            .filter((candidate) => candidate.outline)
+            .filter((candidate) =>
                 PcbScene3dBoardOutlineRefiner.#boundsAreCompatible(
                     currentBounds,
-                    outline
+                    candidate.outline
                 )
             )
-            .filter((outline) =>
+            .filter(
+                (candidate) =>
+                    !PcbScene3dBoardOutlineRefiner.#isInsetCutoutCandidate(
+                        currentBounds,
+                        candidate.outline,
+                        candidate.region
+                    )
+            )
+            .filter((candidate) =>
                 PcbScene3dBoardOutlineRefiner.#areaIsCompatible(
                     currentArea,
-                    outline
+                    candidate.outline
                 )
             )
-            .map((outline) => ({
-                outline,
+            .map((candidate) => ({
+                outline: candidate.outline,
                 score: PcbScene3dBoardOutlineRefiner.#scoreBounds(
                     currentBounds,
-                    outline
+                    candidate.outline
                 )
             }))
             .sort((left, right) => left.score - right.score)
 
         return candidates[0]?.outline || null
+    }
+
+    /**
+     * Returns true when an explicit board cutout is fully inset from the
+     * current board envelope and therefore cannot represent the outer edge.
+     * @param {object} current Current outline bounds.
+     * @param {object} candidate Candidate outline.
+     * @param {object} region Source board region.
+     * @returns {boolean}
+     */
+    static #isInsetCutoutCandidate(current, candidate, region) {
+        if (region?.isBoardCutout !== true) {
+            return false
+        }
+
+        const candidateBounds =
+            PcbScene3dBoardOutlineRefiner.#resolveOutlineBounds(candidate)
+        if (!candidateBounds) {
+            return false
+        }
+
+        const epsilon = PcbScene3dBoardOutlineRefiner.#POINT_EPSILON_MIL
+        const insideEnvelope =
+            candidateBounds.minX >= current.minX - epsilon &&
+            candidateBounds.minY >= current.minY - epsilon &&
+            candidateBounds.maxX <= current.maxX + epsilon &&
+            candidateBounds.maxY <= current.maxY + epsilon
+        const touchesOuterEdge =
+            Math.abs(candidateBounds.minX - current.minX) <= epsilon ||
+            Math.abs(candidateBounds.minY - current.minY) <= epsilon ||
+            Math.abs(candidateBounds.maxX - current.maxX) <= epsilon ||
+            Math.abs(candidateBounds.maxY - current.maxY) <= epsilon
+
+        return insideEnvelope && !touchesOuterEdge
     }
 
     /**

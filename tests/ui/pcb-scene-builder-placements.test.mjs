@@ -480,10 +480,10 @@ test('PcbScene3dBuilder keeps in-board negative standoff repeated bodies on the 
 })
 
 /**
- * Verifies matched external bodies promote authored 3D yaw while keeping the
- * native body anchor instead of moving onto the 2D component origin.
+ * Verifies metadata-backed offset external bodies use component yaw while
+ * keeping the native body anchor instead of moving onto the component origin.
  */
-test('PcbScene3dBuilder promotes explicit body yaw after component matching', () => {
+test('PcbScene3dBuilder promotes component yaw for metadata-backed offset bodies', () => {
     const scene = PcbScene3dBuilder.build(
         {
             fileName: 'demo.PcbDoc',
@@ -531,7 +531,7 @@ test('PcbScene3dBuilder promotes explicit body yaw after component matching', ()
     assert.equal(scene.externalPlacements.length, 1)
     assert.equal(scene.externalPlacements[0].designator, 'J1')
     assert.equal(scene.externalPlacements[0].mountSide, 'top')
-    assert.equal(scene.externalPlacements[0].rotationDeg, 270)
+    assert.equal(scene.externalPlacements[0].rotationDeg, 180)
     assert.deepEqual(scene.externalPlacements[0].positionMil, {
         x: -260,
         y: -70,
