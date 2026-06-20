@@ -3,9 +3,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 export { BomTableRenderer } from './ui/BomTableRenderer.mjs'
+export { AltiumPcbBottomViewMirror } from './ui/AltiumPcbBottomViewMirror.mjs'
 export { PcbArcUtils } from './ui/PcbArcUtils.mjs'
 export { PcbEdgeFacingGlyphNormalizer } from './ui/PcbEdgeFacingGlyphNormalizer.mjs'
 export { PcbFootprintPrimitiveSelector } from './ui/PcbFootprintPrimitiveSelector.mjs'
+export { PcbFootprintPadAxisNormalizer } from './ui/PcbFootprintPadAxisNormalizer.mjs'
 export { PcbInteractionIndex } from './ui/PcbInteractionIndex.mjs'
 export { PcbInteractionItemRegistry } from './ui/PcbInteractionItemRegistry.mjs'
 export { PcbInteractionLayerModel } from './ui/PcbInteractionLayerModel.mjs'

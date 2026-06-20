@@ -8,12 +8,14 @@ import { PcbScene3dDrillCutoutBuilder } from './PcbScene3dDrillCutoutBuilder.mjs
 import { AltiumScene3dExternalPlacementAdapter } from './AltiumScene3dExternalPlacementAdapter.mjs'
 import { AltiumScene3dBottomPadRotationAdapter } from './AltiumScene3dBottomPadRotationAdapter.mjs'
 import { AltiumScene3dComponentBodyAdapter } from './AltiumScene3dComponentBodyAdapter.mjs'
+import { AltiumScene3dAuthoredBodyAnchorAdapter } from './AltiumScene3dAuthoredBodyAnchorAdapter.mjs'
 import { PcbFootprintPrimitiveSelector } from './PcbFootprintPrimitiveSelector.mjs'
 import { PcbScene3dPadLocalSpanResolver } from './PcbScene3dPadLocalSpanResolver.mjs'
 import { PcbScene3dPackages } from './PcbScene3dPackages.mjs'
 import { PcbScene3dPlacementSideResolver } from './PcbScene3dPlacementSideResolver.mjs'
 import { PcbScene3dStaticBodyPlacementBuilder } from './PcbScene3dStaticBodyPlacementBuilder.mjs'
 import { PcbScene3dTextBoxLayoutResolver } from './PcbScene3dTextBoxLayoutResolver.mjs'
+import { PcbFootprintPadAxisNormalizer } from './PcbFootprintPadAxisNormalizer.mjs'
 
 /**
  * Builds deterministic 3D scene data from the normalized PCB model.
@@ -36,7 +38,9 @@ export class PcbScene3dBuilder {
      * @returns {{ board: { widthMil: number, heightMil: number, thicknessMil: number, minX: number, minY: number, centerX: number, centerY: number, segments: Array<Record<string, number | string>> }, boardAssemblyModel: { origin: string, name: string, format: string, file?: File | Blob | null, relativePath?: string } | null, components: { designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, boardPositionMil: { x: number, y: number, z: number }, pattern: string, source: string, body: { family: string, sizeMil: { width: number, depth: number, height: number } }, externalModel: { name: string, relativePath: string, format: string } | null }[], externalPlacements: { designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, bodyRotationDeg: number, modelTransform: { rotationDeg: { x: number, y: number, z: number }, dzMil: number }, externalModel: { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } }[], staticBodyPlacements: { designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, geometry: object }[], detail: { pads: any[], tracks: any[], arcs: any[], fills: any[], vias: any[], polygons: any[], silkscreen: { top: { fills: any[], tracks: any[], arcs: any[], texts: any[], fillColor?: number, strokeColor?: number }, bottom: { fills: any[], tracks: any[], arcs: any[], texts: any[], fillColor?: number, strokeColor?: number } } } }}
      */
     static build(documentModel, options = {}) {
-        const pcb = documentModel?.pcb || {}
+        const sceneDocumentModel =
+            PcbFootprintPadAxisNormalizer.apply(documentModel)
+        const pcb = sceneDocumentModel?.pcb || {}
         const appearance3d = pcb.appearance3d || {}
         const boardOutline = pcb.boardOutline || {}
         const primitiveLayers = Array.isArray(pcb.primitiveLayers)
@@ -171,16 +175,18 @@ export class PcbScene3dBuilder {
             }
         }
 
-        return AltiumScene3dBottomPadRotationAdapter.apply(
-            AltiumScene3dComponentBodyAdapter.apply(
-                AltiumScene3dExternalPlacementAdapter.apply(
-                    PcbScene3dBoardOutlineRefiner.refine(
-                        sceneDescription,
-                        documentModel
+        return AltiumScene3dAuthoredBodyAnchorAdapter.apply(
+            AltiumScene3dBottomPadRotationAdapter.apply(
+                AltiumScene3dComponentBodyAdapter.apply(
+                    AltiumScene3dExternalPlacementAdapter.apply(
+                        PcbScene3dBoardOutlineRefiner.refine(
+                            sceneDescription,
+                            sceneDocumentModel
+                        ),
+                        sceneDocumentModel
                     ),
-                    documentModel
-                ),
-                documentModel
+                    sceneDocumentModel
+                )
             )
         )
     }

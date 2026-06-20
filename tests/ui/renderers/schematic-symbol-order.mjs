@@ -94,7 +94,7 @@ test('renderSchematicSvg layers later ownerless symbol strokes above owner fills
     const bodySnippet =
         '<rect class="schematic-rectangle" x="50" y="40" width="80" height="60"'
     const lineSnippet =
-        '<line x1="70" y1="68" x2="115" y2="68" stroke="var(--schematic-accent-ink-color)" stroke-width="1" marker-end="url(#schematic-marker-filled-arrow-8)" />'
+        '<line x1="70" y1="68" x2="115" y2="68" stroke="var(--schematic-accent-ink-color)" stroke-width="0.85" marker-end="url(#schematic-marker-filled-arrow-8)" />'
 
     assert.notEqual(markup.indexOf(bodySnippet), -1)
     assert.notEqual(markup.indexOf(lineSnippet), -1)

@@ -86,7 +86,7 @@ test('parseAltiumArrayBuffer restores ownerless callout arrow defaults', () => {
         fill: '#000000',
         isSolid: true,
         transparent: false,
-        lineWidth: 1,
+        lineWidth: 0.85,
         renderOrder: 0,
         ownerIndex: undefined
     })

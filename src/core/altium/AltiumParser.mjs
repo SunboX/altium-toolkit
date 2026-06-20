@@ -52,6 +52,11 @@ import { SchematicBindingProvenanceParser } from './SchematicBindingProvenancePa
 import { SchematicConnectivityQaBuilder } from './SchematicConnectivityQaBuilder.mjs'
 import { SchematicQaReportBuilder } from './SchematicQaReportBuilder.mjs'
 import { SchematicWireNormalizer } from './SchematicWireNormalizer.mjs'
+import { AltiumSchematicArcAngleNormalizer } from './AltiumSchematicArcAngleNormalizer.mjs'
+import { AltiumSchematicFreeGraphicStrokeNormalizer } from './AltiumSchematicFreeGraphicStrokeNormalizer.mjs'
+import { AltiumSchematicHiddenDesignatorResolver } from './AltiumSchematicHiddenDesignatorResolver.mjs'
+import { AltiumSchematicPackedImageResolver } from './AltiumSchematicPackedImageResolver.mjs'
+import { AltiumSchematicSheetBoundsNormalizer } from './AltiumSchematicSheetBoundsNormalizer.mjs'
 import { CircuitJsonModelAdapter } from '../circuit-json/CircuitJsonModelAdapter.mjs'
 const {
     countMatchingKeys,
@@ -856,7 +861,7 @@ export class AltiumParser {
             )
         }
 
-        return NormalizedModelSchema.attach({
+        const documentModel = NormalizedModelSchema.attach({
             kind: 'schematic',
             fileType: 'SchDoc',
             fileName,
@@ -935,6 +940,34 @@ export class AltiumParser {
             },
             bom
         })
+
+        return AltiumParser.#prepareSchematicDocument(
+            documentModel,
+            arrayBuffer
+        )
+    }
+
+    /**
+     * Applies universal schematic post-processing after the parser has built
+     * the normalized renderer model.
+     * @param {object} documentModel Parsed schematic document model.
+     * @param {ArrayBuffer} arrayBuffer Source file buffer.
+     * @returns {object}
+     */
+    static #prepareSchematicDocument(documentModel, arrayBuffer) {
+        return AltiumSchematicPackedImageResolver.hydrate(
+            AltiumSchematicFreeGraphicStrokeNormalizer.normalize(
+                AltiumSchematicSheetBoundsNormalizer.normalize(
+                    AltiumSchematicArcAngleNormalizer.normalize(
+                        AltiumSchematicHiddenDesignatorResolver.annotate(
+                            documentModel,
+                            arrayBuffer
+                        )
+                    )
+                )
+            ),
+            arrayBuffer
+        )
     }
 
     /**
