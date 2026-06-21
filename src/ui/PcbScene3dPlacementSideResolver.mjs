@@ -81,7 +81,7 @@ export class PcbScene3dPlacementSideResolver {
      * Scores how strongly one component record appears to belong to one body
      * record based on shared model/footprint tokens.
      * @param {{ name?: string, identifier?: string }} componentBody
-     * @param {{ pattern?: string, source?: string, modelPath?: string }} component
+     * @param {{ pattern?: string, source?: string, modelPath?: string, description?: string, parameters?: object, provenance?: object }} component
      * @returns {number}
      */
     static scoreBodyComponentAffinity(componentBody, component) {
@@ -94,7 +94,11 @@ export class PcbScene3dPlacementSideResolver {
             PcbScene3dPlacementSideResolver.#collectMeaningfulTokens([
                 component?.pattern,
                 component?.source,
-                component?.modelPath
+                component?.modelPath,
+                component?.description,
+                ...PcbScene3dPlacementSideResolver.#componentPackageMetadata(
+                    component
+                )
             ])
         let score = 0
 
@@ -105,6 +109,34 @@ export class PcbScene3dPlacementSideResolver {
         })
 
         return score
+    }
+
+    /**
+     * Resolves package-related component metadata that can identify generic
+     * embedded 3D bodies when pattern/source only name the electrical part.
+     * @param {{ parameters?: object, provenance?: object } | null | undefined} component Component record.
+     * @returns {string[]}
+     */
+    static #componentPackageMetadata(component) {
+        const parameters =
+            component?.parameters && typeof component.parameters === 'object'
+                ? component.parameters
+                : {}
+        const provenance =
+            component?.provenance && typeof component.provenance === 'object'
+                ? component.provenance
+                : {}
+
+        return [
+            parameters['Package / Case'],
+            parameters['Supplier Device Package'],
+            parameters['Part Description'],
+            parameters.Package,
+            provenance.footprintDescription,
+            provenance.sourceLibReference,
+            provenance.sourceFootprintLibrary,
+            provenance.sourceFootprintLibraryName
+        ].map((value) => String(value || ''))
     }
 
     /**

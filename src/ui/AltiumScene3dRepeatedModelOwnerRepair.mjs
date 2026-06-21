@@ -8,9 +8,15 @@ const CONNECTOR_TOKENS = new Set([
 ])
 const PASSIVE_BODY_PATTERN =
     /(?:^|[^a-z0-9])(?:cap|capacitor|res|resistor|ind|inductor|ferrite|bead|lqw|lqg)(?:$|[^a-z0-9])/i
+const COMPACT_IC_BODY_PATTERN =
+    /(?:^|[^a-z0-9])(?:u?qfn(?:[-_ ]?\d+)?|dfn(?:[-_ ]?\d+)?|qfp(?:[-_ ]?\d+)?|bga(?:[-_ ]?\d+)?|lga(?:[-_ ]?\d+)?)(?:$|[^a-z0-9])/i
 const TIMING_PACKAGE_PATTERN =
     /(?:^|[^a-z0-9])(?:clock|crystal|osc|oscillator|resonator|tcxo|txco|xtal)(?:$|[^a-z0-9])/i
 const TIMING_DESIGNATOR_PATTERN = /^(?:y|xo)\d+[a-z]?$/i
+const AUTHORED_ANCHOR_IDENTITY_PATTERN =
+    /(?:^|[^a-z0-9])(?:antenna|coax|connector|edge|header|jack|mechanical|module|mount|shield|sma|socket|usb)(?:$|[^a-z0-9])/i
+const PAD_FALLBACK_AUTHORED_ANCHOR_PATTERN =
+    /(?:^|[^a-z0-9])(?:antenna|coax|conn|connector|edge|flex|fpc|frame|hardware|header|jack|mechanical|module|shield|sma|socket|usb)(?:$|[^a-z0-9])/i
 
 /**
  * Repairs repeated Altium model-anchor bodies by matching their shared source
@@ -19,6 +25,7 @@ const TIMING_DESIGNATOR_PATTERN = /^(?:y|xo)\d+[a-z]?$/i
 export class AltiumScene3dRepeatedModelOwnerRepair {
     static #OFFSET_TOLERANCE_MIL = 8
     static #MIN_OWNER_DISTANCE_MIL = 25
+    static #MIN_PAD_FALLBACK_OWNER_OFFSET_MIL = 1
 
     /**
      * Applies repeated-model owner repair to an Altium scene.
@@ -50,7 +57,7 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
         )
         const placements = sceneDescription.externalPlacements.map(
             (placement) =>
-                AltiumScene3dRepeatedModelOwnerRepair.#withPassiveOwnerCenter(
+                AltiumScene3dRepeatedModelOwnerRepair.#withSingleOwnerCenter(
                     placement,
                     componentByDesignator.get(
                         String(placement?.designator || '')
@@ -156,18 +163,18 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
     }
 
     /**
-     * Centers a generic passive body on its resolved owner when the body anchor
-     * carries a moderate source-origin offset.
+     * Centers a single body on its resolved owner when the body anchor carries
+     * a source-origin offset that is not an authored mechanical anchor.
      * @param {object} placement Scene placement.
      * @param {object | undefined} component Resolved owner.
      * @param {object} board Scene board metadata.
      * @returns {object}
      */
-    static #withPassiveOwnerCenter(placement, component, board) {
+    static #withSingleOwnerCenter(placement, component, board) {
         if (
             !component ||
             String(placement?.projection?.source || '') !== 'pad-fallback' ||
-            !AltiumScene3dRepeatedModelOwnerRepair.#isPassivePlacement(
+            AltiumScene3dRepeatedModelOwnerRepair.#isAuthoredAnchorPlacement(
                 placement,
                 component
             )
@@ -185,7 +192,8 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
         }
         if (
             Math.hypot(offset.x, offset.y) <=
-            AltiumScene3dRepeatedModelOwnerRepair.#MIN_OWNER_DISTANCE_MIL
+            AltiumScene3dRepeatedModelOwnerRepair
+                .#MIN_PAD_FALLBACK_OWNER_OFFSET_MIL
         ) {
             return placement
         }
@@ -194,28 +202,87 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
             placement,
             component,
             board,
-            offset
+            offset,
+            { preserveRotation: true }
         )
     }
 
     /**
-     * Checks whether a placement/component pair describes a generic passive.
+     * Checks whether a placement/component pair describes an authored hardware
+     * anchor whose source body position should remain authoritative.
      * @param {object} placement Scene placement.
      * @param {object} component PCB component.
      * @returns {boolean}
      */
-    static #isPassivePlacement(placement, component) {
-        return PASSIVE_BODY_PATTERN.test(
-            [
-                placement?.designator,
-                placement?.externalModel?.name,
-                component?.pattern,
-                component?.source,
-                component?.description
-            ]
-                .map((value) => String(value || ''))
-                .join(' ')
+    static #isAuthoredAnchorPlacement(placement, component) {
+        const identityText =
+            AltiumScene3dRepeatedModelOwnerRepair.#identityTextForPlacement(
+                placement,
+                component
+            )
+        if (PASSIVE_BODY_PATTERN.test(identityText)) {
+            return false
+        }
+
+        if (
+            String(placement?.projection?.source || '').toLowerCase() ===
+            'pad-fallback'
+        ) {
+            return (
+                PAD_FALLBACK_AUTHORED_ANCHOR_PATTERN.test(identityText) ||
+                AltiumScene3dRepeatedModelOwnerRepair.#hasCompactIcSourceOriginOffset(
+                    placement,
+                    component,
+                    identityText
+                )
+            )
+        }
+
+        return AUTHORED_ANCHOR_IDENTITY_PATTERN.test(identityText)
+    }
+
+    /**
+     * Checks whether a compact IC uses a small authored source-origin offset.
+     * @param {object} placement Scene placement.
+     * @param {object} component PCB component.
+     * @param {string} identityText Searchable package identity.
+     * @returns {boolean}
+     */
+    static #hasCompactIcSourceOriginOffset(placement, component, identityText) {
+        const distance = AltiumScene3dRepeatedModelOwnerRepair.#distance(
+            placement?.bodyPositionMil,
+            component
         )
+
+        return (
+            COMPACT_IC_BODY_PATTERN.test(identityText) &&
+            distance >
+                AltiumScene3dRepeatedModelOwnerRepair
+                    .#MIN_PAD_FALLBACK_OWNER_OFFSET_MIL &&
+            distance <
+                AltiumScene3dRepeatedModelOwnerRepair.#MIN_OWNER_DISTANCE_MIL
+        )
+    }
+
+    /**
+     * Builds searchable identity text for placement-owner policy checks.
+     * @param {object} placement Scene placement.
+     * @param {object} component PCB component.
+     * @returns {string}
+     */
+    static #identityTextForPlacement(placement, component) {
+        return [
+            placement?.designator,
+            placement?.externalModel?.name,
+            placement?.externalModel?.relativePath,
+            placement?.externalModel?.sourceStream,
+            component?.pattern,
+            component?.source,
+            component?.description,
+            ...Object.values(component?.parameters || {})
+        ]
+            .map((value) => String(value || ''))
+            .join(' ')
     }
 
     /**
@@ -428,20 +495,32 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
      * @param {object} component Resolved owner.
      * @param {object} board Scene board metadata.
      * @param {{ x: number, y: number }} offset Source-origin offset.
+     * @param {{ preserveRotation?: boolean }} [options] Repair options.
      * @returns {object}
      */
-    static #withOwner(placement, component, board, offset) {
+    static #withOwner(placement, component, board, offset, options = {}) {
         const mountSide =
             AltiumScene3dRepeatedModelOwnerRepair.#mountSide(component) ||
             placement.mountSide
+        const rotationDeg = options?.preserveRotation
+            ? AltiumScene3dRepeatedModelOwnerRepair.#normalizeAngle(
+                  placement?.rotationDeg
+              )
+            : AltiumScene3dRepeatedModelOwnerRepair.#normalizeAngle(
+                  component?.rotation
+              )
+        const renderableOffset =
+            AltiumScene3dRepeatedModelOwnerRepair.#renderableOwnerAnchorOffset(
+                { mountSide, rotationDeg },
+                offset,
+                placement?.modelTransform
+            )
 
         return {
             ...placement,
             designator: String(component?.designator || placement.designator),
             mountSide,
-            rotationDeg: AltiumScene3dRepeatedModelOwnerRepair.#normalizeAngle(
-                component?.rotation
-            ),
+            rotationDeg,
             positionMil: {
                 ...placement.positionMil,
                 x: Number(component?.x || 0) - Number(board?.centerX || 0),
@@ -453,12 +532,59 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
             },
             modelTransform: {
                 ...(placement.modelTransform || {}),
+                offsetMil: renderableOffset,
                 ownerAnchorOffsetMil: {
                     x: Number(offset?.x || 0),
                     y: Number(offset?.y || 0)
                 }
             }
         }
+    }
+
+    /**
+     * Converts a board-space source-origin offset into mount-rig local XY.
+     * @param {{ mountSide?: string, rotationDeg?: number }} placement Resolved placement fields.
+     * @param {{ x: number, y: number }} offset Board-space owner offset.
+     * @param {object | undefined} modelTransform Existing model transform.
+     * @returns {{ x: number, y: number, z: number }}
+     */
+    static #renderableOwnerAnchorOffset(placement, offset, modelTransform) {
+        const rotationRad =
+            (-AltiumScene3dRepeatedModelOwnerRepair.#normalizeAngle(
+                Number(placement?.rotationDeg || 0)
+            ) *
+                Math.PI) /
+            180
+        const cos = Math.cos(rotationRad)
+        const sin = Math.sin(rotationRad)
+        const x = Number(offset?.x || 0) * cos - Number(offset?.y || 0) * sin
+        const y = Number(offset?.x || 0) * sin + Number(offset?.y || 0) * cos
+        const z = Number(
+            modelTransform?.offsetMil?.z ?? modelTransform?.dzMil ?? 0
+        )
+
+        return {
+            x: Math.abs(x) < Number.EPSILON ? 0 : Number(x.toFixed(10)),
+            y: AltiumScene3dRepeatedModelOwnerRepair.#isBottomPlacement(
+                placement
+            )
+                ? Math.abs(y) < Number.EPSILON
+                    ? 0
+                    : Number((-y).toFixed(10))
+                : Math.abs(y) < Number.EPSILON
+                  ? 0
+                  : Number(y.toFixed(10)),
+            z: Number.isFinite(z) ? z : 0
+        }
+    }
+
+    /**
+     * Checks whether one placement mounts on the board bottom face.
+     * @param {{ mountSide?: string } | null | undefined} placement Placement.
+     * @returns {boolean}
+     */
+    static #isBottomPlacement(placement) {
+        return String(placement?.mountSide || '').toLowerCase() === 'bottom'
     }
 
     /**

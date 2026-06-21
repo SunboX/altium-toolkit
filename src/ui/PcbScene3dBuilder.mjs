@@ -26,10 +26,16 @@ export class PcbScene3dBuilder {
     static #DENSE_OVERLAY_MIN_TRACK_COUNT = 250
     static #DENSE_OVERLAY_KNOCKOUT_COLOR = 0x2f6a2c
     static #PRECISE_BODY_MATCH_TOLERANCE_MIL = 20
+    static #EXACT_BODY_MISMATCH_TOLERANCE_MIL = 1
+    static #NEAR_PACKAGE_AFFINITY_DISTANCE_MIL = 100
     static #UNMATCHED_BODY_OVERHANG_RATIO = 0.25
     static #UNMATCHED_BODY_MIN_OVERHANG_MIL = 150
     static #UNMATCHED_BODY_MAX_OVERHANG_MIL = 600
     static #TRUETYPE_TEXT_WIDTH_RATIO = 0.55
+    static #AUTHORED_BODY_IDENTITY_PATTERN =
+        /(?:^|[^a-z0-9])(?:antenna|coax|conn|connector|edge|flex|fpc|frame|hardware|header|jack|mechanical|module|mount|shield|sma|socket|usb)(?:$|[^a-z0-9])/i
+    static #COMPONENT_PACKAGE_BODY_PATTERN =
+        /(?:^|[^a-z0-9])(?:[a-z0-9]*dfn|[a-z0-9]*qfn|bga|cap|capacitor|crystal|diode|ferrite|ind|inductor|lga|lqg[a-z0-9]*|lqw[a-z0-9]*|osc|qfp|res|resistor|sot|transistor|xtal)(?:$|[^a-z0-9])/i
 
     /**
      * Builds a scene description for host 3D renderers.
@@ -81,10 +87,16 @@ export class PcbScene3dBuilder {
                 : []
         }
         const componentBodyModels = componentBodies.map((componentBody) =>
-            PcbScene3dBuilder.#resolveComponentBodyModel(
+            PcbScene3dBuilder.#shouldSuppressLayerlessBodyPlaceholder(
                 componentBody,
-                modelRegistry
+                componentBodies,
+                board
             )
+                ? null
+                : PcbScene3dBuilder.#resolveComponentBodyModel(
+                      componentBody,
+                      modelRegistry
+                  )
         )
         const bodyMatches = PcbScene3dBuilder.#resolveComponentBodyMatches(
             componentBodies,
@@ -193,12 +205,12 @@ export class PcbScene3dBuilder {
 
     /**
      * Builds one procedural component scene entry.
-     * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null, source?: string, modelPath?: string }} component
+     * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null, source?: string, description?: string, parameters?: Record<string, unknown>, modelPath?: string }} component
      * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[]} pads
      * @param {{ centerX: number, centerY: number }} board
      * @param {number} thicknessMil
      * @param {{ resolveComponentModel: (component: any) => { name: string, relativePath: string, format: string } | null } | null} modelRegistry
-     * @returns {{ designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, boardPositionMil: { x: number, y: number, z: number }, pattern: string, source: string, body: { family: string, sizeMil: { width: number, depth: number, height: number } }, externalModel: { name: string, relativePath: string, format: string } | null }}
+     * @returns {{ designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, boardPositionMil: { x: number, y: number, z: number }, pattern: string, source: string, description: string, parameters: Record<string, unknown>, body: { family: string, sizeMil: { width: number, depth: number, height: number } }, externalModel: { name: string, relativePath: string, format: string } | null }}
      */
     static #buildComponent(
         component,
@@ -233,6 +245,13 @@ export class PcbScene3dBuilder {
             },
             pattern: String(component.pattern || ''),
             source: String(component.source || ''),
+            description: String(component.description || ''),
+            parameters:
+                component.parameters &&
+                typeof component.parameters === 'object' &&
+                !Array.isArray(component.parameters)
+                    ? { ...component.parameters }
+                    : {},
             body,
             externalModel: modelRegistry
                 ? modelRegistry.resolveComponentModel(component)
@@ -272,6 +291,16 @@ export class PcbScene3dBuilder {
         thicknessMil
     ) {
         if (!resolvedModel) {
+            return null
+        }
+
+        if (
+            !matchedComponent &&
+            PcbScene3dBuilder.#shouldDropUnmatchedPackageBody(
+                componentBody,
+                components
+            )
+        ) {
             return null
         }
 
@@ -540,6 +569,12 @@ export class PcbScene3dBuilder {
                         bodyIndex,
                         componentIndex,
                         affinityScore,
+                        nearPackageAffinityScore:
+                            PcbScene3dBuilder.#nearPackageAffinityScore(
+                                componentBody,
+                                affinityScore,
+                                distance
+                            ),
                         preciseOwnerScore:
                             precise && (sideCompatible || affinityScore > 0)
                                 ? 1
@@ -555,6 +590,8 @@ export class PcbScene3dBuilder {
         closeCandidates
             .sort(
                 (left, right) =>
+                    right.nearPackageAffinityScore -
+                        left.nearPackageAffinityScore ||
                     right.preciseOwnerScore - left.preciseOwnerScore ||
                     right.sideAffinityScore - left.sideAffinityScore ||
                     right.affinityScore - left.affinityScore ||
@@ -804,7 +841,11 @@ export class PcbScene3dBuilder {
         distanceMil
     ) {
         if (PcbScene3dBuilder.#isPreciseBodyComponentDistance(distanceMil)) {
-            return true
+            return !PcbScene3dBuilder.#isIncompatiblePackageBodyMatch(
+                componentBody,
+                component,
+                distanceMil
+            )
         }
 
         if (
@@ -823,6 +864,242 @@ export class PcbScene3dBuilder {
             matchContext.candidateComponentCounts.get(groupKey) || 0
 
         return bodyCount > 0 && bodyCount <= candidateCount
+    }
+
+    /**
+     * Scores short-range package metadata matches above no-affinity anchors.
+     * @param {{ name?: string, identifier?: string }} componentBody Component-body record.
+     * @param {number} affinityScore Shared body/component identity score.
+     * @param {number} distanceMil Body/component anchor distance.
+     * @returns {number}
+     */
+    static #nearPackageAffinityScore(
+        componentBody,
+        affinityScore,
+        distanceMil
+    ) {
+        return PcbScene3dBuilder.#isComponentPackageBody(componentBody) &&
+            Number(affinityScore || 0) > 0 &&
+            Number(distanceMil || 0) <=
+                PcbScene3dBuilder.#NEAR_PACKAGE_AFFINITY_DISTANCE_MIL
+            ? 1
+            : 0
+    }
+
+    /**
+     * Checks whether an unmatched package-like body should be suppressed
+     * because it sits on an exact but incompatible component anchor.
+     * @param {{ name?: string, identifier?: string, positionMil?: { x?: number, y?: number } }} componentBody Component-body record.
+     * @param {{ x: number, y: number, pattern?: string, source?: string, modelPath?: string }[]} components PCB components.
+     * @returns {boolean}
+     */
+    static #shouldDropUnmatchedPackageBody(componentBody, components) {
+        if (
+            !PcbScene3dBuilder.#isComponentPackageBody(componentBody) ||
+            PcbScene3dBuilder.#isAuthoredBodyIdentity(componentBody)
+        ) {
+            return false
+        }
+
+        const exactComponents = (
+            Array.isArray(components) ? components : []
+        ).filter(
+            (component) =>
+                PcbScene3dBuilder.#distanceBetweenBodyAndComponent(
+                    componentBody,
+                    component
+                ) <= PcbScene3dBuilder.#EXACT_BODY_MISMATCH_TOLERANCE_MIL
+        )
+
+        return (
+            exactComponents.length > 0 &&
+            exactComponents.every(
+                (component) =>
+                    PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
+                        componentBody,
+                        component
+                    ) <= 0
+            )
+        )
+    }
+
+    /**
+     * Checks whether a precise body/component pair is a package-family mismatch.
+     * @param {{ name?: string, identifier?: string }} componentBody Component-body record.
+     * @param {{ pattern?: string, source?: string, modelPath?: string }} component PCB component.
+     * @param {number} distanceMil Body/component anchor distance.
+     * @returns {boolean}
+     */
+    static #isIncompatiblePackageBodyMatch(
+        componentBody,
+        component,
+        distanceMil
+    ) {
+        return (
+            Number(distanceMil || 0) <=
+                PcbScene3dBuilder.#EXACT_BODY_MISMATCH_TOLERANCE_MIL &&
+            PcbScene3dBuilder.#isComponentPackageBody(componentBody) &&
+            !PcbScene3dBuilder.#isAuthoredBodyIdentity(componentBody) &&
+            PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
+                componentBody,
+                component
+            ) <= 0
+        )
+    }
+
+    /**
+     * Checks whether a component body names a package model rather than an
+     * authored board mechanical.
+     * @param {{ name?: string, identifier?: string }} componentBody Component-body record.
+     * @returns {boolean}
+     */
+    static #isComponentPackageBody(componentBody) {
+        return PcbScene3dBuilder.#COMPONENT_PACKAGE_BODY_PATTERN.test(
+            PcbScene3dBuilder.#componentBodyIdentityText(componentBody)
+        )
+    }
+
+    /**
+     * Checks whether a component body identity describes an authored hardware
+     * or connector anchor that can legitimately sit away from a footprint
+     * center.
+     * @param {{ name?: string, identifier?: string }} componentBody Component-body record.
+     * @returns {boolean}
+     */
+    static #isAuthoredBodyIdentity(componentBody) {
+        return PcbScene3dBuilder.#AUTHORED_BODY_IDENTITY_PATTERN.test(
+            PcbScene3dBuilder.#componentBodyIdentityText(componentBody)
+        )
+    }
+
+    /**
+     * Checks whether a layerless component body is a footprint-library
+     * placeholder rather than a board-side placement.
+     * @param {{ layer?: string, name?: string, identifier?: string, modelId?: string, checksum?: number | null, positionMil?: { x?: number, y?: number } }} componentBody Component body record.
+     * @param {object[]} componentBodies All component body records.
+     * @param {{ minX: number, minY: number, widthMil: number, heightMil: number }} board Board envelope.
+     * @returns {boolean}
+     */
+    static #shouldSuppressLayerlessBodyPlaceholder(
+        componentBody,
+        componentBodies,
+        board
+    ) {
+        if (
+            !PcbScene3dBuilder.#isLayerlessComponentBody(componentBody) ||
+            PcbScene3dBuilder.#isAuthoredBodyIdentity(componentBody)
+        ) {
+            return false
+        }
+
+        return (
+            !PcbScene3dBuilder.#isBodyPositionNearBoard(componentBody, board) ||
+            PcbScene3dBuilder.#hasLayeredEquivalentPackageBody(
+                componentBody,
+                componentBodies
+            )
+        )
+    }
+
+    /**
+     * Checks whether a body lacks an authored mechanical layer.
+     * @param {{ layer?: string }} componentBody Component body record.
+     * @returns {boolean}
+     */
+    static #isLayerlessComponentBody(componentBody) {
+        return String(componentBody?.layer || '').trim() === ''
+    }
+
+    /**
+     * Checks whether a layerless body duplicates a real board-side body.
+     * @param {{ positionMil?: { x?: number, y?: number } }} componentBody Candidate layerless body.
+     * @param {object[]} componentBodies All component body records.
+     * @returns {boolean}
+     */
+    static #hasLayeredEquivalentPackageBody(componentBody, componentBodies) {
+        return (Array.isArray(componentBodies) ? componentBodies : []).some(
+            (candidate) =>
+                candidate !== componentBody &&
+                !PcbScene3dBuilder.#isLayerlessComponentBody(candidate) &&
+                PcbScene3dBuilder.#componentBodiesShareModelIdentity(
+                    componentBody,
+                    candidate
+                ) &&
+                PcbScene3dBuilder.#distanceBetweenBodies(
+                    componentBody,
+                    candidate
+                ) <= PcbScene3dBuilder.#EXACT_BODY_MISMATCH_TOLERANCE_MIL
+        )
+    }
+
+    /**
+     * Checks whether two component bodies refer to the same external package.
+     * @param {{ name?: string, identifier?: string, modelId?: string, checksum?: number | null }} left First body.
+     * @param {{ name?: string, identifier?: string, modelId?: string, checksum?: number | null }} right Second body.
+     * @returns {boolean}
+     */
+    static #componentBodiesShareModelIdentity(left, right) {
+        const leftModelId = PcbScene3dBuilder.#normalizeIdentityToken(
+            left?.modelId
+        )
+        const rightModelId = PcbScene3dBuilder.#normalizeIdentityToken(
+            right?.modelId
+        )
+        if (leftModelId && rightModelId && leftModelId === rightModelId) {
+            return true
+        }
+
+        const leftChecksum = Number(left?.checksum)
+        const rightChecksum = Number(right?.checksum)
+        if (
+            Number.isFinite(leftChecksum) &&
+            Number.isFinite(rightChecksum) &&
+            leftChecksum === rightChecksum
+        ) {
+            return true
+        }
+
+        const leftName = PcbScene3dBuilder.#normalizeBodyNameToken(left)
+        const rightName = PcbScene3dBuilder.#normalizeBodyNameToken(right)
+
+        return Boolean(leftName && rightName && leftName === rightName)
+    }
+
+    /**
+     * Normalizes a body model name or identifier for duplicate detection.
+     * @param {{ name?: string, identifier?: string }} componentBody Component body.
+     * @returns {string}
+     */
+    static #normalizeBodyNameToken(componentBody) {
+        return PcbScene3dBuilder.#normalizeIdentityToken(
+            componentBody?.name || componentBody?.identifier
+        ).replace(/\.[a-z0-9]+$/i, '')
+    }
+
+    /**
+     * Normalizes an identity token for case-insensitive comparisons.
+     * @param {unknown} value Raw token.
+     * @returns {string}
+     */
+    static #normalizeIdentityToken(value) {
+        return String(value || '')
+            .trim()
+            .toLowerCase()
+    }
+
+    /**
+     * Builds searchable identity text for one component body.
+     * @param {{ name?: string, identifier?: string, modelId?: string }} componentBody Component-body record.
+     * @returns {string}
+     */
+    static #componentBodyIdentityText(componentBody) {
+        return [
+            componentBody?.identifier,
+            componentBody?.name,
+            componentBody?.modelId
+        ]
+            .map((value) => String(value || ''))
+            .join(' ')
     }
 
     /**
@@ -1538,6 +1815,21 @@ export class PcbScene3dBuilder {
                 Number(componentBody?.positionMil?.x || 0),
             Number(component?.y || 0) -
                 Number(componentBody?.positionMil?.y || 0)
+        )
+    }
+
+    /**
+     * Returns the euclidean distance between two component body anchors.
+     * @param {{ positionMil?: { x?: number, y?: number } }} left First body.
+     * @param {{ positionMil?: { x?: number, y?: number } }} right Second body.
+     * @returns {number}
+     */
+    static #distanceBetweenBodies(left, right) {
+        return Math.hypot(
+            Number(left?.positionMil?.x || 0) -
+                Number(right?.positionMil?.x || 0),
+            Number(left?.positionMil?.y || 0) -
+                Number(right?.positionMil?.y || 0)
         )
     }
 

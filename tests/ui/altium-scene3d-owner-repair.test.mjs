@@ -159,7 +159,52 @@ function createModelAnchorNearPassiveCase() {
 }
 
 /**
- * Builds a fake scene whose model name only shares generic descriptor words.
+ * Builds a fake scene where an unmatched model-anchor pin-header body is just
+ * outside the exact-anchor tolerance but close to a compatible header owner.
+ * @returns {{ scene: object, documentModel: object }}
+ */
+function createModelAnchorNearHeaderCase() {
+    return {
+        scene: createSinglePlacementScene({
+            designator: 'FAKE_PIN_HEADER_BODY',
+            mountSide: 'bottom',
+            rotationDeg: 270,
+            positionMil: { x: 225, y: 155, z: -40 },
+            bodyPositionMil: { x: 725, y: 405 },
+            projection: { source: 'model-anchor-fallback' },
+            externalModel: {
+                origin: 'embedded',
+                name: 'FAKE_PINHEADER_2P.step',
+                format: 'step'
+            }
+        }),
+        documentModel: createOwnerRepairDocument({
+            components: [
+                {
+                    designator: 'JP1',
+                    x: 725,
+                    y: 380,
+                    layer: 'TOP',
+                    pattern: 'FAKE_HEADER_2X1_TH',
+                    source: 'FAKE_HEADER_2X1',
+                    rotation: 270
+                }
+            ],
+            componentBodies: [
+                {
+                    identifier: 'FAKE_PINHEADER_2P',
+                    name: 'FAKE_PINHEADER_2P.step',
+                    positionMil: { x: 725, y: 405 },
+                    modelRotationDeg: { x: -90, y: 0, z: 270 },
+                    overallHeightMil: 80
+                }
+            ]
+        })
+    }
+}
+
+/**
+ * Builds a fake model-anchor connector recovered by part-code metadata.
  * @returns {{ scene: object, documentModel: object }}
  */
 function createGenericDescriptorTokenCase() {
@@ -289,6 +334,151 @@ function createPassiveOffsetOwnerCase() {
                     positionMil: { x: 770, y: 380 },
                     modelRotationDeg: { x: 0, y: 0, z: 0 },
                     overallHeightMil: 20
+                }
+            ]
+        })
+    }
+}
+
+/**
+ * Builds a fake scene where a single IC body is assigned to its owner but its
+ * model source origin is offset from the footprint center.
+ * @returns {{ scene: object, documentModel: object }}
+ */
+function createIcOffsetOwnerCase() {
+    return {
+        scene: createSinglePlacementScene({
+            designator: 'U1',
+            mountSide: 'top',
+            rotationDeg: 180,
+            positionMil: { x: 360, y: 320, z: 40 },
+            bodyPositionMil: { x: 860, y: 570 },
+            projection: { source: 'pad-fallback' },
+            externalModel: {
+                origin: 'embedded',
+                name: 'FAKE_CONTROLLER_123.step',
+                format: 'step'
+            }
+        }),
+        documentModel: createOwnerRepairDocument({
+            components: [
+                {
+                    designator: 'U1',
+                    x: 620,
+                    y: 390,
+                    layer: 'TOP',
+                    pattern: 'FAKE_CONTROLLER_123_QFN',
+                    source: 'FAKE_CONTROLLER_123',
+                    rotation: 180,
+                    parameters: {
+                        Package: 'QFN'
+                    }
+                }
+            ],
+            componentBodies: [
+                {
+                    identifier: 'FAKE_CONTROLLER_123',
+                    name: 'FAKE_CONTROLLER_123.step',
+                    positionMil: { x: 860, y: 570 },
+                    modelRotationDeg: { x: 0, y: 0, z: 180 },
+                    overallHeightMil: 40
+                }
+            ]
+        })
+    }
+}
+
+/**
+ * Builds a fake scene where a compact IC package has a small but visible
+ * model source-origin offset from its footprint center.
+ * @returns {{ scene: object, documentModel: object }}
+ */
+function createSmallIcOffsetOwnerCase() {
+    return {
+        scene: createSinglePlacementScene({
+            designator: 'U2',
+            mountSide: 'bottom',
+            rotationDeg: 180,
+            positionMil: { x: 217, y: 142, z: -40 },
+            bodyPositionMil: { x: 717, y: 392 },
+            projection: { source: 'pad-fallback' },
+            externalModel: {
+                origin: 'embedded',
+                name: 'FAKE_LEVEL_SHIFTER_QFN.step',
+                format: 'step'
+            }
+        }),
+        documentModel: createOwnerRepairDocument({
+            components: [
+                {
+                    designator: 'U2',
+                    x: 700,
+                    y: 380,
+                    layer: 'BOTTOM',
+                    pattern: 'FAKE_LEVEL_SHIFTER_QFN16',
+                    source: 'FAKE_LEVEL_SHIFTER',
+                    rotation: 180,
+                    parameters: {
+                        Package: 'QFN-16'
+                    }
+                }
+            ],
+            componentBodies: [
+                {
+                    identifier: 'FAKE_LEVEL_SHIFTER_QFN',
+                    name: 'FAKE_LEVEL_SHIFTER_QFN.step',
+                    positionMil: { x: 717, y: 392 },
+                    modelRotationDeg: { x: 180, y: 0, z: 180 },
+                    overallHeightMil: 22
+                }
+            ]
+        })
+    }
+}
+
+/**
+ * Builds a fake scene with a pad-fallback connector body whose source origin
+ * is offset from the footprint center.
+ * @returns {{ scene: object, documentModel: object }}
+ */
+function createPadFallbackConnectorOriginOffsetCase() {
+    return {
+        scene: createSinglePlacementScene({
+            designator: 'J1',
+            mountSide: 'bottom',
+            rotationDeg: 0,
+            positionMil: { x: 180, y: 110, z: -40 },
+            bodyPositionMil: { x: 680, y: 360 },
+            projection: { source: 'pad-fallback' },
+            externalModel: {
+                origin: 'embedded',
+                name: 'FAKE_FLEX_SOCKET_BODY.step',
+                format: 'step'
+            }
+        }),
+        documentModel: createOwnerRepairDocument({
+            components: [
+                {
+                    designator: 'J1',
+                    x: 680,
+                    y: 430,
+                    layer: 'BOTTOM',
+                    pattern: 'FAKE_FLEX_SOCKET_CONN',
+                    source: 'FAKE_FLEX_CONNECTOR',
+                    rotation: 0,
+                    parameters: {
+                        Description:
+                            'Fake FPC connector contacts, surface mount'
+                    }
+                }
+            ],
+            componentBodies: [
+                {
+                    identifier: 'FAKE_FLEX_SOCKET_BODY',
+                    name: 'FAKE_FLEX_SOCKET_BODY.step',
+                    positionMil: { x: 680, y: 360 },
+                    modelRotationDeg: { x: 90, y: 0, z: 0 },
+                    overallHeightMil: 40
                 }
             ]
         })
@@ -541,8 +731,27 @@ test('Altium 3D owner repair keeps model-anchor bodies on their authored side', 
 })
 
 /**
- * Verifies broad descriptor words do not create false metadata ownership.
+ * Verifies near model-anchor headers can attach to compatible footprint
+ * owners instead of remaining on the wrong side.
  */
+test('Altium 3D owner repair centers near model-anchor headers', () => {
+    const { scene, documentModel } = createModelAnchorNearHeaderCase()
+    const repaired = AltiumScene3dExternalPlacementAdapter.apply(
+        scene,
+        documentModel
+    )
+    const placement = repaired.externalPlacements[0]
+
+    assert.equal(repaired.externalPlacements.length, 1)
+    assert.equal(placement.designator, 'JP1')
+    assert.equal(placement.mountSide, 'top')
+    assert.deepEqual(placement.positionMil, { x: 225, y: 130, z: 40 })
+    assert.deepEqual(placement.modelTransform.ownerAnchorOffsetMil, {
+        x: 0,
+        y: 25
+    })
+})
+
 test('Altium 3D owner repair ignores generic descriptor metadata tokens', () => {
     const { scene, documentModel } = createGenericDescriptorTokenCase()
     const repaired = AltiumScene3dExternalPlacementAdapter.apply(
@@ -589,6 +798,65 @@ test('Altium 3D owner repair centers generic passive owner offsets', () => {
 })
 
 /**
+ * Verifies single IC bodies use the same owner-centered placement when the
+ * source model origin is offset from the confirmed footprint center.
+ */
+test('Altium 3D owner repair centers single IC owner offsets', () => {
+    const { scene, documentModel } = createIcOffsetOwnerCase()
+    const repaired = AltiumScene3dExternalPlacementAdapter.apply(
+        scene,
+        documentModel
+    )
+    const placement = repaired.externalPlacements[0]
+
+    assert.equal(placement.designator, 'U1')
+    assert.equal(placement.positionMil.x, 120)
+    assert.equal(placement.positionMil.y, 140)
+    assert.deepEqual(placement.modelTransform.ownerAnchorOffsetMil, {
+        x: 240,
+        y: 180
+    })
+})
+
+/**
+ * Verifies compact IC package source-origin biases remain anchored to the
+ * authored body position when the offset is below the owner-repair threshold.
+ */
+test('Altium 3D owner repair keeps small IC owner offsets', () => {
+    const { scene, documentModel } = createSmallIcOffsetOwnerCase()
+    const repaired = AltiumScene3dExternalPlacementAdapter.apply(
+        scene,
+        documentModel
+    )
+    const placement = repaired.externalPlacements[0]
+
+    assert.equal(placement.designator, 'U2')
+    assert.equal(placement.positionMil.x, 217)
+    assert.equal(placement.positionMil.y, 142)
+    assert.equal(placement.modelTransform.ownerAnchorOffsetMil, undefined)
+})
+
+/**
+ * Verifies pad-fallback connector bodies keep their authored model anchor
+ * because their source origin can be intentionally offset from the footprint.
+ */
+test('Altium 3D owner repair keeps pad-fallback connector owner offsets', () => {
+    const { scene, documentModel } =
+        createPadFallbackConnectorOriginOffsetCase()
+    const repaired = AltiumScene3dExternalPlacementAdapter.apply(
+        scene,
+        documentModel
+    )
+    const placement = repaired.externalPlacements[0]
+
+    assert.equal(placement.designator, 'J1')
+    assert.equal(placement.mountSide, 'bottom')
+    assert.equal(placement.positionMil.x, 180)
+    assert.equal(placement.positionMil.y, 110)
+    assert.equal(placement.modelTransform.ownerAnchorOffsetMil, undefined)
+})
+
+/**
  * Verifies repeated unnamed connector bodies are matched by their shared
  * source-origin offset instead of being left on the authored body anchor.
  */
@@ -632,5 +900,14 @@ test('Altium 3D owner repair centers repeated timing-package bodies on owners', 
     assert.deepEqual(
         repaired.externalPlacements.map((placement) => placement.positionMil.y),
         [180, 180]
+    )
+    assert.deepEqual(
+        repaired.externalPlacements.map(
+            (placement) => placement.modelTransform.offsetMil
+        ),
+        [
+            { x: -50, y: -25, z: 0 },
+            { x: -50, y: -25, z: 0 }
+        ]
     )
 })

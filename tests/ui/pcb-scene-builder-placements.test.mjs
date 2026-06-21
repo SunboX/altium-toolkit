@@ -188,6 +188,232 @@ test('PcbScene3dBuilder ignores unresolved duplicate bodies during matching', ()
 })
 
 /**
+ * Verifies layerless package-library body rows are not paired into repeated
+ * package placements when real board-side bodies already exist.
+ */
+test('PcbScene3dBuilder drops layerless off-board package placeholders before repeated matching', () => {
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'demo.PcbDoc',
+            pcb: {
+                boardOutline: buildBoardOutline(),
+                pads: [],
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: [
+                    {
+                        sourceStream: 'ComponentBodies6/Data',
+                        layer: 'MECHANICAL13',
+                        identifier: 'cap_body',
+                        modelId: '{MODEL-CAP}',
+                        checksum: 331,
+                        embedded: true,
+                        name: 'cap-body.step',
+                        positionMil: { x: 220, y: 160 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: 0, y: 0, z: 0 },
+                        dzMil: 0
+                    },
+                    {
+                        sourceStream: 'ComponentBodies6/Data',
+                        layer: 'MECHANICAL13',
+                        identifier: 'cap_body',
+                        modelId: '{MODEL-CAP}',
+                        checksum: 331,
+                        embedded: true,
+                        name: 'cap-body.step',
+                        positionMil: { x: 420, y: 160 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: 0, y: 0, z: 0 },
+                        dzMil: 0
+                    },
+                    {
+                        sourceStream: 'ComponentBodies6/Data',
+                        layer: '',
+                        identifier: 'cap_body',
+                        modelId: '{MODEL-CAP}',
+                        checksum: 331,
+                        embedded: true,
+                        name: 'cap-body.step',
+                        positionMil: { x: 0, y: 900 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: 0, y: 0, z: 0 },
+                        dzMil: 0
+                    }
+                ],
+                components: [
+                    {
+                        designator: 'C1',
+                        x: 220,
+                        y: 160,
+                        rotation: 0,
+                        layer: 'TOP',
+                        pattern: 'CAP_BODY',
+                        source: 'PASSIVE/CAP_BODY',
+                        height: 20
+                    },
+                    {
+                        designator: 'C2',
+                        x: 420,
+                        y: 160,
+                        rotation: 0,
+                        layer: 'TOP',
+                        pattern: 'CAP_BODY',
+                        source: 'PASSIVE/CAP_BODY',
+                        height: 20
+                    },
+                    {
+                        designator: 'C3',
+                        x: 620,
+                        y: 160,
+                        rotation: 0,
+                        layer: 'TOP',
+                        pattern: 'CAP_BODY',
+                        source: 'PASSIVE/CAP_BODY',
+                        height: 20
+                    }
+                ]
+            }
+        },
+        { modelRegistry: buildModelRegistry() }
+    )
+
+    assert.deepEqual(
+        scene.externalPlacements.map((placement) => placement.designator),
+        ['C1', 'C2']
+    )
+})
+
+/**
+ * Verifies exact component anchors do not accept unrelated package-family
+ * bodies just because their coordinates overlap.
+ */
+test('PcbScene3dBuilder drops exact incompatible package body matches', () => {
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'demo.PcbDoc',
+            pcb: {
+                boardOutline: buildBoardOutline(),
+                pads: [],
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: [
+                    {
+                        sourceStream: 'ComponentBodies6/Data',
+                        layer: 'MECHANICAL1',
+                        identifier: 'LQW2BH_BODY',
+                        modelId: '{MODEL-WRONG}',
+                        checksum: 223,
+                        embedded: true,
+                        name: 'lqw2bh-body.step',
+                        positionMil: { x: 300, y: 180 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: 0, y: 0, z: 0 },
+                        dzMil: 0
+                    }
+                ],
+                components: [
+                    {
+                        designator: 'T1',
+                        x: 300,
+                        y: 180,
+                        rotation: 90,
+                        layer: 'TOP',
+                        pattern: 'ORION_RF_BALUN',
+                        source: 'RF/ORION_BALUN',
+                        height: 80
+                    }
+                ]
+            }
+        },
+        { modelRegistry: buildModelRegistry() }
+    )
+
+    assert.equal(scene.externalPlacements.length, 0)
+})
+
+/**
+ * Verifies generic package bodies can match nearby IC owners from package
+ * metadata even when the component source names the silicon part instead of
+ * the footprint package.
+ */
+test('PcbScene3dBuilder matches generic package bodies from component package metadata', () => {
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'demo.PcbDoc',
+            pcb: {
+                boardOutline: buildBoardOutline(),
+                pads: [],
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: [
+                    {
+                        sourceStream: 'ComponentBodies6/Data',
+                        layer: 'MECHANICAL13',
+                        identifier: 'User Library-UQFN-16',
+                        modelId: '{MODEL-UQFN}',
+                        checksum: 224,
+                        embedded: true,
+                        name: 'User Library-UQFN-16.step',
+                        positionMil: { x: 322, y: 210 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: 180, y: 0, z: 180 },
+                        dzMil: 0,
+                        overallHeightMil: 22,
+                        standoffHeightMil: -2
+                    }
+                ],
+                components: [
+                    {
+                        designator: 'J1',
+                        x: 312,
+                        y: 210,
+                        rotation: 180,
+                        layer: 'TOP',
+                        pattern: 'COAX_SOCKET_SMALL',
+                        source: 'CON/COAX_SOCKET_SMALL',
+                        height: 80
+                    },
+                    {
+                        designator: 'U1',
+                        x: 304,
+                        y: 200,
+                        rotation: 180,
+                        layer: 'BOTTOM',
+                        pattern: 'ALPHA_TRANSLATOR',
+                        source: 'IC/ALPHA_TRANSLATOR',
+                        parameters: {
+                            'Package / Case': '16-UFQFN',
+                            'Part Description': 'Logic translator 16-UQFN'
+                        },
+                        provenance: {
+                            footprintDescription:
+                                'PQFN, 16-Leads, body 2.60x1.80mm'
+                        },
+                        height: 22
+                    }
+                ]
+            }
+        },
+        { modelRegistry: buildModelRegistry() }
+    )
+
+    assert.equal(scene.externalPlacements.length, 1)
+    assert.equal(scene.externalPlacements[0].designator, 'U1')
+    assert.equal(scene.externalPlacements[0].mountSide, 'bottom')
+    assert.equal(scene.externalPlacements[0].positionMil.z, -31.5)
+})
+
+/**
  * Verifies meaningful model identity beats a nearby unrelated component when
  * an off-origin body anchor sits close to another footprint.
  */

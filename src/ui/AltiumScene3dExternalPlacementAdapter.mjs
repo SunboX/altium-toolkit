@@ -9,11 +9,14 @@ export class AltiumScene3dExternalPlacementAdapter {
     static #EXACT_ANCHOR_TOLERANCE_MIL = 5
     static #NEAR_ANCHOR_TOLERANCE_MIL = 20
     static #FAR_OWNER_DISTANCE_MIL = 100
+    static #MODEL_ANCHOR_NEAR_OWNER_TOLERANCE_MIL = 35
     static #DEFAULT_BOARD_THICKNESS_MIL = 63
     static #PASSIVE_BODY_PATTERN =
         /(?:^|[^a-z0-9])(?:cap|capacitor|res|resistor|ind|inductor|ferrite|bead|crystal|xtal|lqw|lqg)(?:$|[^a-z0-9])/i
     static #MECHANICAL_OWNER_PATTERN =
         /(?:^|[^a-z0-9])(?:mech|mechanical|shield|frame|cover|hardware)(?:$|[^a-z0-9])/i
+    static #MODEL_ANCHOR_OWNER_PATTERN =
+        /(?:pin\s*header|pinheader|header|connector|socket|fpc|flex|jtag)/i
 
     /**
      * Applies exact-anchor repairs to Altium external 3D placements.
@@ -175,6 +178,19 @@ export class AltiumScene3dExternalPlacementAdapter {
                   resolvedComponent
               ) || placement.mountSide
             : placement.mountSide
+        const shouldCenterResolvedModelAnchor =
+            AltiumScene3dExternalPlacementAdapter.#shouldCenterResolvedModelAnchor(
+                placement,
+                resolvedComponent,
+                componentBody,
+                pads
+            )
+        const ownerAnchorOffset = shouldCenterResolvedModelAnchor
+            ? AltiumScene3dExternalPlacementAdapter.#ownerAnchorOffset(
+                  placement,
+                  resolvedComponent
+              )
+            : null
         const nextPlacement =
             exactComponent || metadataComponent
                 ? {
@@ -185,11 +201,23 @@ export class AltiumScene3dExternalPlacementAdapter {
                       mountSide,
                       positionMil: {
                           ...placement.positionMil,
+                          ...(shouldCenterResolvedModelAnchor
+                              ? AltiumScene3dExternalPlacementAdapter.#ownerPositionMil(
+                                    resolvedComponent,
+                                    board
+                                )
+                              : {}),
                           z: AltiumScene3dExternalPlacementAdapter.#resolveFaceZ(
                               mountSide,
                               board
                           )
-                      }
+                      },
+                      modelTransform: shouldCenterResolvedModelAnchor
+                          ? AltiumScene3dExternalPlacementAdapter.#withRenderableOwnerAnchorOffset(
+                                placement,
+                                ownerAnchorOffset
+                            )
+                          : placement.modelTransform
                   }
                 : placement
         const shouldUseComponentYaw =
@@ -200,6 +228,17 @@ export class AltiumScene3dExternalPlacementAdapter {
                 currentHasMetadataAffinity &&
                 !currentIsMechanicalOwner
             )
+        const rotationContext = {
+            placement: nextPlacement,
+            component: resolvedComponent,
+            componentBody,
+            pads,
+            isExactAnchoredOwner
+        }
+        const footprintYaw =
+            AltiumScene3dPlacementRotationPolicy.resolveFootprintYaw(
+                rotationContext
+            )
 
         const repairedPlacement =
             AltiumScene3dExternalPlacementAdapter.#repairRotation(
@@ -207,13 +246,10 @@ export class AltiumScene3dExternalPlacementAdapter {
                 resolvedComponent,
                 componentBody,
                 shouldUseComponentYaw,
-                AltiumScene3dPlacementRotationPolicy.shouldCorrectYaw({
-                    placement: nextPlacement,
-                    component: resolvedComponent,
-                    componentBody,
-                    pads,
-                    isExactAnchoredOwner
-                })
+                AltiumScene3dPlacementRotationPolicy.shouldCorrectYaw(
+                    rotationContext
+                ),
+                footprintYaw
             )
 
         return AltiumScene3dExternalPlacementAdapter.#withContactPadHints(
@@ -419,7 +455,11 @@ export class AltiumScene3dExternalPlacementAdapter {
             String(placement?.projection?.source || '') ===
             'model-anchor-fallback'
         ) {
-            return null
+            return AltiumScene3dExternalPlacementAdapter.#nearestModelAnchorOwner(
+                placement,
+                componentBody,
+                components
+            )
         }
 
         return AltiumScene3dExternalPlacementAdapter.#nearestAnchorComponent(
@@ -430,12 +470,301 @@ export class AltiumScene3dExternalPlacementAdapter {
     }
 
     /**
+     * Finds a nearby compatible owner for a model-anchor fallback body.
+     * @param {object} placement External model placement.
+     * @param {object | null} componentBody Source component body.
+     * @param {object[]} components PCB components.
+     * @returns {object | null}
+     */
+    static #nearestModelAnchorOwner(placement, componentBody, components) {
+        const candidates = components
+            .map((component) => ({
+                component,
+                distance: AltiumScene3dExternalPlacementAdapter.#distanceToBody(
+                    placement,
+                    component
+                )
+            }))
+            .filter(
+                (candidate) =>
+                    candidate.distance <=
+                        AltiumScene3dExternalPlacementAdapter
+                            .#MODEL_ANCHOR_NEAR_OWNER_TOLERANCE_MIL &&
+                    AltiumScene3dExternalPlacementAdapter.#hasModelAnchorOwnerAffinity(
+                        placement,
+                        componentBody,
+                        candidate.component
+                    )
+            )
+            .sort((left, right) => left.distance - right.distance)
+
+        return candidates[0]?.component || null
+    }
+
+    /**
+     * Checks whether a resolved model-anchor fallback should be centered on
+     * its nearby compatible owner.
+     * @param {object} placement External model placement.
+     * @param {object | null | undefined} component Resolved owner component.
+     * @param {object | null} componentBody Source component body.
+     * @param {object[]} pads Source PCB pads.
+     * @returns {boolean}
+     */
+    static #shouldCenterResolvedModelAnchor(
+        placement,
+        component,
+        componentBody,
+        pads
+    ) {
+        if (
+            !component ||
+            String(placement?.projection?.source || '') !==
+                'model-anchor-fallback'
+        ) {
+            return false
+        }
+
+        if (
+            AltiumScene3dExternalPlacementAdapter.#distanceToBody(
+                placement,
+                component
+            ) <=
+                AltiumScene3dExternalPlacementAdapter
+                    .#MODEL_ANCHOR_NEAR_OWNER_TOLERANCE_MIL &&
+            AltiumScene3dExternalPlacementAdapter.#hasModelAnchorOwnerAffinity(
+                placement,
+                componentBody,
+                component
+            )
+        ) {
+            return true
+        }
+
+        return (
+            AltiumScene3dExternalPlacementAdapter.#hasPartCodeAffinity(
+                placement,
+                componentBody,
+                component
+            ) &&
+            AltiumScene3dExternalPlacementAdapter.#hasModelAnchorOwnerComponentAffinity(
+                component
+            ) &&
+            AltiumScene3dExternalPlacementAdapter.#hasOwnedPadGeometry(
+                component,
+                pads
+            )
+        )
+    }
+
+    /**
+     * Checks whether model-anchor and component identity both describe
+     * connector/header-like hardware.
+     * @param {object} placement External model placement.
+     * @param {object | null} componentBody Source component body.
+     * @param {object} component PCB component.
+     * @returns {boolean}
+     */
+    static #hasModelAnchorOwnerAffinity(placement, componentBody, component) {
+        return (
+            AltiumScene3dExternalPlacementAdapter.#MODEL_ANCHOR_OWNER_PATTERN.test(
+                [
+                    placement?.designator,
+                    placement?.externalModel?.name,
+                    placement?.externalModel?.relativePath,
+                    componentBody?.identifier,
+                    componentBody?.name
+                ]
+                    .map((value) => String(value || ''))
+                    .join(' ')
+            ) &&
+            AltiumScene3dExternalPlacementAdapter.#MODEL_ANCHOR_OWNER_PATTERN.test(
+                [
+                    component?.designator,
+                    component?.pattern,
+                    component?.source,
+                    component?.description,
+                    ...Object.values(component?.parameters || {})
+                ]
+                    .map((value) => String(value || ''))
+                    .join(' ')
+            )
+        )
+    }
+
+    /**
+     * Checks whether component metadata describes connector/header hardware.
+     * @param {object} component PCB component.
+     * @returns {boolean}
+     */
+    static #hasModelAnchorOwnerComponentAffinity(component) {
+        return AltiumScene3dExternalPlacementAdapter.#MODEL_ANCHOR_OWNER_PATTERN.test(
+            [
+                component?.designator,
+                component?.pattern,
+                component?.source,
+                component?.description,
+                ...Object.values(component?.parameters || {})
+            ]
+                .map((value) => String(value || ''))
+                .join(' ')
+        )
+    }
+
+    /**
+     * Checks whether the owner has measurable pad geometry for centering.
+     * @param {object} component PCB component.
+     * @param {object[]} pads Source PCB pads.
+     * @returns {boolean}
+     */
+    static #hasOwnedPadGeometry(component, pads) {
+        const componentIndex = Number(component?.componentIndex)
+        if (!Number.isFinite(componentIndex)) {
+            return false
+        }
+
+        return (
+            (Array.isArray(pads) ? pads : []).filter(
+                (pad) =>
+                    Number(pad?.componentIndex) === componentIndex &&
+                    AltiumScene3dExternalPlacementAdapter.#isMeasurablePad(pad)
+            ).length >= 2
+        )
+    }
+
+    /**
+     * Checks whether one pad has finite coordinates and non-zero dimensions.
+     * @param {object} pad Source PCB pad.
+     * @returns {boolean}
+     */
+    static #isMeasurablePad(pad) {
+        const width = Math.max(
+            Number(pad?.sizeTopX || 0),
+            Number(pad?.sizeMidX || 0),
+            Number(pad?.sizeBottomX || 0)
+        )
+        const depth = Math.max(
+            Number(pad?.sizeTopY || 0),
+            Number(pad?.sizeMidY || 0),
+            Number(pad?.sizeBottomY || 0)
+        )
+
+        return (
+            Number.isFinite(Number(pad?.x)) &&
+            Number.isFinite(Number(pad?.y)) &&
+            width > 0 &&
+            depth > 0
+        )
+    }
+
+    /**
+     * Resolves a component-centered scene position.
+     * @param {object} component PCB component.
+     * @param {object | undefined} board Scene board metadata.
+     * @returns {{ x: number, y: number }}
+     */
+    static #ownerPositionMil(component, board) {
+        return {
+            x: Number(component?.x || 0) - Number(board?.centerX || 0),
+            y: Number(component?.y || 0) - Number(board?.centerY || 0)
+        }
+    }
+
+    /**
+     * Resolves the source body anchor offset from its component owner.
+     * @param {object} placement External model placement.
+     * @param {object} component PCB component.
+     * @returns {{ x: number, y: number }}
+     */
+    static #ownerAnchorOffset(placement, component) {
+        return {
+            x:
+                Number(placement?.bodyPositionMil?.x || 0) -
+                Number(component?.x || 0),
+            y:
+                Number(placement?.bodyPositionMil?.y || 0) -
+                Number(component?.y || 0)
+        }
+    }
+
+    /**
+     * Adds owner anchor provenance and a viewer-applied local model offset.
+     * @param {object} placement External model placement.
+     * @param {{ x?: number, y?: number } | null} offset Source-origin offset.
+     * @returns {object}
+     */
+    static #withRenderableOwnerAnchorOffset(placement, offset) {
+        const modelTransform = placement?.modelTransform || {}
+        const offsetX = Number(offset?.x || 0)
+        const offsetY = Number(offset?.y || 0)
+        const renderableOffset =
+            AltiumScene3dExternalPlacementAdapter.#renderableOwnerAnchorOffset(
+                placement,
+                { x: offsetX, y: offsetY }
+            )
+
+        return {
+            ...(modelTransform || {}),
+            offsetMil: {
+                ...(modelTransform?.offsetMil || {}),
+                x: renderableOffset.x,
+                y: renderableOffset.y
+            },
+            ownerAnchorOffsetMil: {
+                x: offsetX,
+                y: offsetY
+            }
+        }
+    }
+
+    /**
+     * Converts a board-space owner anchor offset into mount-rig local XY.
+     * @param {{ mountSide?: string, rotationDeg?: number }} placement External placement.
+     * @param {{ x: number, y: number }} offset Board-space owner offset.
+     * @returns {{ x: number, y: number }}
+     */
+    static #renderableOwnerAnchorOffset(placement, offset) {
+        const rotationRad =
+            (-AltiumScene3dExternalPlacementAdapter.#normalizeAngle(
+                Number(placement?.rotationDeg || 0)
+            ) *
+                Math.PI) /
+            180
+        const cos = Math.cos(rotationRad)
+        const sin = Math.sin(rotationRad)
+        const x = Number(offset?.x || 0) * cos - Number(offset?.y || 0) * sin
+        const y = Number(offset?.x || 0) * sin + Number(offset?.y || 0) * cos
+
+        return {
+            x: Math.abs(x) < Number.EPSILON ? 0 : Number(x.toFixed(10)),
+            y: AltiumScene3dExternalPlacementAdapter.#isBottomPlacement(
+                placement
+            )
+                ? Math.abs(y) < Number.EPSILON
+                    ? 0
+                    : Number((-y).toFixed(10))
+                : Math.abs(y) < Number.EPSILON
+                  ? 0
+                  : Number(y.toFixed(10))
+        }
+    }
+
+    /**
+     * Checks whether one placement mounts on the board bottom face.
+     * @param {{ mountSide?: string } | null | undefined} placement External placement.
+     * @returns {boolean}
+     */
+    static #isBottomPlacement(placement) {
+        return String(placement?.mountSide || '').toLowerCase() === 'bottom'
+    }
+
+    /**
      * Repairs orientation fields once a source body and owner are known.
      * @param {object} placement External model placement.
      * @param {object | null | undefined} component Owning component.
      * @param {object | null} componentBody Source component body.
      * @param {boolean} useComponentYaw Whether component yaw should override body yaw.
      * @param {boolean} correctPinOneYaw Whether a square IC pin-one correction applies.
+     * @param {number | null} footprintYaw Footprint-derived yaw when available.
      * @returns {object}
      */
     static #repairRotation(
@@ -443,7 +772,8 @@ export class AltiumScene3dExternalPlacementAdapter {
         component,
         componentBody,
         useComponentYaw,
-        correctPinOneYaw
+        correctPinOneYaw,
+        footprintYaw
     ) {
         const modelTransform =
             AltiumScene3dExternalPlacementAdapter.#repairModelTransform(
@@ -462,29 +792,41 @@ export class AltiumScene3dExternalPlacementAdapter {
             AltiumScene3dExternalPlacementAdapter.#normalizeAngle(
                 Number(placement?.rotationDeg || 0)
             )
+        const hasFootprintYaw =
+            footprintYaw !== null &&
+            footprintYaw !== undefined &&
+            Number.isFinite(Number(footprintYaw))
         const baseRotation =
-            component && useComponentYaw && !isGenericPassiveBody
-                ? componentYaw
-                : placementYaw
+            component && hasFootprintYaw
+                ? AltiumScene3dExternalPlacementAdapter.#normalizeAngle(
+                      Number(footprintYaw)
+                  )
+                : component && useComponentYaw && !isGenericPassiveBody
+                  ? componentYaw
+                  : placementYaw
         const rotationDeg =
             correctPinOneYaw && !isGenericPassiveBody
                 ? AltiumScene3dExternalPlacementAdapter.#normalizeAngle(
                       baseRotation + 180
                   )
                 : baseRotation
-        if (!component || !useComponentYaw || isGenericPassiveBody) {
-            return {
-                ...placement,
-                rotationDeg,
-                modelTransform
-            }
-        }
 
-        return {
+        const repairedPlacement = {
             ...placement,
             rotationDeg,
             modelTransform
         }
+
+        return modelTransform?.ownerAnchorOffsetMil
+            ? {
+                  ...repairedPlacement,
+                  modelTransform:
+                      AltiumScene3dExternalPlacementAdapter.#withRenderableOwnerAnchorOffset(
+                          repairedPlacement,
+                          modelTransform.ownerAnchorOffsetMil
+                      )
+              }
+            : repairedPlacement
     }
 
     /**
@@ -617,8 +959,8 @@ export class AltiumScene3dExternalPlacementAdapter {
             componentBody
         ).some(
             (token) =>
-                /[a-z]/u.test(token) &&
                 /\d/u.test(token) &&
+                (/[a-z]/u.test(token) || token.length >= 6) &&
                 haystack.includes(token)
         )
     }
