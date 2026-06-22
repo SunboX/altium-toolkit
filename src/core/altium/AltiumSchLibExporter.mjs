@@ -34,7 +34,7 @@ export class AltiumSchLibExporter {
                     ) +
                     '/Data',
                 new TextEncoder().encode(
-                    AltiumLibraryRecordBuilder.buildSchematicComponentRecord(
+                    AltiumLibraryRecordBuilder.buildSchematicComponentDataRecord(
                         bundle
                     )
                 )

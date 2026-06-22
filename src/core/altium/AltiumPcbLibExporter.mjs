@@ -42,7 +42,9 @@ export class AltiumPcbLibExporter {
             )
             streams.set(
                 storageName + '/Header',
-                AltiumLibraryRecordBuilder.createCountHeader(0)
+                AltiumLibraryRecordBuilder.createCountHeader(
+                    AltiumLibraryRecordBuilder.footprintPrimitiveCount(bundle)
+                )
             )
             streams.set(
                 storageName + '/Parameters',

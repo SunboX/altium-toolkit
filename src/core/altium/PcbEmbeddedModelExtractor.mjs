@@ -498,12 +498,49 @@ export class PcbEmbeddedModelExtractor {
                 componentBody.dzMil
             ].join('\u0000')
 
-            if (!uniqueBodies.has(key)) {
+            const existingBody = uniqueBodies.get(key)
+            if (
+                !existingBody ||
+                PcbEmbeddedModelExtractor.#shouldPreferComponentBody(
+                    componentBody,
+                    existingBody
+                )
+            ) {
                 uniqueBodies.set(key, componentBody)
             }
         }
 
         return [...uniqueBodies.values()]
+    }
+
+    /**
+     * Checks whether one component-body row carries better static geometry.
+     * @param {{ staticGeometry?: object }} candidate Candidate body row.
+     * @param {{ staticGeometry?: object }} existing Existing body row.
+     * @returns {boolean}
+     */
+    static #shouldPreferComponentBody(candidate, existing) {
+        return (
+            PcbEmbeddedModelExtractor.#staticGeometryRank(candidate) >
+            PcbEmbeddedModelExtractor.#staticGeometryRank(existing)
+        )
+    }
+
+    /**
+     * Ranks static geometry completeness for duplicate body rows.
+     * @param {{ staticGeometry?: object }} componentBody Component body row.
+     * @returns {number}
+     */
+    static #staticGeometryRank(componentBody) {
+        if (componentBody?.staticGeometry?.status === 'complete') {
+            return 2
+        }
+
+        if (componentBody?.staticGeometry) {
+            return 1
+        }
+
+        return 0
     }
 
     /**

@@ -130,6 +130,55 @@ class PcbEmbeddedModelTestFactory {
     }
 
     /**
+     * Creates duplicate component-body streams where the shape-based record
+     * carries the complete geometry missing from the printable body stream.
+     * @returns {Map<string, Uint8Array>}
+     */
+    static createDuplicateShapeBasedStreamMap() {
+        const streams = new Map()
+        const duplicateFields = [
+            'V7_LAYER=MECHANICAL1',
+            'IDENTIFIER=66,79,68,89,95,65',
+            'MODELID={STATIC-A}',
+            'MODEL.CHECKSUM=101',
+            'MODEL.NAME=',
+            'MODEL.2D.X=200mil',
+            'MODEL.2D.Y=250mil',
+            'MODEL.2D.ROTATION=90.000',
+            'MODEL.3D.ROTX=0',
+            'MODEL.3D.ROTY=0',
+            'MODEL.3D.ROTZ=0',
+            'MODEL.3D.DZ=0mil',
+            'MODEL.MODELTYPE=0',
+            'MODEL.EXTRUDED.MINZ=5mil',
+            'MODEL.EXTRUDED.MAXZ=35mil',
+            'STANDOFFHEIGHT=10mil',
+            'OVERALLHEIGHT=40mil',
+            'BODYCOLOR3D=255',
+            'BODYOPACITY3D=0.750'
+        ]
+
+        streams.set(
+            'ComponentBodies6/Data',
+            new TextEncoder().encode(duplicateFields.join('|'))
+        )
+        streams.set(
+            'ShapeBasedComponentBodies6/Data',
+            PcbEmbeddedModelTestFactory.createShapeBasedBodyRecord({
+                fields: duplicateFields,
+                verticesMil: [
+                    { x: 0, y: 0 },
+                    { x: 100, y: 0 },
+                    { x: 100, y: 50 },
+                    { x: 0, y: 50 }
+                ]
+            })
+        )
+
+        return streams
+    }
+
+    /**
      * Encodes one little-endian length-prefixed text stream.
      * @param {string[]} records
      * @returns {Uint8Array}
@@ -319,6 +368,33 @@ test('PcbEmbeddedModelExtractor extracts shape-based static body geometry', () =
             }
         ]
     )
+})
+
+test('PcbEmbeddedModelExtractor keeps complete shape-based geometry for duplicate body rows', () => {
+    const extracted = PcbEmbeddedModelExtractor.extractFromStreams(
+        PcbEmbeddedModelTestFactory.createDuplicateShapeBasedStreamMap()
+    )
+
+    assert.equal(extracted.componentBodies.length, 1)
+    assert.equal(
+        extracted.componentBodies[0].sourceStream,
+        'ShapeBasedComponentBodies6/Data'
+    )
+    assert.deepEqual(extracted.componentBodies[0].staticGeometry, {
+        kind: 'extruded-polygon',
+        status: 'complete',
+        units: 'mil',
+        minZMil: 5,
+        maxZMil: 35,
+        heightMil: 30,
+        standoffHeightMil: 10,
+        verticesMil: [
+            { x: 0, y: 0 },
+            { x: 100, y: 0 },
+            { x: 100, y: 50 },
+            { x: 0, y: 50 }
+        ]
+    })
 })
 
 /**

@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { AltiumGeneratedLibraryRecordBuilder } from './AltiumGeneratedLibraryRecordBuilder.mjs'
+
 /**
  * Builds deterministic textual and byte records for generated Altium libraries.
  */
@@ -23,6 +25,17 @@ export class AltiumLibraryRecordBuilder {
     }
 
     /**
+     * Builds a full schematic component data record stream.
+     * @param {object} bundle Normalized component bundle.
+     * @returns {string}
+     */
+    static buildSchematicComponentDataRecord(bundle) {
+        return AltiumGeneratedLibraryRecordBuilder.buildSchematicComponentData(
+            bundle
+        )
+    }
+
+    /**
      * Builds a PCB footprint record.
      * @param {object} bundle Normalized component bundle.
      * @returns {string}
@@ -35,8 +48,22 @@ export class AltiumLibraryRecordBuilder {
             DisplayName: bundle.name,
             PadCount: String(bundle.footprint.pads.length),
             TrackCount: String(bundle.footprint.tracks.length),
+            ArcCount: String(bundle.footprint.arcs.length),
+            FillCount: String(bundle.footprint.fills.length),
+            TextCount: String(bundle.footprint.texts.length),
             ModelCount: String(bundle.models.length)
         })
+    }
+
+    /**
+     * Counts generated footprint primitives.
+     * @param {object} bundle Normalized bundle.
+     * @returns {number}
+     */
+    static footprintPrimitiveCount(bundle) {
+        return AltiumGeneratedLibraryRecordBuilder.footprintPrimitiveCount(
+            bundle.footprint
+        )
     }
 
     /**
@@ -113,7 +140,10 @@ export class AltiumLibraryRecordBuilder {
      */
     static buildFootprintData(bundle) {
         return AltiumLibraryRecordBuilder.concatBytes([
-            AltiumLibraryRecordBuilder.createStringBlock(bundle.footprint.name)
+            AltiumLibraryRecordBuilder.createStringBlock(bundle.footprint.name),
+            ...AltiumGeneratedLibraryRecordBuilder.buildFootprintPrimitiveRecords(
+                bundle.footprint
+            )
         ])
     }
 

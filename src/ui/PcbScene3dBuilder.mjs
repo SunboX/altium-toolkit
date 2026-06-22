@@ -9,6 +9,7 @@ import { AltiumScene3dExternalPlacementAdapter } from './AltiumScene3dExternalPl
 import { AltiumScene3dBottomPadRotationAdapter } from './AltiumScene3dBottomPadRotationAdapter.mjs'
 import { AltiumScene3dComponentBodyAdapter } from './AltiumScene3dComponentBodyAdapter.mjs'
 import { AltiumScene3dAuthoredBodyAnchorAdapter } from './AltiumScene3dAuthoredBodyAnchorAdapter.mjs'
+import { AltiumScene3dShapeStackOwnerAdapter } from './AltiumScene3dShapeStackOwnerAdapter.mjs'
 import { PcbFootprintPrimitiveSelector } from './PcbFootprintPrimitiveSelector.mjs'
 import { PcbScene3dPadLocalSpanResolver } from './PcbScene3dPadLocalSpanResolver.mjs'
 import { PcbScene3dPackages } from './PcbScene3dPackages.mjs'
@@ -31,7 +32,10 @@ export class PcbScene3dBuilder {
     static #UNMATCHED_BODY_OVERHANG_RATIO = 0.25
     static #UNMATCHED_BODY_MIN_OVERHANG_MIL = 150
     static #UNMATCHED_BODY_MAX_OVERHANG_MIL = 600
+    static #OVERSIZED_GENERIC_FALLBACK_MAX_MIL = 800
     static #TRUETYPE_TEXT_WIDTH_RATIO = 0.55
+    static #LOW_CONFIDENCE_GENERIC_FOOTPRINT_PATTERN =
+        /(?:^|[^a-z0-9])(?:edge|finger|fingers|contact|contacts|mech|mechanical|jumper|jump)(?:$|[^a-z0-9])/i
     static #AUTHORED_BODY_IDENTITY_PATTERN =
         /(?:^|[^a-z0-9])(?:antenna|coax|conn|connector|edge|flex|fpc|frame|hardware|header|jack|mechanical|module|mount|shield|sma|socket|usb)(?:$|[^a-z0-9])/i
     static #COMPONENT_PACKAGE_BODY_PATTERN =
@@ -141,15 +145,17 @@ export class PcbScene3dBuilder {
             boardAssemblyModel:
                 modelRegistry?.resolveBoardAssemblyModel?.(documentModel) ||
                 null,
-            components: components.map((component) =>
-                PcbScene3dBuilder.#buildComponent(
-                    component,
-                    pads,
-                    board,
-                    thicknessMil,
-                    modelRegistry
+            components: components
+                .map((component) =>
+                    PcbScene3dBuilder.#buildComponent(
+                        component,
+                        pads,
+                        board,
+                        thicknessMil,
+                        modelRegistry
+                    )
                 )
-            ),
+                .filter(Boolean),
             externalPlacements: componentBodies
                 .map((componentBody, index) =>
                     PcbScene3dBuilder.#buildExternalPlacement(
@@ -167,6 +173,7 @@ export class PcbScene3dBuilder {
                 componentBodies,
                 bodyMatches,
                 components,
+                pads,
                 board,
                 thicknessMil
             ),
@@ -191,8 +198,11 @@ export class PcbScene3dBuilder {
             AltiumScene3dBottomPadRotationAdapter.apply(
                 AltiumScene3dComponentBodyAdapter.apply(
                     AltiumScene3dExternalPlacementAdapter.apply(
-                        PcbScene3dBoardOutlineRefiner.refine(
-                            sceneDescription,
+                        AltiumScene3dShapeStackOwnerAdapter.apply(
+                            PcbScene3dBoardOutlineRefiner.refine(
+                                sceneDescription,
+                                sceneDocumentModel
+                            ),
                             sceneDocumentModel
                         ),
                         sceneDocumentModel
@@ -210,7 +220,7 @@ export class PcbScene3dBuilder {
      * @param {{ centerX: number, centerY: number }} board
      * @param {number} thicknessMil
      * @param {{ resolveComponentModel: (component: any) => { name: string, relativePath: string, format: string } | null } | null} modelRegistry
-     * @returns {{ designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, boardPositionMil: { x: number, y: number, z: number }, pattern: string, source: string, description: string, parameters: Record<string, unknown>, body: { family: string, sizeMil: { width: number, depth: number, height: number } }, externalModel: { name: string, relativePath: string, format: string } | null }}
+     * @returns {{ designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, boardPositionMil: { x: number, y: number, z: number }, pattern: string, source: string, description: string, parameters: Record<string, unknown>, body: { family: string, sizeMil: { width: number, depth: number, height: number } }, externalModel: { name: string, relativePath: string, format: string } | null } | null}
      */
     static #buildComponent(
         component,
@@ -222,6 +232,19 @@ export class PcbScene3dBuilder {
         const mountSide = PcbScene3dBuilder.#resolveMountSide(component)
         const padSpan = PcbScene3dBuilder.#resolvePadSpan(component, pads)
         const body = PcbScene3dPackages.resolve(component, padSpan)
+        const externalModel = modelRegistry
+            ? modelRegistry.resolveComponentModel(component)
+            : null
+        if (
+            PcbScene3dBuilder.#shouldSuppressProceduralComponent(
+                component,
+                body,
+                externalModel
+            )
+        ) {
+            return null
+        }
+
         const halfBoardThickness = thicknessMil / 2
         const halfBodyHeight = body.sizeMil.height / 2
         const z =
@@ -253,10 +276,54 @@ export class PcbScene3dBuilder {
                     ? { ...component.parameters }
                     : {},
             body,
-            externalModel: modelRegistry
-                ? modelRegistry.resolveComponentModel(component)
-                : null
+            externalModel
         }
+    }
+
+    /**
+     * Checks whether one generated fallback body is too uncertain to render.
+     * @param {{ pattern?: string, source?: string, description?: string }} component Source component.
+     * @param {{ family?: string, sizeMil?: { width?: number, depth?: number } }} body Procedural body.
+     * @param {object | null} externalModel Resolved external model.
+     * @returns {boolean}
+     */
+    static #shouldSuppressProceduralComponent(component, body, externalModel) {
+        return (
+            !externalModel &&
+            body?.family === 'generic' &&
+            PcbScene3dBuilder.#isOversizedGenericFallback(body) &&
+            PcbScene3dBuilder.#isLowConfidenceGenericFootprint(component)
+        )
+    }
+
+    /**
+     * Checks whether one generic fallback body spans too much of the board.
+     * @param {{ sizeMil?: { width?: number, depth?: number } }} body Procedural body.
+     * @returns {boolean}
+     */
+    static #isOversizedGenericFallback(body) {
+        return (
+            Math.max(
+                Number(body?.sizeMil?.width || 0),
+                Number(body?.sizeMil?.depth || 0)
+            ) > PcbScene3dBuilder.#OVERSIZED_GENERIC_FALLBACK_MAX_MIL
+        )
+    }
+
+    /**
+     * Checks for footprint identities that describe board features or
+     * mechanical placeholders more often than physical package bodies.
+     * @param {{ pattern?: string, source?: string, description?: string }} component Source component.
+     * @returns {boolean}
+     */
+    static #isLowConfidenceGenericFootprint(component) {
+        return PcbScene3dBuilder.#LOW_CONFIDENCE_GENERIC_FOOTPRINT_PATTERN.test(
+            [
+                component?.pattern,
+                component?.source,
+                component?.description
+            ].join(' ')
+        )
     }
 
     /**
@@ -352,7 +419,8 @@ export class PcbScene3dBuilder {
             modelTransform: {
                 rotationDeg: modelRotation,
                 dzMil: PcbScene3dBuilder.#resolveComponentBodyVerticalOffset(
-                    componentBody
+                    componentBody,
+                    matchedComponent
                 )
             },
             projection: PcbScene3dBuilder.#resolveProjectionDiagnostics(
@@ -369,16 +437,65 @@ export class PcbScene3dBuilder {
      * Resolves the vertical offset that should remain after the viewer seats
      * raw model bounds on the board face.
      * @param {{ dzMil?: number, standoffHeightMil?: number | null }} componentBody Component-body placement metadata.
+     * @param {object | null} matchedComponent Matched owner component.
      * @returns {number}
      */
-    static #resolveComponentBodyVerticalOffset(componentBody) {
+    static #resolveComponentBodyVerticalOffset(
+        componentBody,
+        matchedComponent = null
+    ) {
         const standoffHeightMil = Number(componentBody?.standoffHeightMil)
         if (Number.isFinite(standoffHeightMil)) {
-            return standoffHeightMil < 0 ? standoffHeightMil : 0
+            return standoffHeightMil < 0 ||
+                PcbScene3dBuilder.#shouldPreservePositiveBodyStandoff(
+                    componentBody,
+                    matchedComponent
+                )
+                ? standoffHeightMil
+                : 0
         }
 
         const dzMil = Number(componentBody?.dzMil)
-        return Number.isFinite(dzMil) && dzMil < 0 ? dzMil : 0
+        return Number.isFinite(dzMil) &&
+            (dzMil < 0 ||
+                PcbScene3dBuilder.#shouldPreservePositiveBodyStandoff(
+                    componentBody,
+                    matchedComponent
+                ))
+            ? dzMil
+            : 0
+    }
+
+    /**
+     * Checks whether a positive shape-body standoff is part of an authored
+     * stack instead of a model-origin quirk that should be seated on the board.
+     * @param {object | null | undefined} componentBody Component-body row.
+     * @param {object | null} matchedComponent Matched owner component.
+     * @returns {boolean}
+     */
+    static #shouldPreservePositiveBodyStandoff(
+        componentBody,
+        matchedComponent
+    ) {
+        return (
+            !matchedComponent &&
+            PcbScene3dBuilder.#isShapeBasedComponentBody(componentBody)
+        )
+    }
+
+    /**
+     * Checks whether one body row came from shape-based 3D body metadata.
+     * @param {object | null | undefined} componentBody Component-body row.
+     * @returns {boolean}
+     */
+    static #isShapeBasedComponentBody(componentBody) {
+        return (
+            String(componentBody?.sourceStream || '').includes(
+                'ShapeBasedComponentBodies'
+            ) ||
+            Boolean(componentBody?.staticGeometry) ||
+            Boolean(componentBody?.modelTypeName)
+        )
     }
 
     /**

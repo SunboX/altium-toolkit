@@ -65,6 +65,62 @@ export class PcbScene3dPlacementSideResolver {
     }
 
     /**
+     * Resolves which board side one authored static shape body should mount on.
+     * Shape bodies carry explicit mechanical-layer intent, so that side wins
+     * over loose nearby-package identity unless the body was directly matched.
+     * @param {{ layer?: string, positionMil?: { x?: number, y?: number }, standoffHeightMil?: number | null, overallHeightMil?: number | null }} componentBody
+     * @param {{ layer?: string } | null} matchedComponent
+     * @param {{ layer?: string, pattern?: string, source?: string, modelPath?: string, x?: number, y?: number }[]} components
+     * @param {{ minX?: number, minY?: number, widthMil?: number, heightMil?: number } | null} board
+     * @returns {'top' | 'bottom'}
+     */
+    static resolveStaticBodyPlacementSide(
+        componentBody,
+        matchedComponent,
+        components = [],
+        board = null
+    ) {
+        const matchedSide =
+            PcbScene3dPlacementSideResolver.#resolveComponentLayerSide(
+                matchedComponent?.layer
+            )
+        if (matchedSide) {
+            return matchedSide
+        }
+
+        const standoffSide =
+            PcbScene3dPlacementSideResolver.#resolveStandoffSide(componentBody)
+        if (
+            standoffSide &&
+            PcbScene3dPlacementSideResolver.#isBodyAnchorInsideBoard(
+                componentBody,
+                board
+            )
+        ) {
+            return standoffSide
+        }
+
+        const mechanicalSide =
+            PcbScene3dPlacementSideResolver.#resolveMechanicalLayerSide(
+                componentBody?.layer
+            )
+        if (mechanicalSide) {
+            return mechanicalSide
+        }
+
+        const nearbySide =
+            PcbScene3dPlacementSideResolver.#resolveNearbyComponentSide(
+                componentBody,
+                components
+            )
+        if (nearbySide) {
+            return nearbySide
+        }
+
+        return standoffSide || 'top'
+    }
+
+    /**
      * Resolves the grouping key for repeated component-body matching.
      * @param {{ modelId?: string, name?: string, identifier?: string }} componentBody
      * @returns {string}

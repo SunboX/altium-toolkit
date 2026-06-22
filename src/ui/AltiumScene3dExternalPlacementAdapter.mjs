@@ -89,6 +89,14 @@ export class AltiumScene3dExternalPlacementAdapter {
         if (!placement?.bodyPositionMil || !placement?.positionMil) {
             return placement
         }
+        if (
+            AltiumScene3dExternalPlacementAdapter.#isAuthoredShapeStackPlacement(
+                placement
+            )
+        ) {
+            return placement
+        }
+
         const componentBody =
             AltiumScene3dExternalPlacementAdapter.#resolveComponentBody(
                 placement,
@@ -280,6 +288,19 @@ export class AltiumScene3dExternalPlacementAdapter {
                 contactPadsMil: contactPads
             }
         }
+    }
+
+    /**
+     * Checks whether an earlier adapter already resolved an authored carrier
+     * stack placement.
+     * @param {object} placement External model placement.
+     * @returns {boolean}
+     */
+    static #isAuthoredShapeStackPlacement(placement) {
+        return (
+            String(placement?.projection?.source || '').toLowerCase() ===
+            'authored-shape-stack'
+        )
     }
 
     /**

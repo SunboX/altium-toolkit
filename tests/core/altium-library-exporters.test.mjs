@@ -5,6 +5,9 @@ import { AltiumPcbLibExporter } from '../../src/core/altium/AltiumPcbLibExporter
 import { AltiumSchLibExporter } from '../../src/core/altium/AltiumSchLibExporter.mjs'
 import { OleCompoundDocument } from '../../src/core/ole/OleCompoundDocument.mjs'
 import { PcbLibStreamExtractor } from '../../src/core/altium/PcbLibStreamExtractor.mjs'
+import { PcbLibModelParser } from '../../src/core/altium/PcbLibModelParser.mjs'
+import { SchLibModelParser } from '../../src/core/altium/SchLibModelParser.mjs'
+import { SchLibStreamExtractor } from '../../src/core/altium/SchLibStreamExtractor.mjs'
 import { SourceBundleExporter } from '../../src/core/altium/SourceBundleExporter.mjs'
 import { SourceComponentBundleNormalizer } from '../../src/core/altium/SourceComponentBundleNormalizer.mjs'
 import { SourceComponentClient } from '../../src/core/altium/SourceComponentClient.mjs'
@@ -44,6 +47,107 @@ function createRawComponent(id = 'source-widget') {
                     name: 'fake-widget.step',
                     format: 'step',
                     text: 'ISO-10303-21;\nEND-ISO-10303-21;'
+                }
+            ]
+        }
+    }
+}
+
+/**
+ * Builds a fake component with visible library geometry.
+ * @returns {object}
+ */
+function createGeometryComponent() {
+    return {
+        id: 'geometry-source',
+        name: 'Geometry Source',
+        symbol: {
+            name: 'FAKE_GEOMETRY_SYMBOL',
+            pins: [
+                {
+                    number: '1',
+                    name: 'IN',
+                    x: 10,
+                    y: 20,
+                    length: 30,
+                    electrical: 'input'
+                },
+                {
+                    number: '2',
+                    name: 'OUT',
+                    x: 90,
+                    y: 20,
+                    length: 30,
+                    electrical: 'output'
+                }
+            ],
+            primitives: [
+                {
+                    type: 'rectangle',
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 40
+                }
+            ]
+        },
+        footprint: {
+            name: 'FAKE_GEOMETRY_FOOTPRINT',
+            pads: [
+                {
+                    number: '1',
+                    x: -25,
+                    y: 0,
+                    sizeTopX: 20,
+                    sizeTopY: 30,
+                    layerId: 1
+                },
+                {
+                    number: '2',
+                    x: 25,
+                    y: 0,
+                    sizeTopX: 20,
+                    sizeTopY: 30,
+                    layerId: 1
+                }
+            ],
+            tracks: [
+                {
+                    x1: -40,
+                    y1: -20,
+                    x2: 40,
+                    y2: -20,
+                    width: 4,
+                    layerId: 21
+                }
+            ],
+            arcs: [
+                {
+                    x: 0,
+                    y: 0,
+                    radius: 15,
+                    startAngle: 0,
+                    endAngle: 180,
+                    width: 3,
+                    layerId: 21
+                }
+            ],
+            fills: [
+                {
+                    x1: -10,
+                    y1: 10,
+                    x2: 10,
+                    y2: 20,
+                    layerId: 1
+                }
+            ],
+            texts: [
+                {
+                    text: 'REF',
+                    x: 0,
+                    y: -35,
+                    height: 12,
+                    layerId: 21
                 }
             ]
         }
@@ -173,12 +277,45 @@ test('AltiumPcbLibExporter writes readable footprint library and model streams',
     const extraction = PcbLibStreamExtractor.extractFromStreams(streams)
 
     assert.equal(extraction.footprints[0].name, 'FAKE_WIDGET_0603')
-    assert.equal(extraction.footprints[0].declaredPrimitiveCount, 0)
+    assert.equal(extraction.footprints[0].declaredPrimitiveCount, 3)
+    assert.equal(extraction.footprints[0].pads.length, 2)
+    assert.equal(extraction.footprints[0].tracks.length, 1)
     assert.equal(extraction.embeddedModels.models[0].name, 'fake-widget.step')
     assert.match(
         extraction.embeddedModels.models[0].payloadText,
         /ISO-10303-21/
     )
+})
+
+test('Altium library exporters preserve selected symbol and footprint geometry', () => {
+    const bundle = SourceComponentBundleNormalizer.normalize(
+        createGeometryComponent()
+    )
+    const schModel = SchLibModelParser.parse(
+        'geometry.SchLib',
+        SchLibStreamExtractor.extractFromStreams(
+            openStreams(AltiumSchLibExporter.export([bundle]))
+        )
+    )
+    const pcbModel = PcbLibModelParser.parse(
+        'geometry.PcbLib',
+        PcbLibStreamExtractor.extractFromStreams(
+            openStreams(AltiumPcbLibExporter.export([bundle]))
+        )
+    )
+    const symbol = schModel.schematicLibrary.symbols[0]
+    const footprint = pcbModel.pcbLibrary.footprints[0]
+
+    assert.equal(symbol.declaredPinCount, 2)
+    assert.equal(symbol.declaredPrimitiveCount, 1)
+    assert.equal(symbol.pins.length, 2)
+    assert.equal(symbol.primitives.length, 1)
+    assert.equal(footprint.declaredPrimitiveCount, 6)
+    assert.equal(footprint.pads.length, 2)
+    assert.equal(footprint.tracks.length, 1)
+    assert.equal(footprint.arcs.length, 1)
+    assert.equal(footprint.fills.length, 1)
+    assert.equal(footprint.texts.length, 1)
 })
 
 test('AltiumLibraryBatchExporter supports merged output, append skip, and progress', async () => {

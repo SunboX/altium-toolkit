@@ -46,6 +46,93 @@ function buildModelRegistry() {
 }
 
 /**
+ * Verifies large low-confidence generic footprint spans do not become
+ * board-covering fallback bodies.
+ */
+test('PcbScene3dBuilder suppresses oversized low-confidence fallback components', () => {
+    const scene = PcbScene3dBuilder.build({
+        fileName: 'demo.PcbDoc',
+        pcb: {
+            boardOutline: buildBoardOutline(),
+            pads: [
+                {
+                    componentIndex: 0,
+                    x: 50,
+                    y: 100,
+                    sizeTopX: 40,
+                    sizeTopY: 80,
+                    holeDiameter: 0,
+                    hasTopPasteMaskOpening: true
+                },
+                {
+                    componentIndex: 0,
+                    x: 950,
+                    y: 100,
+                    sizeTopX: 40,
+                    sizeTopY: 80,
+                    holeDiameter: 0,
+                    hasTopPasteMaskOpening: true
+                },
+                {
+                    componentIndex: 1,
+                    x: 450,
+                    y: 260,
+                    sizeTopX: 50,
+                    sizeTopY: 40,
+                    holeDiameter: 0,
+                    hasTopPasteMaskOpening: true
+                },
+                {
+                    componentIndex: 1,
+                    x: 550,
+                    y: 260,
+                    sizeTopX: 50,
+                    sizeTopY: 40,
+                    holeDiameter: 0,
+                    hasTopPasteMaskOpening: true
+                }
+            ],
+            tracks: [],
+            arcs: [],
+            fills: [],
+            vias: [],
+            polygons: [],
+            componentBodies: [],
+            components: [
+                {
+                    componentIndex: 0,
+                    designator: 'M1',
+                    x: 500,
+                    y: 100,
+                    rotation: 0,
+                    layer: 'TOP',
+                    pattern: 'MECH_EDGE_FINGERS',
+                    source: 'GENERIC_EDGE_CONTACTS',
+                    height: null
+                },
+                {
+                    componentIndex: 1,
+                    designator: 'U1',
+                    x: 500,
+                    y: 260,
+                    rotation: 0,
+                    layer: 'TOP',
+                    pattern: 'MODULE_A',
+                    source: 'GENERIC_MODULE_A',
+                    height: null
+                }
+            ]
+        }
+    })
+
+    assert.deepEqual(
+        scene.components.map((component) => component.designator),
+        ['U1']
+    )
+    assert.equal(scene.components[0].body.sizeMil.width, 150)
+})
+
+/**
  * Verifies a matched bottom component remains authoritative when its embedded
  * body is authored on a generic odd mechanical layer.
  */
