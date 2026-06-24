@@ -287,6 +287,20 @@ test('AltiumPcbLibExporter writes readable footprint library and model streams',
     )
 })
 
+test('AltiumPcbLibExporter places embedded models as component bodies', () => {
+    const rawComponent = createRawComponent()
+    rawComponent.data.footprint.component = { rotation: 270 }
+    rawComponent.data.models[0].generated = true
+    const streams = openStreams(AltiumPcbLibExporter.export([rawComponent]))
+    const extraction = PcbLibStreamExtractor.extractFromStreams(streams)
+    const body = extraction.embeddedModels.componentBodies[0]
+
+    assert.equal(body.modelId, 'model-0-0')
+    assert.equal(body.embedded, true)
+    assert.equal(body.name, 'fake-widget.step')
+    assert.deepEqual(body.modelRotationDeg, { x: -90, y: 0, z: 90 })
+})
+
 test('Altium library exporters preserve selected symbol and footprint geometry', () => {
     const bundle = SourceComponentBundleNormalizer.normalize(
         createGeometryComponent()

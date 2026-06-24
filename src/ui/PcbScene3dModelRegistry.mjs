@@ -104,6 +104,22 @@ export class PcbScene3dModelRegistry {
             return 'step'
         }
 
+        if (lowerCasePath.endsWith('.glb')) {
+            return 'glb'
+        }
+
+        if (lowerCasePath.endsWith('.gltf')) {
+            return 'gltf'
+        }
+
+        if (lowerCasePath.endsWith('.stl')) {
+            return 'stl'
+        }
+
+        if (lowerCasePath.endsWith('.obj')) {
+            return 'obj'
+        }
+
         return ''
     }
 

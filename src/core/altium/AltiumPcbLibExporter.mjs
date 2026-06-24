@@ -67,6 +67,10 @@ export class AltiumPcbLibExporter {
                 'Models/Data',
                 AltiumLibraryRecordBuilder.buildModelsData(modelRows)
             )
+            streams.set(
+                'ComponentBodies6/Data',
+                AltiumLibraryRecordBuilder.buildComponentBodiesData(modelRows)
+            )
             modelRows.forEach((row, index) => {
                 streams.set('Models/' + index, row.model.bytes)
             })
@@ -78,11 +82,12 @@ export class AltiumPcbLibExporter {
     /**
      * Collects model rows with deterministic generated ids.
      * @param {object[]} bundles Normalized bundles.
-     * @returns {{ model: object, id: string, checksum: number }[]}
+     * @returns {{ bundle: object, model: object, id: string, checksum: number }[]}
      */
     static #collectModels(bundles) {
         return bundles.flatMap((bundle, bundleIndex) =>
             bundle.models.map((model, modelIndex) => ({
+                bundle,
                 model,
                 id: 'model-' + bundleIndex + '-' + modelIndex,
                 checksum: AltiumLibraryRecordBuilder.checksumBytes(model.bytes)

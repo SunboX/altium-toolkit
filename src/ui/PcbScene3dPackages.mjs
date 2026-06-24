@@ -2,13 +2,15 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { PcbScene3dPackageDimensionResolver } from './PcbScene3dPackageDimensionResolver.mjs'
+
 /**
  * Resolves procedural PCB package families and dimensions.
  */
 export class PcbScene3dPackages {
     /**
      * Resolves one procedural package description for a component.
-     * @param {{ pattern?: string, height?: number | null }} component
+     * @param {{ pattern?: string, height?: number | null, parameters?: Record<string, unknown> }} component
      * @param {{ width: number, depth: number }} [padSpan]
      * @returns {{ family: string, sizeMil: { width: number, depth: number, height: number } }}
      */
@@ -23,12 +25,22 @@ export class PcbScene3dPackages {
             Number.isFinite(explicitHeight) && explicitHeight > 0
                 ? explicitHeight
                 : defaults.height
+        const explicitSize =
+            PcbScene3dPackageDimensionResolver.resolvePlanarSize(component)
 
         return {
             family,
             sizeMil: {
-                width: Math.max(defaults.width, Number(padSpan.width) || 0),
-                depth: Math.max(defaults.depth, Number(padSpan.depth) || 0),
+                width: Math.max(
+                    defaults.width,
+                    Number(padSpan.width) || 0,
+                    Number(explicitSize?.width) || 0
+                ),
+                depth: Math.max(
+                    defaults.depth,
+                    Number(padSpan.depth) || 0,
+                    Number(explicitSize?.depth) || 0
+                ),
                 height
             }
         }

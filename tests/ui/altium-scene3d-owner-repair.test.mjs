@@ -125,6 +125,56 @@ function createMechanicalOffsetBodyCase() {
 }
 
 /**
+ * Builds a fake shield-cover scene whose source model origin is a cover corner.
+ * @returns {{ scene: object, documentModel: object }}
+ */
+function createShieldCoverSourceOriginCase() {
+    return {
+        scene: createSinglePlacementScene({
+            designator: 'SH1',
+            mountSide: 'top',
+            positionMil: { x: -115, y: 465, z: 40 },
+            bodyPositionMil: { x: 385, y: 715 },
+            projection: {
+                source: 'pad-fallback',
+                boundsMil: { width: 160, depth: 160, height: 40 }
+            },
+            externalModel: {
+                origin: 'embedded',
+                name: 'GENERIC_RF_SHIELD_COVER.step',
+                format: 'step'
+            }
+        }),
+        documentModel: createOwnerRepairDocument({
+            components: [
+                {
+                    designator: 'SH1',
+                    x: 700,
+                    y: 400,
+                    layer: 'TOP',
+                    pattern: 'GENERIC_RF_SHIELD_COVER',
+                    source: 'GENERIC_RF_SHIELD_COVER',
+                    rotation: 0,
+                    parameters: {
+                        Length: '16mm',
+                        Width: '16mm'
+                    }
+                }
+            ],
+            componentBodies: [
+                {
+                    identifier: 'GENERIC_RF_SHIELD_COVER',
+                    name: 'GENERIC_RF_SHIELD_COVER.step',
+                    positionMil: { x: 385, y: 715 },
+                    modelRotationDeg: { x: -90, y: 0, z: 0 },
+                    overallHeightMil: 40
+                }
+            ]
+        })
+    }
+}
+
+/**
  * Builds a fake scene with a model-anchor body near an unrelated passive.
  * @returns {{ scene: object, documentModel: object }}
  */
@@ -710,6 +760,33 @@ test('Altium 3D owner repair keeps authored mechanical offset bodies', () => {
     assert.equal(placement.designator, 'MECH1')
     assert.equal(placement.mountSide, 'top')
     assert.equal(placement.positionMil.z, 40)
+})
+
+/**
+ * Verifies shield covers whose source origin sits at a package corner are
+ * centered on the cover owner instead of preserved as authored offsets.
+ */
+test('Altium 3D owner repair centers shield cover source-origin offsets', () => {
+    const { scene, documentModel } = createShieldCoverSourceOriginCase()
+    const repaired = AltiumScene3dExternalPlacementAdapter.apply(
+        scene,
+        documentModel
+    )
+    const placement = repaired.externalPlacements[0]
+
+    assert.equal(repaired.externalPlacements.length, 1)
+    assert.equal(placement.designator, 'SH1')
+    assert.equal(placement.mountSide, 'top')
+    assert.deepEqual(placement.positionMil, { x: 200, y: 150, z: 40 })
+    assert.deepEqual(placement.modelTransform.ownerAnchorOffsetMil, {
+        x: -315,
+        y: 315
+    })
+    assert.deepEqual(placement.modelTransform.offsetMil, {
+        x: -315,
+        y: 315,
+        z: 0
+    })
 })
 
 /**

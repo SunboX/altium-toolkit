@@ -97,6 +97,26 @@ function createRotatedChipPad(x, y) {
 }
 
 /**
+ * Builds one horizontal SOP-style pad for stale component-rotation tests.
+ * @param {number} x Pad X.
+ * @param {number} y Pad Y.
+ * @returns {object}
+ */
+function createHorizontalSopPad(x, y) {
+    return {
+        componentIndex: 7,
+        x,
+        y,
+        rotation: 0,
+        hasTopPasteMaskOpening: true,
+        sizeTopX: 28,
+        sizeTopY: 98,
+        sizeMidX: 28,
+        sizeMidY: 98
+    }
+}
+
+/**
  * Verifies inset board cutout regions do not replace the authored edge-cut
  * outline when refining rasterized board outlines.
  */
@@ -260,6 +280,72 @@ test('PcbScene3dBuilder keeps rotated chip body dimensions local', () => {
         width: 50,
         depth: 12,
         height: 14
+    })
+})
+
+/**
+ * Verifies owned pad rows can override stale component rotation metadata for
+ * procedural bodies while preserving board-facing pad span dimensions.
+ */
+test('PcbScene3dBuilder aligns SOP fallback body yaw to owned pad rows', () => {
+    const scene = PcbScene3dBuilder.build({
+        sourceFormat: 'altium',
+        kind: 'pcb',
+        fileName: 'horizontal-sop-yaw-fake.PcbDoc',
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 800,
+                heightMil: 600,
+                segments: []
+            },
+            components: [
+                {
+                    componentIndex: 7,
+                    designator: 'U7',
+                    x: 400,
+                    y: 300,
+                    layer: 'TOP',
+                    pattern: 'FAKE_SOP16',
+                    source: 'FAKE_BRIDGE',
+                    rotation: 90,
+                    height: 68
+                }
+            ],
+            pads: [
+                createHorizontalSopPad(225, 204),
+                createHorizontalSopPad(275, 204),
+                createHorizontalSopPad(325, 204),
+                createHorizontalSopPad(375, 204),
+                createHorizontalSopPad(425, 204),
+                createHorizontalSopPad(475, 204),
+                createHorizontalSopPad(525, 204),
+                createHorizontalSopPad(575, 204),
+                createHorizontalSopPad(225, 396),
+                createHorizontalSopPad(275, 396),
+                createHorizontalSopPad(325, 396),
+                createHorizontalSopPad(375, 396),
+                createHorizontalSopPad(425, 396),
+                createHorizontalSopPad(475, 396),
+                createHorizontalSopPad(525, 396),
+                createHorizontalSopPad(575, 396)
+            ],
+            componentBodies: [],
+            embeddedModels: [],
+            tracks: [],
+            arcs: [],
+            fills: [],
+            vias: [],
+            texts: []
+        }
+    })
+
+    assert.equal(scene.components[0].rotationDeg, 0)
+    assert.deepEqual(scene.components[0].body.sizeMil, {
+        width: 378,
+        depth: 290,
+        height: 68
     })
 })
 

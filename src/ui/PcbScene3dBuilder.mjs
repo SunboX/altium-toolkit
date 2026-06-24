@@ -15,8 +15,10 @@ import { PcbScene3dPadLocalSpanResolver } from './PcbScene3dPadLocalSpanResolver
 import { PcbScene3dPackages } from './PcbScene3dPackages.mjs'
 import { PcbScene3dPlacementSideResolver } from './PcbScene3dPlacementSideResolver.mjs'
 import { PcbScene3dStaticBodyPlacementBuilder } from './PcbScene3dStaticBodyPlacementBuilder.mjs'
+import { PcbScene3dPadYawResolver } from './PcbScene3dPadYawResolver.mjs'
 import { PcbScene3dTextBoxLayoutResolver } from './PcbScene3dTextBoxLayoutResolver.mjs'
 import { PcbFootprintPadAxisNormalizer } from './PcbFootprintPadAxisNormalizer.mjs'
+import { PcbScene3dCopperRegionDetailBuilder } from './PcbScene3dCopperRegionDetailBuilder.mjs'
 
 /**
  * Builds deterministic 3D scene data from the normalized PCB model.
@@ -33,13 +35,26 @@ export class PcbScene3dBuilder {
     static #UNMATCHED_BODY_MIN_OVERHANG_MIL = 150
     static #UNMATCHED_BODY_MAX_OVERHANG_MIL = 600
     static #OVERSIZED_GENERIC_FALLBACK_MAX_MIL = 800
+    static #TIMING_STACK_BODY_RADIUS_MIL = 220
     static #TRUETYPE_TEXT_WIDTH_RATIO = 0.55
     static #LOW_CONFIDENCE_GENERIC_FOOTPRINT_PATTERN =
         /(?:^|[^a-z0-9])(?:edge|finger|fingers|contact|contacts|mech|mechanical|jumper|jump)(?:$|[^a-z0-9])/i
     static #AUTHORED_BODY_IDENTITY_PATTERN =
         /(?:^|[^a-z0-9])(?:antenna|coax|conn|connector|edge|flex|fpc|frame|hardware|header|jack|mechanical|module|mount|shield|sma|socket|usb)(?:$|[^a-z0-9])/i
+    static #AUTHORED_COVER_STACK_IDENTITY_PATTERN =
+        /(?:^|[^a-z0-9])(?:emi|rf|rfi|shield|cover|can)(?:$|[^a-z0-9])/i
+    static #MECHANICAL_SHIELD_FALLBACK_PATTERN =
+        /(?:^|[^a-z0-9])(?:emi|rfi|shield|cover|can)(?:$|[^a-z0-9])/i
+    static #MECHANICAL_SHIELD_FRAME_OWNER_PATTERN =
+        /(?=.*(?:^|[^a-z0-9])(?:emi|rfi|rf|shield|can)(?:$|[^a-z0-9]))(?=.*(?:^|[^a-z0-9])frame(?:$|[^a-z0-9]))/i
+    static #MECHANICAL_SHIELD_FRAME_BODY_PATTERN =
+        /(?:^|[^a-z0-9])(?:frame[0-9]*|leg|rail|side|wall)(?:$|[^a-z0-9])/i
+    static #MECHANICAL_SHIELD_FRAME_OWNER_RADIUS_MIL = 750
     static #COMPONENT_PACKAGE_BODY_PATTERN =
         /(?:^|[^a-z0-9])(?:[a-z0-9]*dfn|[a-z0-9]*qfn|bga|cap|capacitor|crystal|diode|ferrite|ind|inductor|lga|lqg[a-z0-9]*|lqw[a-z0-9]*|osc|qfp|res|resistor|sot|transistor|xtal)(?:$|[^a-z0-9])/i
+    static #TIMING_STACK_COMPONENT_PATTERN =
+        /(?:^|[^a-z0-9])(?:clock|crystal|osc|oscillator|resonator|tcxo|txco|xtal)(?:$|[^a-z0-9])/i
+    static #TIMING_STACK_DESIGNATOR_PATTERN = /^(?:y|xo)\d+[a-z]?$/i
 
     /**
      * Builds a scene description for host 3D renderers.
@@ -64,6 +79,7 @@ export class PcbScene3dBuilder {
         const tracks = Array.isArray(pcb.tracks) ? pcb.tracks : []
         const arcs = Array.isArray(pcb.arcs) ? pcb.arcs : []
         const fills = Array.isArray(pcb.fills) ? pcb.fills : []
+        const regionFills = PcbScene3dCopperRegionDetailBuilder.build(pcb)
         const texts = Array.isArray(pcb.texts) ? pcb.texts : []
         const vias = Array.isArray(pcb.vias) ? pcb.vias : []
         const silkscreenRegions =
@@ -91,6 +107,7 @@ export class PcbScene3dBuilder {
                 : []
         }
         const componentBodyModels = componentBodies.map((componentBody) =>
+            PcbScene3dBuilder.#shouldRenderStaticGeometryOnly(componentBody) ||
             PcbScene3dBuilder.#shouldSuppressLayerlessBodyPlaceholder(
                 componentBody,
                 componentBodies,
@@ -184,7 +201,7 @@ export class PcbScene3dBuilder {
                 pads,
                 tracks,
                 arcs,
-                fills,
+                fills: [...fills, ...regionFills],
                 vias,
                 polygons: Array.isArray(pcb.polygons) ? pcb.polygons : [],
                 silkscreen: {
@@ -220,7 +237,7 @@ export class PcbScene3dBuilder {
      * @param {{ centerX: number, centerY: number }} board
      * @param {number} thicknessMil
      * @param {{ resolveComponentModel: (component: any) => { name: string, relativePath: string, format: string } | null } | null} modelRegistry
-     * @returns {{ designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, boardPositionMil: { x: number, y: number, z: number }, pattern: string, source: string, description: string, parameters: Record<string, unknown>, body: { family: string, sizeMil: { width: number, depth: number, height: number } }, externalModel: { name: string, relativePath: string, format: string } | null } | null}
+     * @returns {{ componentIndex: number | null, designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, boardPositionMil: { x: number, y: number, z: number }, pattern: string, source: string, description: string, parameters: Record<string, unknown>, body: { family: string, sizeMil: { width: number, depth: number, height: number } }, externalModel: { name: string, relativePath: string, format: string } | null, renderFallbackBody?: boolean } | null}
      */
     static #buildComponent(
         component,
@@ -230,20 +247,26 @@ export class PcbScene3dBuilder {
         modelRegistry
     ) {
         const mountSide = PcbScene3dBuilder.#resolveMountSide(component)
-        const padSpan = PcbScene3dBuilder.#resolvePadSpan(component, pads)
+        const rotationDeg = PcbScene3dBuilder.#resolveComponentRotation(
+            component,
+            pads,
+            mountSide
+        )
+        const padSpan = PcbScene3dBuilder.#resolvePadSpan(
+            component,
+            pads,
+            rotationDeg
+        )
         const body = PcbScene3dPackages.resolve(component, padSpan)
         const externalModel = modelRegistry
             ? modelRegistry.resolveComponentModel(component)
             : null
-        if (
+        const suppressFallbackBody =
             PcbScene3dBuilder.#shouldSuppressProceduralComponent(
                 component,
                 body,
                 externalModel
             )
-        ) {
-            return null
-        }
 
         const halfBoardThickness = thicknessMil / 2
         const halfBodyHeight = body.sizeMil.height / 2
@@ -253,9 +276,12 @@ export class PcbScene3dBuilder {
                 : halfBoardThickness + halfBodyHeight
 
         return {
+            componentIndex: Number.isFinite(Number(component.componentIndex))
+                ? Number(component.componentIndex)
+                : null,
             designator: component.designator,
             mountSide,
-            rotationDeg: Number(component.rotation || 0),
+            rotationDeg,
             positionMil: {
                 x: Number(component.x || 0) - Number(board.centerX || 0),
                 y: Number(component.y || 0) - Number(board.centerY || 0),
@@ -276,7 +302,8 @@ export class PcbScene3dBuilder {
                     ? { ...component.parameters }
                     : {},
             body,
-            externalModel
+            externalModel,
+            ...(suppressFallbackBody ? { renderFallbackBody: false } : {})
         }
     }
 
@@ -291,9 +318,42 @@ export class PcbScene3dBuilder {
         return (
             !externalModel &&
             body?.family === 'generic' &&
-            PcbScene3dBuilder.#isOversizedGenericFallback(body) &&
-            PcbScene3dBuilder.#isLowConfidenceGenericFootprint(component)
+            ((PcbScene3dBuilder.#isOversizedGenericFallback(body) &&
+                PcbScene3dBuilder.#isLowConfidenceGenericFootprint(
+                    component
+                )) ||
+                PcbScene3dBuilder.#isMechanicalShieldFallback(component))
         )
+    }
+
+    /**
+     * Checks whether a generic component row describes authored shield
+     * hardware that should not become a filled fallback box.
+     * @param {{ pattern?: string, source?: string, description?: string, parameters?: Record<string, unknown>, provenance?: Record<string, unknown> }} component Source component.
+     * @returns {boolean}
+     */
+    static #isMechanicalShieldFallback(component) {
+        return PcbScene3dBuilder.#MECHANICAL_SHIELD_FALLBACK_PATTERN.test(
+            PcbScene3dBuilder.#componentIdentityText(component)
+        )
+    }
+
+    /**
+     * Builds normalized free-text identity for component classification.
+     * @param {{ pattern?: string, source?: string, description?: string, parameters?: Record<string, unknown>, provenance?: Record<string, unknown> }} component Source component.
+     * @returns {string}
+     */
+    static #componentIdentityText(component) {
+        return [
+            component?.pattern,
+            component?.source,
+            component?.description,
+            component?.provenance?.sourceLibReference,
+            component?.provenance?.footprintDescription,
+            ...Object.values(component?.parameters || {})
+        ]
+            .map((value) => String(value || ''))
+            .join(' ')
     }
 
     /**
@@ -339,7 +399,7 @@ export class PcbScene3dBuilder {
     /**
      * Builds one explicit external-model placement from normalized component
      * body metadata.
-     * @param {{ modelId?: string, checksum?: number | null, embedded?: boolean, name?: string, identifier?: string, layer?: string, positionMil?: { x?: number, y?: number }, rotationDeg?: number, modelRotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number }} componentBody
+     * @param {{ modelId?: string, checksum?: number | null, embedded?: boolean, name?: string, identifier?: string, layer?: string, positionMil?: { x?: number, y?: number }, rotationDeg?: number, modelRotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number, bodyOpacity?: number | string }} componentBody
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null } | null} matchedComponent
      * @param {{ origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } | null} resolvedModel
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string }[]} components
@@ -357,7 +417,21 @@ export class PcbScene3dBuilder {
         board,
         thicknessMil
     ) {
+        if (PcbScene3dBuilder.#shouldRenderStaticGeometryOnly(componentBody)) {
+            return null
+        }
+
         if (!resolvedModel) {
+            return null
+        }
+
+        if (
+            PcbScene3dBuilder.#isPositiveTimingStackPackageBody(
+                componentBody,
+                matchedComponent,
+                components
+            )
+        ) {
             return null
         }
 
@@ -429,8 +503,22 @@ export class PcbScene3dBuilder {
                 pads,
                 resolvedModel
             ),
+            ...PcbScene3dBuilder.#componentBodyDisplayMetadata(componentBody),
             externalModel: resolvedModel
         }
+    }
+
+    /**
+     * Resolves optional component-body display metadata for external renderers.
+     * @param {{ bodyOpacity?: number | string }} componentBody Component body.
+     * @returns {{ bodyOpacity?: number }}
+     */
+    static #componentBodyDisplayMetadata(componentBody) {
+        const opacity = Number(componentBody?.bodyOpacity)
+
+        return Number.isFinite(opacity) && opacity > 0 && opacity < 1
+            ? { bodyOpacity: opacity }
+            : {}
     }
 
     /**
@@ -478,8 +566,47 @@ export class PcbScene3dBuilder {
         matchedComponent
     ) {
         return (
-            !matchedComponent &&
-            PcbScene3dBuilder.#isShapeBasedComponentBody(componentBody)
+            (!matchedComponent &&
+                PcbScene3dBuilder.#isShapeBasedComponentBody(componentBody)) ||
+            PcbScene3dBuilder.#hasAuthoredCoverStackStandoff(
+                componentBody,
+                matchedComponent
+            )
+        )
+    }
+
+    /**
+     * Checks whether a positive standoff describes a real mechanical cover
+     * stack instead of an embedded model source-origin air gap.
+     * @param {object | null | undefined} componentBody Component-body row.
+     * @param {object | null} matchedComponent Matched owner component.
+     * @returns {boolean}
+     */
+    static #hasAuthoredCoverStackStandoff(componentBody, matchedComponent) {
+        if (!matchedComponent || !componentBody?.embedded) {
+            return false
+        }
+
+        const standoff = Number(componentBody?.standoffHeightMil)
+        const overallHeight = Number(componentBody?.overallHeightMil)
+        if (
+            !Number.isFinite(standoff) ||
+            !Number.isFinite(overallHeight) ||
+            standoff <= 0 ||
+            overallHeight <= standoff
+        ) {
+            return false
+        }
+
+        const identityText = [
+            componentBody?.identifier,
+            componentBody?.name,
+            matchedComponent?.pattern,
+            matchedComponent?.source
+        ].join(' ')
+
+        return PcbScene3dBuilder.#AUTHORED_COVER_STACK_IDENTITY_PATTERN.test(
+            identityText
         )
     }
 
@@ -643,7 +770,8 @@ export class PcbScene3dBuilder {
 
         componentBodies.forEach((componentBody, bodyIndex) => {
             if (
-                !PcbScene3dBuilder.#isResolvableComponentBody(
+                !PcbScene3dBuilder.#isMatchableComponentBody(
+                    componentBody,
                     resolvedBodyModels,
                     bodyIndex
                 )
@@ -730,7 +858,8 @@ export class PcbScene3dBuilder {
         const groupedBodyIndexes = new Map()
         componentBodies.forEach((componentBody, bodyIndex) => {
             if (
-                !PcbScene3dBuilder.#isResolvableComponentBody(
+                !PcbScene3dBuilder.#isMatchableComponentBody(
+                    componentBody,
                     resolvedBodyModels,
                     bodyIndex
                 )
@@ -799,7 +928,113 @@ export class PcbScene3dBuilder {
             })
         })
 
+        PcbScene3dBuilder.#assignStaticShieldFrameBodyMatches(
+            matches,
+            componentBodies,
+            components
+        )
+
         return matches
+    }
+
+    /**
+     * Assigns static shield-frame sub-bodies to their nearest shield-frame
+     * component owner. These bodies are renderable without external models, so
+     * the external-model ownership pass does not see them.
+     * @param {({ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string } | null)[]} matches Mutable match array.
+     * @param {{ identifier?: string, name?: string, layer?: string, positionMil?: { x?: number, y?: number }, staticGeometry?: object }[]} componentBodies Component bodies.
+     * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string }[]} components PCB components.
+     */
+    static #assignStaticShieldFrameBodyMatches(
+        matches,
+        componentBodies,
+        components
+    ) {
+        componentBodies.forEach((componentBody, bodyIndex) => {
+            if (
+                matches[bodyIndex] ||
+                !PcbScene3dBuilder.#isStaticShieldFrameBody(componentBody)
+            ) {
+                return
+            }
+
+            const owner = components
+                .filter(
+                    (component) =>
+                        PcbScene3dBuilder.#isMechanicalShieldFrameOwner(
+                            component
+                        ) &&
+                        PcbScene3dBuilder.#isBodyComponentSideCompatible(
+                            componentBody,
+                            component
+                        )
+                )
+                .map((component) => ({
+                    component,
+                    affinityScore:
+                        PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
+                            componentBody,
+                            component
+                        ),
+                    distance:
+                        PcbScene3dBuilder.#distanceBetweenBodyAndComponent(
+                            componentBody,
+                            component
+                        )
+                }))
+                .filter(
+                    ({ distance }) =>
+                        Number.isFinite(distance) &&
+                        distance <=
+                            PcbScene3dBuilder
+                                .#MECHANICAL_SHIELD_FRAME_OWNER_RADIUS_MIL
+                )
+                .sort(
+                    (left, right) =>
+                        right.affinityScore - left.affinityScore ||
+                        left.distance - right.distance
+                )[0]?.component
+
+            if (owner) {
+                matches[bodyIndex] = owner
+            }
+        })
+    }
+
+    /**
+     * Checks whether one component is a mechanical shield-frame owner.
+     * @param {{ pattern?: string, source?: string, description?: string, parameters?: Record<string, unknown>, provenance?: Record<string, unknown> }} component Source component.
+     * @returns {boolean}
+     */
+    static #isMechanicalShieldFrameOwner(component) {
+        return PcbScene3dBuilder.#MECHANICAL_SHIELD_FRAME_OWNER_PATTERN.test(
+            PcbScene3dBuilder.#componentIdentityText(component)
+        )
+    }
+
+    /**
+     * Checks whether one static body is a shield-frame sub-body.
+     * @param {{ identifier?: string, name?: string, staticGeometry?: object }} componentBody Component body.
+     * @returns {boolean}
+     */
+    static #isStaticShieldFrameBody(componentBody) {
+        const geometry = componentBody?.staticGeometry || {}
+        const completeGeometry =
+            geometry.status === 'complete' &&
+            Array.isArray(geometry.verticesMil) &&
+            geometry.verticesMil.length >= 3
+        const recoverableGeometry =
+            geometry.status !== 'complete' && Number(geometry.heightMil) > 0
+
+        return (
+            String(geometry.kind || '').toLowerCase() === 'extruded-polygon' &&
+            (completeGeometry || recoverableGeometry) &&
+            PcbScene3dBuilder.#MECHANICAL_SHIELD_FRAME_BODY_PATTERN.test(
+                [componentBody?.identifier, componentBody?.name]
+                    .map((value) => String(value || ''))
+                    .join(' ')
+            )
+        )
     }
 
     /**
@@ -820,7 +1055,8 @@ export class PcbScene3dBuilder {
 
         componentBodies.forEach((componentBody, bodyIndex) => {
             if (
-                !PcbScene3dBuilder.#isResolvableComponentBody(
+                !PcbScene3dBuilder.#isMatchableComponentBody(
+                    componentBody,
                     resolvedBodyModels,
                     bodyIndex
                 )
@@ -858,6 +1094,29 @@ export class PcbScene3dBuilder {
     }
 
     /**
+     * Returns true when one body row can participate in owner matching.
+     * @param {object | null | undefined} componentBody Component body row.
+     * @param {unknown[]} resolvedBodyModels Resolved body-model entries.
+     * @param {number} bodyIndex Body index.
+     * @returns {boolean}
+     */
+    static #isMatchableComponentBody(
+        componentBody,
+        resolvedBodyModels,
+        bodyIndex
+    ) {
+        return (
+            PcbScene3dBuilder.#isResolvableComponentBody(
+                resolvedBodyModels,
+                bodyIndex
+            ) ||
+            PcbScene3dBuilder.#isAnonymousLayerlessStaticBodyGeometry(
+                componentBody
+            )
+        )
+    }
+
+    /**
      * Returns true when one body row can produce a renderable external model.
      * @param {unknown[]} resolvedBodyModels Resolved body-model entries.
      * @param {number} bodyIndex Body index.
@@ -868,6 +1127,26 @@ export class PcbScene3dBuilder {
             Array.isArray(resolvedBodyModels)
                 ? resolvedBodyModels[bodyIndex]
                 : true
+        )
+    }
+
+    /**
+     * Checks whether one anonymous layerless body row already carries
+     * renderable static geometry.
+     * @param {object | null | undefined} componentBody Component body row.
+     * @returns {boolean}
+     */
+    static #isAnonymousLayerlessStaticBodyGeometry(componentBody) {
+        const identityText = [componentBody?.identifier, componentBody?.name]
+            .map((value) => String(value || '').trim())
+            .join('')
+
+        return (
+            identityText.length === 0 &&
+            String(componentBody?.layer || '').trim().length === 0 &&
+            Boolean(componentBody?.staticGeometry) &&
+            String(componentBody.staticGeometry?.status || '').toLowerCase() ===
+                'complete'
         )
     }
 
@@ -1041,6 +1320,154 @@ export class PcbScene3dBuilder {
     }
 
     /**
+     * Checks whether a package-like shape body is an authored timing-stack
+     * sub-body that should stay represented by its carrier static geometry.
+     * @param {object} componentBody Component-body record.
+     * @param {object | null} matchedComponent Matched component.
+     * @param {{ designator?: string, x?: number, y?: number, pattern?: string, source?: string, description?: string, provenance?: object, parameters?: object }[]} components PCB components.
+     * @returns {boolean}
+     */
+    static #isPositiveTimingStackPackageBody(
+        componentBody,
+        matchedComponent,
+        components
+    ) {
+        const standoff = Number(componentBody?.standoffHeightMil)
+        const hasTimingOwner = matchedComponent
+            ? PcbScene3dBuilder.#isTimingStackComponent(matchedComponent)
+            : PcbScene3dBuilder.#hasNearbyTimingStackOwner(
+                  componentBody,
+                  components
+              )
+        const hasLocalComponentOwner =
+            PcbScene3dBuilder.#hasNearbyNonTimingPackageOwner(
+                componentBody,
+                components
+            )
+
+        return (
+            PcbScene3dBuilder.#isShapeBasedComponentBody(componentBody) &&
+            componentBody?.embedded === true &&
+            Number.isFinite(standoff) &&
+            standoff > 0 &&
+            PcbScene3dBuilder.#isComponentPackageBody(componentBody) &&
+            !PcbScene3dBuilder.#isTimingStackBodyIdentity(componentBody) &&
+            !PcbScene3dBuilder.#isAuthoredBodyIdentity(componentBody) &&
+            hasTimingOwner &&
+            !hasLocalComponentOwner
+        )
+    }
+
+    /**
+     * Checks whether a shape-based sub-body is the actual timing package
+     * rather than a passive support part inside the timing stack.
+     * @param {{ name?: string, identifier?: string }} componentBody Component-body record.
+     * @returns {boolean}
+     */
+    static #isTimingStackBodyIdentity(componentBody) {
+        return PcbScene3dBuilder.#TIMING_STACK_COMPONENT_PATTERN.test(
+            [componentBody?.identifier, componentBody?.name]
+                .map((value) => String(value || ''))
+                .join(' ')
+        )
+    }
+
+    /**
+     * Checks whether one package-like body is the authored timing package for
+     * a timing-stack component.
+     * @param {{ name?: string, identifier?: string }} componentBody Component-body record.
+     * @param {object} component PCB component.
+     * @returns {boolean}
+     */
+    static #isTimingStackBodyComponentPair(componentBody, component) {
+        return (
+            PcbScene3dBuilder.#isTimingStackBodyIdentity(componentBody) &&
+            PcbScene3dBuilder.#isTimingStackComponent(component)
+        )
+    }
+
+    /**
+     * Checks whether a positive package body has its own nearby non-timing
+     * component and should not be treated as an unowned timing-stack detail.
+     * @param {{ positionMil?: { x?: number, y?: number } }} componentBody Component-body record.
+     * @param {object[]} components PCB components.
+     * @returns {boolean}
+     */
+    static #hasNearbyNonTimingPackageOwner(componentBody, components) {
+        return (Array.isArray(components) ? components : []).some(
+            (component) =>
+                !PcbScene3dBuilder.#isTimingStackComponent(component) &&
+                PcbScene3dBuilder.#distanceBetweenBodyAndComponent(
+                    componentBody,
+                    component
+                ) <= PcbScene3dBuilder.#EXACT_BODY_MISMATCH_TOLERANCE_MIL &&
+                PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
+                    componentBody,
+                    component
+                ) > 0
+        )
+    }
+
+    /**
+     * Checks whether an unmatched body sits inside a timing-package stack.
+     * @param {{ positionMil?: { x?: number, y?: number } }} componentBody Component-body record.
+     * @param {object[]} components PCB components.
+     * @returns {boolean}
+     */
+    static #hasNearbyTimingStackOwner(componentBody, components) {
+        return (Array.isArray(components) ? components : []).some(
+            (component) =>
+                PcbScene3dBuilder.#isTimingStackComponent(component) &&
+                PcbScene3dBuilder.#distanceBetweenBodyAndComponent(
+                    componentBody,
+                    component
+                ) <= PcbScene3dBuilder.#TIMING_STACK_BODY_RADIUS_MIL
+        )
+    }
+
+    /**
+     * Checks whether one component is a timing-package stack owner.
+     * @param {object} component PCB component.
+     * @returns {boolean}
+     */
+    static #isTimingStackComponent(component) {
+        const designator = String(component?.designator || '').trim()
+        if (
+            PcbScene3dBuilder.#TIMING_STACK_DESIGNATOR_PATTERN.test(designator)
+        ) {
+            return true
+        }
+
+        return PcbScene3dBuilder.#TIMING_STACK_COMPONENT_PATTERN.test(
+            [
+                component?.pattern,
+                component?.source,
+                component?.description,
+                component?.provenance?.footprintDescription,
+                ...Object.values(component?.parameters || {})
+            ]
+                .map((value) => String(value || ''))
+                .join(' ')
+        )
+    }
+
+    /**
+     * Checks whether a body already has complete static geometry and should
+     * not also be emitted as an external model placement.
+     * @param {{ embedded?: boolean, staticGeometry?: { status?: string } }} componentBody Component-body record.
+     * @returns {boolean}
+     */
+    static #shouldRenderStaticGeometryOnly(componentBody) {
+        return (
+            PcbScene3dBuilder.#isShapeBasedComponentBody(componentBody) &&
+            !componentBody?.embedded &&
+            String(
+                componentBody?.staticGeometry?.status || ''
+            ).toLowerCase() === 'complete'
+        )
+    }
+
+    /**
      * Checks whether a precise body/component pair is a package-family mismatch.
      * @param {{ name?: string, identifier?: string }} componentBody Component-body record.
      * @param {{ pattern?: string, source?: string, modelPath?: string }} component PCB component.
@@ -1056,6 +1483,10 @@ export class PcbScene3dBuilder {
             Number(distanceMil || 0) <=
                 PcbScene3dBuilder.#EXACT_BODY_MISMATCH_TOLERANCE_MIL &&
             PcbScene3dBuilder.#isComponentPackageBody(componentBody) &&
+            !PcbScene3dBuilder.#isTimingStackBodyComponentPair(
+                componentBody,
+                component
+            ) &&
             !PcbScene3dBuilder.#isAuthoredBodyIdentity(componentBody) &&
             PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
                 componentBody,
@@ -1834,11 +2265,16 @@ export class PcbScene3dBuilder {
 
     /**
      * Resolves the owned or nearby pad-span box around one component.
-     * @param {{ x: number, y: number, componentIndex?: number, layer?: string }} component
+     * @param {{ x: number, y: number, componentIndex?: number, layer?: string, rotation?: number }} component
      * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[]} pads
+     * @param {number} [rotationDeg] Body-local rotation used for span measurement.
      * @returns {{ width: number, depth: number }}
      */
-    static #resolvePadSpan(component, pads) {
+    static #resolvePadSpan(
+        component,
+        pads,
+        rotationDeg = Number(component?.rotation || 0)
+    ) {
         const componentPads = PcbScene3dBuilder.#componentPads(component, pads)
         const nearbyPads = pads.filter((pad) =>
             PcbScene3dBuilder.#isPadNearComponent(component, pad)
@@ -1852,10 +2288,24 @@ export class PcbScene3dBuilder {
         const mountSide = PcbScene3dBuilder.#resolveMountSide(component)
         return (
             PcbScene3dPadLocalSpanResolver.resolve(
-                component,
+                { ...component, rotation: rotationDeg },
                 spanPads,
                 mountSide
             ) || { width: 0, depth: 0 }
+        )
+    }
+
+    /**
+     * Resolves the visible procedural component rotation.
+     * @param {{ componentIndex?: number, rotation?: number }} component PCB component.
+     * @param {object[]} pads PCB pads.
+     * @param {string} mountSide Component mount side.
+     * @returns {number}
+     */
+    static #resolveComponentRotation(component, pads, mountSide) {
+        return (
+            PcbScene3dPadYawResolver.resolve(component, pads, mountSide) ??
+            Number(component?.rotation || 0)
         )
     }
 

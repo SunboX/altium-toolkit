@@ -43,6 +43,25 @@ test('PcbScene3dModelRegistry resolves explicit and heuristic model matches', ()
     assert.equal(missingMatch, null)
 })
 
+test('PcbScene3dModelRegistry resolves exact GLB session models', () => {
+    const registry = PcbScene3dModelRegistry.create([
+        {
+            name: 'Module.glb',
+            relativePath: 'Models/Module.glb'
+        }
+    ])
+
+    const match = registry.resolveComponentModel({
+        designator: 'U1',
+        pattern: 'MODULE',
+        modelPath: 'Models/Module.glb'
+    })
+
+    assert.equal(match?.origin, 'session')
+    assert.equal(match?.format, 'glb')
+    assert.equal(match?.relativePath, 'Models/Module.glb')
+})
+
 /**
  * Verifies embedded model payloads resolve by authored model identity before
  * falling back to session basenames.

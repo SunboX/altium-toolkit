@@ -7,7 +7,10 @@ export class AltiumScene3dAuthoredBodyAnchorAdapter {
     static #BODY_ANCHOR_TOLERANCE_MIL = 5
     static #AUTHORED_SOURCE = 'authored-body-anchor'
     static #AUTHORED_ANCHOR_IDENTITY_PATTERN =
-        /(?:^|[^a-z0-9])(?:antenna|coax|connector|edge|header|jack|mechanical|module|mount|shield|sma|socket|usb)(?:$|[^a-z0-9])/i
+        /(?:^|[^a-z0-9])(?:antenna|coax|connector|edge|header|jack|mechanical|module|mount|shield|sma|socket)(?:$|[^a-z0-9])/i
+    static #USB_ANCHOR_IDENTITY_PATTERN = /(?:^|[^a-z0-9])usb(?:$|[^a-z0-9])/i
+    static #INTEGRATED_CIRCUIT_PACKAGE_PATTERN =
+        /(?:^|[^a-z0-9])(?:u?qfn|v?qfn|dfn|qfp|lqfp|tqfp|bga|lga|sop|soic|ssop|tssop|msop|so[-_ ]?\d+)(?:[-_ ]?\d+)?(?:$|[^a-z0-9])/i
 
     /**
      * Marks off-anchor explicit Altium body placements so the runtime does not
@@ -149,10 +152,35 @@ export class AltiumScene3dAuthoredBodyAnchorAdapter {
      * @returns {boolean}
      */
     static #hasAuthoredAnchorIdentity(placement, component) {
-        return AltiumScene3dAuthoredBodyAnchorAdapter.#AUTHORED_ANCHOR_IDENTITY_PATTERN.test(
+        const identityText =
             AltiumScene3dAuthoredBodyAnchorAdapter.#identityText(
                 placement,
                 component
+            )
+
+        return (
+            AltiumScene3dAuthoredBodyAnchorAdapter.#AUTHORED_ANCHOR_IDENTITY_PATTERN.test(
+                identityText
+            ) ||
+            AltiumScene3dAuthoredBodyAnchorAdapter.#hasUsbHardwareAnchorIdentity(
+                identityText
+            )
+        )
+    }
+
+    /**
+     * Allows USB connector-like anchors without treating USB interface ICs as
+     * authored mechanical anchors.
+     * @param {string} identityText Searchable package identity.
+     * @returns {boolean}
+     */
+    static #hasUsbHardwareAnchorIdentity(identityText) {
+        return (
+            AltiumScene3dAuthoredBodyAnchorAdapter.#USB_ANCHOR_IDENTITY_PATTERN.test(
+                identityText
+            ) &&
+            !AltiumScene3dAuthoredBodyAnchorAdapter.#INTEGRATED_CIRCUIT_PACKAGE_PATTERN.test(
+                identityText
             )
         )
     }

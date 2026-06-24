@@ -207,7 +207,7 @@ class PcbEmbeddedModelTestFactory {
 
     /**
      * Encodes one shape-based component-body record.
-     * @param {{ fields: string[], verticesMil: { x: number, y: number }[] }} input
+     * @param {{ fields: string[], verticesMil: { x: number, y: number }[], inlineVertexBlockInTextLength?: boolean }} input
      * @returns {Uint8Array}
      */
     static createShapeBasedBodyRecord(input) {
@@ -221,7 +221,12 @@ class PcbEmbeddedModelTestFactory {
         )
         const view = new DataView(record.buffer)
 
-        view.setInt32(18, textBytes.byteLength, true)
+        view.setInt32(
+            18,
+            textBytes.byteLength +
+                (input.inlineVertexBlockInTextLength ? 4 + dataByteLength : 0),
+            true
+        )
         record.set(textBytes, 22)
         view.setInt32(22 + textBytes.byteLength, vertexCount, true)
 
@@ -368,6 +373,89 @@ test('PcbEmbeddedModelExtractor extracts shape-based static body geometry', () =
             }
         ]
     )
+})
+
+test('PcbEmbeddedModelExtractor extracts inline shape-based vertex blocks', () => {
+    const streams = new Map()
+    const circleVertices = Array.from({ length: 20 }, (_, index) => {
+        const angle = (Math.PI * 2 * index) / 20
+        const x = Math.round(Math.cos(angle) * 1000) / 10
+        const y = Math.round(Math.sin(angle) * 1000) / 10
+
+        return {
+            x: Object.is(x, -0) ? 0 : x,
+            y: Object.is(y, -0) ? 0 : y
+        }
+    })
+
+    streams.set(
+        'ShapeBasedComponentBodies6/Data',
+        PcbEmbeddedModelTestFactory.createShapeBasedBodyRecord({
+            fields: [
+                'V7_LAYER=MECHANICAL13',
+                'IDENTIFIER=70,114,97,109,101,50',
+                'MODELID={INLINE-CIRCLE}',
+                'MODEL.NAME=',
+                'MODEL.2D.X=500mil',
+                'MODEL.2D.Y=500mil',
+                'MODEL.MODELTYPE=0',
+                'MODEL.EXTRUDED.MINZ=137.7953mil',
+                'MODEL.EXTRUDED.MAXZ=141.7323mil',
+                'STANDOFFHEIGHT=137.7953mil',
+                'OVERALLHEIGHT=141.7323mil',
+                'BODYOPACITY3D=0.750'
+            ],
+            verticesMil: circleVertices,
+            inlineVertexBlockInTextLength: true
+        })
+    )
+
+    const extracted = PcbEmbeddedModelExtractor.extractFromStreams(streams)
+
+    assert.equal(extracted.componentBodies.length, 1)
+    assert.equal(extracted.componentBodies[0].identifier, 'Frame2')
+    assert.deepEqual(extracted.componentBodies[0].staticGeometry, {
+        kind: 'extruded-polygon',
+        status: 'complete',
+        units: 'mil',
+        minZMil: 137.7953,
+        maxZMil: 141.7323,
+        heightMil: 3.937,
+        standoffHeightMil: 137.7953,
+        verticesMil: circleVertices
+    })
+})
+
+test('PcbEmbeddedModelExtractor omits literal zero body opacity', () => {
+    const streams = new Map()
+    streams.set(
+        'ShapeBasedComponentBodies6/Data',
+        PcbEmbeddedModelTestFactory.createShapeBasedBodyRecord({
+            fields: [
+                'V7_LAYER=MECHANICAL1',
+                'IDENTIFIER=86,73,83,73,66,76,69,95,66,79,68,89',
+                'MODELID={STATIC-VISIBLE}',
+                'MODEL.NAME=visible-body.step',
+                'MODEL.2D.X=200mil',
+                'MODEL.2D.Y=250mil',
+                'MODEL.MODELTYPE=0',
+                'MODEL.EXTRUDED.MINZ=0mil',
+                'MODEL.EXTRUDED.MAXZ=20mil',
+                'BODYOPACITY3D=0.000'
+            ],
+            verticesMil: [
+                { x: 0, y: 0 },
+                { x: 100, y: 0 },
+                { x: 100, y: 50 },
+                { x: 0, y: 50 }
+            ]
+        })
+    )
+
+    const extracted = PcbEmbeddedModelExtractor.extractFromStreams(streams)
+
+    assert.equal(extracted.componentBodies.length, 1)
+    assert.equal(extracted.componentBodies[0].bodyOpacity, undefined)
 })
 
 test('PcbEmbeddedModelExtractor keeps complete shape-based geometry for duplicate body rows', () => {

@@ -7,6 +7,7 @@ const TIMING_DESIGNATOR_PATTERN = /^(?:y|xo)\d+[a-z]?$/i
  */
 export class AltiumScene3dShapeStackOwnerAdapter {
     static #BASE_OWNER_TOLERANCE_MIL = 60
+    static #EXACT_OWNER_TOLERANCE_MIL = 1
     static #STACK_BODY_RADIUS_MIL = 220
     static #HEIGHT_TOLERANCE_MIL = 0.1
 
@@ -69,7 +70,8 @@ export class AltiumScene3dShapeStackOwnerAdapter {
                 AltiumScene3dShapeStackOwnerAdapter.#repairStaticPlacements(
                     sceneDescription.staticBodyPlacements,
                     componentBodies,
-                    assignments
+                    assignments,
+                    sceneDescription.board
                 )
         }
     }
@@ -146,9 +148,15 @@ export class AltiumScene3dShapeStackOwnerAdapter {
      * @param {object[] | undefined} placements Scene static body placements.
      * @param {object[]} componentBodies Source component-body rows.
      * @param {object[]} assignments Carrier assignments.
+     * @param {object | undefined} board Scene board metadata.
      * @returns {object[]}
      */
-    static #repairStaticPlacements(placements, componentBodies, assignments) {
+    static #repairStaticPlacements(
+        placements,
+        componentBodies,
+        assignments,
+        board
+    ) {
         return (Array.isArray(placements) ? placements : []).map(
             (placement) => {
                 const assignment = assignments.find((candidate) =>
@@ -164,10 +172,35 @@ export class AltiumScene3dShapeStackOwnerAdapter {
                 return {
                     ...placement,
                     designator: String(assignment.owner.designator || ''),
+                    positionMil:
+                        AltiumScene3dShapeStackOwnerAdapter.#withOwnerAnchor(
+                            placement?.positionMil,
+                            assignment.owner,
+                            board
+                        ),
                     coLocatedVariantGroupKey: assignment.groupKey
                 }
             }
         )
+    }
+
+    /**
+     * Re-anchors a repaired static carrier on the owning component position.
+     * @param {object | undefined} position Existing render position.
+     * @param {{ x?: number, y?: number }} owner Owner component.
+     * @param {object | undefined} board Scene board metadata.
+     * @returns {{ x: number, y: number, z: number }}
+     */
+    static #withOwnerAnchor(position, owner, board) {
+        return {
+            ...(position || {}),
+            x: AltiumScene3dShapeStackOwnerAdapter.#round(
+                Number(owner?.x || 0) - Number(board?.centerX || 0)
+            ),
+            y: AltiumScene3dShapeStackOwnerAdapter.#round(
+                Number(owner?.y || 0) - Number(board?.centerY || 0)
+            )
+        }
     }
 
     /**
@@ -187,6 +220,15 @@ export class AltiumScene3dShapeStackOwnerAdapter {
             AltiumScene3dShapeStackOwnerAdapter.#groupCarrierBases(bases)
 
         return groups.flatMap((group) => {
+            if (
+                AltiumScene3dShapeStackOwnerAdapter.#hasExactNonTimingOwner(
+                    group.anchor,
+                    components
+                )
+            ) {
+                return []
+            }
+
             const owners = timingComponents
                 .filter(
                     (component) =>
@@ -240,6 +282,39 @@ export class AltiumScene3dShapeStackOwnerAdapter {
                     )
                 }))
         })
+    }
+
+    /**
+     * Checks whether one carrier base already sits on a non-timing component.
+     * @param {{ x?: number, y?: number }} anchor Carrier base anchor.
+     * @param {object[]} components Source components.
+     * @returns {boolean}
+     */
+    static #hasExactNonTimingOwner(anchor, components) {
+        const exactOwners = (
+            Array.isArray(components) ? components : []
+        ).filter(
+            (component) =>
+                AltiumScene3dShapeStackOwnerAdapter.#distance(
+                    anchor,
+                    component
+                ) <=
+                AltiumScene3dShapeStackOwnerAdapter.#EXACT_OWNER_TOLERANCE_MIL
+        )
+
+        return (
+            exactOwners.some(
+                (component) =>
+                    !AltiumScene3dShapeStackOwnerAdapter.#isTimingComponent(
+                        component
+                    )
+            ) &&
+            !exactOwners.some((component) =>
+                AltiumScene3dShapeStackOwnerAdapter.#isTimingComponent(
+                    component
+                )
+            )
+        )
     }
 
     /**
@@ -469,7 +544,11 @@ export class AltiumScene3dShapeStackOwnerAdapter {
         return (
             componentBodies
                 .filter(
-                    (componentBody) => !usedComponentBodies.has(componentBody)
+                    (componentBody) =>
+                        !usedComponentBodies.has(componentBody) &&
+                        !AltiumScene3dShapeStackOwnerAdapter.#isCarrierBase(
+                            componentBody
+                        )
                 )
                 .map((componentBody) => ({
                     componentBody,

@@ -127,9 +127,11 @@ test('PcbScene3dBuilder suppresses oversized low-confidence fallback components'
 
     assert.deepEqual(
         scene.components.map((component) => component.designator),
-        ['U1']
+        ['M1', 'U1']
     )
-    assert.equal(scene.components[0].body.sizeMil.width, 150)
+    assert.equal(scene.components[0].componentIndex, 0)
+    assert.equal(scene.components[0].renderFallbackBody, false)
+    assert.equal(scene.components[1].body.sizeMil.width, 150)
 })
 
 /**
@@ -620,6 +622,168 @@ test('PcbScene3dBuilder leaves embedded body models seated on the board face', (
     assert.equal(scene.externalPlacements[0].modelTransform.dzMil, 0)
 })
 
+test('PcbScene3dBuilder preserves authored positive shield-cover standoff', () => {
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'demo.PcbDoc',
+            pcb: {
+                boardOutline: buildBoardOutline(),
+                pads: [],
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: [
+                    {
+                        sourceStream: 'ComponentBodies6/Data',
+                        layer: 'MECHANICAL1',
+                        identifier: 'shield-cover-body',
+                        modelId: '{MODEL-SHIELD-COVER}',
+                        checksum: 446,
+                        embedded: true,
+                        name: 'shield-cover.step',
+                        positionMil: { x: 250, y: 200 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: 90, y: 0, z: 0 },
+                        dzMil: -55,
+                        overallHeightMil: 160,
+                        standoffHeightMil: 80
+                    }
+                ],
+                components: [
+                    {
+                        designator: 'M1',
+                        x: 250,
+                        y: 200,
+                        rotation: 0,
+                        layer: 'TOP',
+                        pattern: 'RF_SHIELD_COVER',
+                        source: 'MECHANICAL/RF_SHIELD_COVER',
+                        height: 160
+                    }
+                ]
+            }
+        },
+        { modelRegistry: buildModelRegistry() }
+    )
+
+    assert.equal(scene.externalPlacements.length, 1)
+    assert.equal(scene.externalPlacements[0].designator, 'M1')
+    assert.equal(scene.externalPlacements[0].modelTransform.dzMil, 80)
+})
+
+test('PcbScene3dBuilder keeps timing package and drops passive timing stack sub-bodies', () => {
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'demo.PcbDoc',
+            pcb: {
+                boardOutline: buildBoardOutline(),
+                pads: [],
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: [
+                    {
+                        sourceStream: 'ShapeBasedComponentBodies6/Data',
+                        layer: 'MECHANICAL13',
+                        identifier: 'timing-carrier',
+                        modelId: '{MODEL-TIMING-CARRIER}',
+                        checksum: 401,
+                        embedded: false,
+                        name: '',
+                        positionMil: { x: 300, y: 220 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: 0, y: 0, z: 0 },
+                        dzMil: 0,
+                        overallHeightMil: 40,
+                        standoffHeightMil: 0,
+                        modelTypeName: 'extruded-polygon',
+                        staticGeometry: {
+                            kind: 'extruded-polygon',
+                            status: 'complete',
+                            units: 'mil',
+                            minZMil: 0,
+                            maxZMil: 40,
+                            heightMil: 40,
+                            standoffHeightMil: 0,
+                            verticesMil: [
+                                { x: 250, y: 180 },
+                                { x: 350, y: 180 },
+                                { x: 350, y: 260 },
+                                { x: 250, y: 260 }
+                            ]
+                        }
+                    },
+                    {
+                        sourceStream: 'ShapeBasedComponentBodies6/Data',
+                        layer: '',
+                        identifier: 'Crystal TXC Corp 7M series',
+                        modelId: '{MODEL-STACK-CRYSTAL}',
+                        checksum: 403,
+                        embedded: true,
+                        name: 'Crystal TXC Corp 7M series.STEP',
+                        positionMil: { x: 300, y: 220 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: 0, y: 0, z: 0 },
+                        dzMil: 40,
+                        overallHeightMil: 70,
+                        standoffHeightMil: 40,
+                        modelTypeName: 'cone'
+                    },
+                    {
+                        sourceStream: 'ShapeBasedComponentBodies6/Data',
+                        layer: '',
+                        identifier: 'RES 0402',
+                        modelId: '{MODEL-STACK-PASSIVE}',
+                        checksum: 402,
+                        embedded: true,
+                        name: 'RES 0402.step',
+                        positionMil: { x: 360, y: 280 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: 0, y: 0, z: 0 },
+                        dzMil: 40,
+                        overallHeightMil: 55,
+                        standoffHeightMil: 40,
+                        modelTypeName: 'cone'
+                    }
+                ],
+                components: [
+                    {
+                        designator: 'Y1',
+                        x: 300,
+                        y: 220,
+                        rotation: 0,
+                        layer: 'TOP',
+                        pattern: 'TIMING_OSC',
+                        source: 'OSC/TIMING_OSC',
+                        height: null
+                    }
+                ]
+            }
+        },
+        { modelRegistry: buildModelRegistry() }
+    )
+
+    assert.deepEqual(
+        scene.staticBodyPlacements.map((placement) => placement.designator),
+        ['Y1']
+    )
+    assert.equal(scene.externalPlacements.length, 1)
+    assert.equal(scene.externalPlacements[0].designator, 'Y1')
+    assert.equal(
+        scene.externalPlacements[0].externalModel.name,
+        'Crystal TXC Corp 7M series.STEP'
+    )
+    assert.equal(
+        scene.externalPlacements[0].projection.source,
+        'authored-shape-stack'
+    )
+    assert.equal(scene.externalPlacements[0].modelTransform.dzMil, 40)
+})
+
 /**
  * Verifies embedded bodies with authored geometry below the mount plane keep
  * that penetration so pins and leads are not lifted onto the board surface.
@@ -673,6 +837,60 @@ test('PcbScene3dBuilder preserves negative embedded body standoff', () => {
     assert.equal(scene.externalPlacements.length, 1)
     assert.equal(scene.externalPlacements[0].designator, 'J9')
     assert.equal(scene.externalPlacements[0].modelTransform.dzMil, -70)
+})
+
+/**
+ * Verifies authored Altium body opacity remains available to external model
+ * renderers.
+ */
+test('PcbScene3dBuilder forwards external body opacity metadata', () => {
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'demo.PcbDoc',
+            pcb: {
+                boardOutline: buildBoardOutline(),
+                pads: [],
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: [
+                    {
+                        sourceStream: 'ComponentBodies6/Data',
+                        layer: 'MECHANICAL13',
+                        identifier: 'fixture_shield_cover',
+                        modelId: '{MODEL-SHIELD}',
+                        checksum: 446,
+                        embedded: true,
+                        name: 'fixture-shield-cover.step',
+                        positionMil: { x: 300, y: 220 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: -90, y: 0, z: 0 },
+                        dzMil: 0,
+                        bodyOpacity: 0.24
+                    }
+                ],
+                components: [
+                    {
+                        designator: 'MECH1',
+                        x: 300,
+                        y: 220,
+                        rotation: 0,
+                        layer: 'TOP',
+                        pattern: 'FIXTURE_SHIELD_COVER',
+                        source: 'MECH/FIXTURE_SHIELD_COVER',
+                        height: 160
+                    }
+                ]
+            }
+        },
+        { modelRegistry: buildModelRegistry() }
+    )
+
+    assert.equal(scene.externalPlacements.length, 1)
+    assert.equal(scene.externalPlacements[0].designator, 'MECH1')
+    assert.equal(scene.externalPlacements[0].bodyOpacity, 0.24)
 })
 
 /**

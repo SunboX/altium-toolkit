@@ -266,6 +266,79 @@ test('PcbScene3dBuilder suppresses generic translucent mechanical bodies', () =>
     assert.equal(scene.staticBodyPlacements.length, 0)
 })
 
+test('PcbScene3dBuilder keeps generic translucent shield bodies near shield owners', () => {
+    const scene = PcbScene3dBuilder.build({
+        fileName: 'shield-static-body-fake.PcbDoc',
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 2000,
+                heightMil: 1000,
+                segments: []
+            },
+            pads: [],
+            tracks: [],
+            arcs: [],
+            fills: [],
+            vias: [],
+            polygons: [],
+            componentBodies: [
+                {
+                    sourceStream: 'ShapeBasedComponentBodies6/Data',
+                    layer: 'MECHANICAL13',
+                    identifier: 'FRAME2',
+                    modelId: '{00000000-0000-0000-0000-000000000014}',
+                    checksum: 114,
+                    embedded: false,
+                    name: '',
+                    positionMil: { x: 1080, y: 500 },
+                    rotationDeg: 0,
+                    modelTypeName: 'extruded-polygon',
+                    bodyColor: {
+                        raw: 0xf0f0f0,
+                        hex: '#f0f0f0',
+                        rgb: { red: 240, green: 240, blue: 240 }
+                    },
+                    bodyOpacity: 0.75,
+                    overallHeightMil: 124,
+                    standoffHeightMil: 120,
+                    staticGeometry: {
+                        kind: 'extruded-polygon',
+                        status: 'complete',
+                        units: 'mil',
+                        heightMil: 4,
+                        standoffHeightMil: 120,
+                        verticesMil: [
+                            { x: -320, y: -80 },
+                            { x: 320, y: -80 },
+                            { x: 320, y: 80 },
+                            { x: -320, y: 80 }
+                        ]
+                    }
+                }
+            ],
+            components: [
+                {
+                    componentIndex: 0,
+                    designator: 'MECH1',
+                    x: 1000,
+                    y: 500,
+                    rotation: 0,
+                    layer: 'TOP',
+                    pattern: 'RF_SHIELD_COVER',
+                    source: 'MECH/RF_SHIELD_COVER',
+                    height: 140
+                }
+            ]
+        }
+    })
+
+    assert.equal(scene.staticBodyPlacements.length, 1)
+    assert.equal(scene.staticBodyPlacements[0].designator, 'FRAME2')
+    assert.equal(scene.staticBodyPlacements[0].bodyOpacity, 0.75)
+})
+
 test('PcbScene3dBuilder renders complete component-body geometry', () => {
     const scene = PcbScene3dBuilder.build({
         fileName: 'complete-static-body-fake.PcbDoc',
@@ -375,6 +448,83 @@ test('PcbScene3dBuilder renders complete component-body geometry', () => {
     ])
 })
 
+test('PcbScene3dBuilder keeps source-coordinate static polygons at their authored bounds', () => {
+    const scene = PcbScene3dBuilder.build({
+        fileName: 'source-coordinate-static-body-fake.PcbDoc',
+        pcb: {
+            boardOutline: {
+                minX: 4000,
+                minY: 4000,
+                widthMil: 2000,
+                heightMil: 1200,
+                segments: []
+            },
+            pads: [],
+            tracks: [],
+            arcs: [],
+            fills: [],
+            vias: [],
+            polygons: [],
+            componentBodies: [
+                {
+                    sourceStream: 'ShapeBasedComponentBodies6/Data',
+                    layer: 'MECHANICAL13',
+                    identifier: 'FRAME_RAIL',
+                    modelId: '{00000000-0000-0000-0000-000000000010}',
+                    checksum: 110,
+                    embedded: false,
+                    name: '',
+                    positionMil: { x: 5200, y: 4800 },
+                    rotationDeg: 0,
+                    modelTypeName: 'extruded-polygon',
+                    bodyOpacity: 0.75,
+                    overallHeightMil: 140,
+                    standoffHeightMil: 20,
+                    staticGeometry: {
+                        kind: 'extruded-polygon',
+                        status: 'complete',
+                        units: 'mil',
+                        heightMil: 120,
+                        standoffHeightMil: 20,
+                        verticesMil: [
+                            { x: 5100, y: 4200 },
+                            { x: 5700, y: 4200 },
+                            { x: 5700, y: 4210 },
+                            { x: 5100, y: 4210 }
+                        ]
+                    }
+                }
+            ],
+            components: [
+                {
+                    componentIndex: 0,
+                    designator: 'MX1',
+                    x: 5200,
+                    y: 4800,
+                    rotation: 0,
+                    layer: 'TOP',
+                    pattern: 'GENERIC_SHIELD_OWNER',
+                    source: 'GENERIC_SHIELD_OWNER',
+                    height: 140
+                }
+            ]
+        }
+    })
+
+    assert.equal(scene.staticBodyPlacements.length, 1)
+    assert.deepEqual(scene.staticBodyPlacements[0].positionMil, {
+        x: 400,
+        y: -395,
+        z: 111.5
+    })
+    assert.deepEqual(scene.staticBodyPlacements[0].geometry.verticesMil, [
+        { x: -300, y: -5 },
+        { x: 300, y: -5 },
+        { x: 300, y: 5 },
+        { x: -300, y: 5 }
+    ])
+})
+
 test('PcbScene3dBuilder keeps authored stacked timing bodies on the top side', () => {
     const scene = PcbScene3dBuilder.build(
         {
@@ -459,8 +609,8 @@ test('PcbScene3dBuilder keeps authored stacked timing bodies on the top side', (
                         y: 4725.0003,
                         rotation: 270,
                         layer: 'TOP',
-                        pattern: 'TIMING_UNIT',
-                        source: 'TIMING_UNIT',
+                        pattern: 'CLOCK_UNIT',
+                        source: 'CLOCK_UNIT',
                         height: 48
                     },
                     {
@@ -499,6 +649,13 @@ test('PcbScene3dBuilder keeps authored stacked timing bodies on the top side', (
 
     assert.equal(scene.staticBodyPlacements.length, 1)
     assert.equal(scene.staticBodyPlacements[0].mountSide, 'top')
+    assert.deepEqual(
+        {
+            x: scene.staticBodyPlacements[0].positionMil.x,
+            y: scene.staticBodyPlacements[0].positionMil.y
+        },
+        { x: 593.071, y: 325.0003 }
+    )
     assert.equal(scene.staticBodyPlacements[0].positionMil.z, 51.1851)
     assert.deepEqual(scene.staticBodyPlacements[0].geometry.verticesMil, [
         { x: -90.5512, y: -131.8898 },

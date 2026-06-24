@@ -76,6 +76,137 @@ test('PcbScene3dBuilder exposes Altium silkscreen drill cutouts', () => {
 })
 
 /**
+ * Verifies 3D Altium scenes expose copper-layer region contours as fill
+ * detail while keeping overlay documentation regions out of copper.
+ */
+test('PcbScene3dBuilder exposes Altium copper regions as 3D fills', () => {
+    const scene = PcbScene3dBuilder.build({
+        sourceFormat: 'altium',
+        kind: 'pcb',
+        fileName: 'board.PcbDoc',
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 500,
+                heightMil: 400,
+                segments: []
+            },
+            primitiveLayers: [
+                { layerId: 1, name: 'Top Layer' },
+                { layerId: 32, name: 'Bottom Layer' },
+                { layerId: 33, name: 'Top Overlay' }
+            ],
+            fills: [],
+            tracks: [],
+            arcs: [],
+            texts: [],
+            regions: [
+                {
+                    layerId: 1,
+                    points: [
+                        { x: 20, y: 20 },
+                        { x: 40, y: 20 },
+                        { x: 40, y: 40 },
+                        { x: 20, y: 40 }
+                    ],
+                    holes: []
+                }
+            ],
+            shapeBasedRegions: [
+                {
+                    layerId: 1,
+                    layerCode: 1,
+                    netName: 'GND',
+                    points: [
+                        {
+                            x: 100,
+                            y: 120,
+                            isArc: true,
+                            centerX: 140,
+                            centerY: 120,
+                            radius: 40,
+                            startAngle: 180,
+                            endAngle: 90
+                        },
+                        { x: 140, y: 160 },
+                        { x: 180, y: 120 },
+                        { x: 140, y: 80 }
+                    ],
+                    holes: [
+                        [
+                            { x: 130, y: 110 },
+                            { x: 150, y: 110 },
+                            { x: 150, y: 130 },
+                            { x: 130, y: 130 }
+                        ]
+                    ]
+                },
+                {
+                    layerId: 32,
+                    layerCode: 32,
+                    netName: 'GND',
+                    points: [
+                        { x: 240, y: 220 },
+                        { x: 300, y: 220 },
+                        { x: 300, y: 280 },
+                        { x: 240, y: 280 }
+                    ],
+                    holes: []
+                },
+                {
+                    layerId: 33,
+                    points: [
+                        { x: 320, y: 40 },
+                        { x: 360, y: 40 },
+                        { x: 360, y: 80 },
+                        { x: 320, y: 80 }
+                    ],
+                    holes: []
+                },
+                {
+                    layerId: 1,
+                    isPolygonPourCutout: true,
+                    points: [
+                        { x: 60, y: 60 },
+                        { x: 80, y: 60 },
+                        { x: 80, y: 80 },
+                        { x: 60, y: 80 }
+                    ],
+                    holes: []
+                }
+            ],
+            pads: [],
+            vias: [],
+            polygons: [],
+            components: []
+        },
+        bom: []
+    })
+
+    assert.equal(scene.detail.fills.length, 2)
+    assert.deepEqual(
+        scene.detail.fills.map((fill) => fill.layerId),
+        [1, 32]
+    )
+    assert.equal(scene.detail.fills[0].netName, 'GND')
+    assert.equal(scene.detail.fills[0].holes.length, 1)
+    assert.equal(scene.detail.fills[0].contours.length, 2)
+    assert.deepEqual(scene.detail.fills[0].contours[0][0], {
+        type: 'arc',
+        x1: 100,
+        y1: 120,
+        x2: 140,
+        y2: 160,
+        x: 140,
+        y: 120,
+        radius: 40,
+        startAngle: 180,
+        endAngle: 90
+    })
+})
+
+/**
  * Verifies 3D Altium scenes prefer a matching board-region contour when the
  * recovered board outline is a rasterized stair-step fallback.
  */

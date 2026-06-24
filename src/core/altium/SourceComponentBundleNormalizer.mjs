@@ -137,8 +137,23 @@ export class SourceComponentBundleNormalizer {
             primitives: SourceComponentBundleNormalizer.#array(
                 footprint.primitives || footprint.shapes
             ),
+            component:
+                SourceComponentBundleNormalizer.#normalizeFootprintComponent(
+                    footprint.component || source.component
+                ),
             raw: footprint
         }
+    }
+
+    /**
+     * Preserves source footprint component placement metadata for exporters.
+     * @param {object | undefined} component Source component placement.
+     * @returns {object}
+     */
+    static #normalizeFootprintComponent(component) {
+        return component && typeof component === 'object'
+            ? { ...component }
+            : {}
     }
 
     /**
@@ -177,6 +192,8 @@ export class SourceComponentBundleNormalizer {
         )
         const bytes =
             SourceComponentBundleNormalizer.#normalizeModelBytes(model)
+        const transform =
+            SourceComponentBundleNormalizer.#normalizeModelTransform(model)
 
         return {
             id: SourceComponentBundleNormalizer.#firstString(
@@ -199,8 +216,22 @@ export class SourceComponentBundleNormalizer {
                 model.downloadUrl,
                 model.sourceUrl
             ),
+            ...(transform ? { transform } : {}),
+            ...(model.generated === true ? { generated: true } : {}),
             raw: model
         }
+    }
+
+    /**
+     * Preserves optional model placement transforms.
+     * @param {object} model Raw model asset.
+     * @returns {object | null}
+     */
+    static #normalizeModelTransform(model) {
+        const transform = model.transform || model.modelTransform || null
+        return transform && typeof transform === 'object'
+            ? { ...transform }
+            : null
     }
 
     /**

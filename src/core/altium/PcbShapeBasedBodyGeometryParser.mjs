@@ -121,10 +121,11 @@ export class PcbShapeBasedBodyGeometryParser {
         }
 
         const textBytes = bytes.subarray(offset + 22, offset + 22 + textLength)
-        const text = PrintableTextDecoder.decodeBytes(textBytes).replaceAll(
-            '\u0000',
-            ''
-        )
+        const payload =
+            PcbShapeBasedBodyGeometryParser.#splitInlineVertexPayload(textBytes)
+        const text = PrintableTextDecoder.decodeBytes(
+            payload.fieldBytes
+        ).replaceAll('\u0000', '')
 
         if (
             !text.includes('MODEL.') ||
@@ -133,11 +134,17 @@ export class PcbShapeBasedBodyGeometryParser {
             return null
         }
 
-        const fields =
-            PcbShapeBasedBodyGeometryParser.#parseFieldRecordBytes(textBytes)
+        const fields = PcbShapeBasedBodyGeometryParser.#parseFieldRecordBytes(
+            payload.fieldBytes
+        )
+        const textEndOffset = offset + 22 + textLength
+        const vertexBlockOffset =
+            payload.inlineVertexBlockOffset === null
+                ? textEndOffset
+                : offset + 22 + payload.inlineVertexBlockOffset
         const vertexBlock = PcbShapeBasedBodyGeometryParser.#parseVertexBlock(
             bytes,
-            offset + 22 + textLength
+            vertexBlockOffset
         )
 
         return {
@@ -146,11 +153,78 @@ export class PcbShapeBasedBodyGeometryParser {
                 fields,
                 vertexBlock.verticesMil
             ),
-            nextOffset:
-                vertexBlock.nextOffset > offset
-                    ? vertexBlock.nextOffset
-                    : offset + 22 + textLength
+            nextOffset: Math.max(vertexBlock.nextOffset, textEndOffset)
         }
+    }
+
+    /**
+     * Splits printable fields from Altium records whose text length also
+     * covers an inline binary vertex block after a NUL terminator.
+     * @param {Uint8Array} textBytes Declared text payload bytes.
+     * @returns {{ fieldBytes: Uint8Array, inlineVertexBlockOffset: number | null }}
+     */
+    static #splitInlineVertexPayload(textBytes) {
+        const inlineVertexBlockOffset =
+            PcbShapeBasedBodyGeometryParser.#inlineVertexBlockOffset(textBytes)
+        if (inlineVertexBlockOffset === null) {
+            return { fieldBytes: textBytes, inlineVertexBlockOffset: null }
+        }
+
+        return {
+            fieldBytes: textBytes.subarray(0, inlineVertexBlockOffset - 1),
+            inlineVertexBlockOffset
+        }
+    }
+
+    /**
+     * Finds the inline vertex-count offset inside a declared text payload.
+     * @param {Uint8Array} textBytes Declared text payload bytes.
+     * @returns {number | null}
+     */
+    static #inlineVertexBlockOffset(textBytes) {
+        for (let index = 0; index < textBytes.byteLength; index += 1) {
+            if (textBytes[index] !== 0) {
+                continue
+            }
+
+            const vertexBlockOffset = index + 1
+            if (
+                PcbShapeBasedBodyGeometryParser.#hasPlausibleVertexBlock(
+                    textBytes,
+                    vertexBlockOffset
+                )
+            ) {
+                return vertexBlockOffset
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Checks whether one byte offset points to a complete vertex block.
+     * @param {Uint8Array} bytes Candidate payload bytes.
+     * @param {number} offset Candidate vertex-count offset.
+     * @returns {boolean}
+     */
+    static #hasPlausibleVertexBlock(bytes, offset) {
+        if (offset + 4 > bytes.byteLength) {
+            return false
+        }
+
+        const view = new DataView(
+            bytes.buffer,
+            bytes.byteOffset,
+            bytes.byteLength
+        )
+        const vertexCount = view.getInt32(offset, true)
+        const dataOffset = offset + 4
+
+        return (
+            vertexCount >= 3 &&
+            vertexCount <= 10000 &&
+            dataOffset + vertexCount * 37 <= bytes.byteLength
+        )
     }
 
     /**

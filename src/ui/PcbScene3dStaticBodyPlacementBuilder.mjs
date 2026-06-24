@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbScene3dPlacementSideResolver } from './PcbScene3dPlacementSideResolver.mjs'
+import { PcbScene3dStaticBodyRecovery } from './PcbScene3dStaticBodyRecovery.mjs'
+import { PcbScene3dStaticBodySelectionKeyBuilder } from './PcbScene3dStaticBodySelectionKeyBuilder.mjs'
 
 /**
  * Builds scene placements for static shape-based 3D bodies.
@@ -12,8 +14,11 @@ export class PcbScene3dStaticBodyPlacementBuilder {
     static #UNMATCHED_BODY_MIN_OVERHANG_MIL = 150
     static #UNMATCHED_BODY_MAX_OVERHANG_MIL = 600
     static #OWNER_AFFINITY_DISTANCE_MIL = 600
+    static #OWNER_BOUNDS_TOLERANCE_MIL = 20
     static #OWNER_EXACT_DISTANCE_MIL = 5
     static #OWNER_EXACT_MAX_SPAN_MIL = 500
+    static #SOURCE_COORDINATE_MIRROR_TOLERANCE_MIL = 5
+    static #SOURCE_COORDINATE_MIRROR_MIN_OFFSET_MIL = 20
     static #GENERIC_MECHANICAL_IDENTITY_TOKENS = new Set([
         'can',
         'cover',
@@ -34,7 +39,7 @@ export class PcbScene3dStaticBodyPlacementBuilder {
      * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[]} pads Pads.
      * @param {{ centerX: number, centerY: number, minX?: number, minY?: number, widthMil?: number, heightMil?: number }} board Board.
      * @param {number} thicknessMil Board thickness.
-     * @returns {{ designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, geometry: object }[]}
+     * @returns {{ designator: string, selectionKey: string, sourceIdentityKey: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, geometry: object }[]}
      */
     static build(
         componentBodies,
@@ -44,9 +49,14 @@ export class PcbScene3dStaticBodyPlacementBuilder {
         board,
         thicknessMil
     ) {
-        return (Array.isArray(componentBodies) ? componentBodies : [])
+        const recoveredBodies = PcbScene3dStaticBodyRecovery.recover(
+            componentBodies,
+            bodyMatches
+        )
+
+        const placementRows = recoveredBodies
             .map((componentBody, index) =>
-                PcbScene3dStaticBodyPlacementBuilder.#buildPlacement(
+                PcbScene3dStaticBodyPlacementBuilder.#buildPlacementRow(
                     componentBody,
                     bodyMatches?.[index] || null,
                     components,
@@ -55,6 +65,8 @@ export class PcbScene3dStaticBodyPlacementBuilder {
                 )
             )
             .filter(Boolean)
+
+        return PcbScene3dStaticBodySelectionKeyBuilder.assign(placementRows)
     }
 
     /**
@@ -67,13 +79,45 @@ export class PcbScene3dStaticBodyPlacementBuilder {
     }
 
     /**
+     * Builds one static body placement row with its matched owner context.
+     * @param {{ componentIndex?: number, embedded?: boolean, identifier?: string, name?: string, layer?: string, positionMil?: { x?: number, y?: number }, rotationDeg?: number, standoffHeightMil?: number | null, overallHeightMil?: number | null, bodyOpacity?: number | string, staticGeometry?: object }} componentBody Component body.
+     * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null } | null} matchedComponent Matched component.
+     * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string }[]} components Components.
+     * @param {{ centerX: number, centerY: number, minX?: number, minY?: number, widthMil?: number, heightMil?: number }} board Board.
+     * @param {number} thicknessMil Board thickness.
+     * @returns {{ placement: { designator: string, sourceIdentityKey: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, geometry: object }, matchedComponent: object | null } | null}
+     */
+    static #buildPlacementRow(
+        componentBody,
+        matchedComponent,
+        components,
+        board,
+        thicknessMil
+    ) {
+        const placement = PcbScene3dStaticBodyPlacementBuilder.#buildPlacement(
+            componentBody,
+            matchedComponent,
+            components,
+            board,
+            thicknessMil
+        )
+
+        return placement
+            ? {
+                  placement,
+                  matchedComponent
+              }
+            : null
+    }
+
+    /**
      * Builds one static shape-body scene placement.
      * @param {{ componentIndex?: number, embedded?: boolean, identifier?: string, name?: string, layer?: string, positionMil?: { x?: number, y?: number }, rotationDeg?: number, standoffHeightMil?: number | null, overallHeightMil?: number | null, bodyOpacity?: number | string, staticGeometry?: object }} componentBody Component body.
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null } | null} matchedComponent Matched component.
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string }[]} components Components.
      * @param {{ centerX: number, centerY: number, minX?: number, minY?: number, widthMil?: number, heightMil?: number }} board Board.
      * @param {number} thicknessMil Board thickness.
-     * @returns {{ designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, geometry: object } | null}
+     * @returns {{ designator: string, sourceIdentityKey: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, geometry: object } | null}
      */
     static #buildPlacement(
         componentBody,
@@ -82,24 +126,30 @@ export class PcbScene3dStaticBodyPlacementBuilder {
         board,
         thicknessMil
     ) {
-        const geometry =
+        const staticGeometry =
             PcbScene3dStaticBodyPlacementBuilder.#normalizeStaticGeometry(
                 componentBody,
-                componentBody?.staticGeometry
+                componentBody?.staticGeometry,
+                matchedComponent
             )
+        const geometry = staticGeometry.geometry
 
         if (
             !PcbScene3dStaticBodyPlacementBuilder.#isCompleteGeometry(geometry)
         ) {
             return null
         }
+        const sourcePosition =
+            staticGeometry.placementCenterMil ||
+            PcbScene3dStaticBodyPlacementBuilder.#sourcePosition(componentBody)
 
         if (
             !matchedComponent &&
             PcbScene3dStaticBodyPlacementBuilder.#shouldSuppressStaticBody(
                 componentBody,
                 geometry,
-                components
+                components,
+                sourcePosition
             )
         ) {
             return null
@@ -122,8 +172,6 @@ export class PcbScene3dStaticBodyPlacementBuilder {
                 components,
                 board
             )
-        const sourcePosition =
-            PcbScene3dStaticBodyPlacementBuilder.#sourcePosition(componentBody)
         const heightMil =
             PcbScene3dStaticBodyPlacementBuilder.#geometryHeight(geometry)
         const standoffMil = Math.abs(
@@ -141,6 +189,10 @@ export class PcbScene3dStaticBodyPlacementBuilder {
                 matchedComponent?.designator ||
                 String(
                     componentBody.identifier || componentBody.name || '3D body'
+                ),
+            sourceIdentityKey:
+                PcbScene3dStaticBodyPlacementBuilder.#sourceIdentityKey(
+                    componentBody
                 ),
             mountSide,
             rotationDeg: PcbScene3dStaticBodyPlacementBuilder.#normalizeAngle(
@@ -173,9 +225,10 @@ export class PcbScene3dStaticBodyPlacementBuilder {
      * Converts source-space polygon vertices into render-local geometry.
      * @param {{ positionMil?: { x?: number, y?: number } }} componentBody Component body.
      * @param {object | undefined} geometry Static geometry.
-     * @returns {object | undefined}
+     * @param {{ x?: number, y?: number } | null} matchedComponent Matched owner component.
+     * @returns {{ geometry: object | undefined, placementCenterMil?: { x: number, y: number } }}
      */
-    static #normalizeStaticGeometry(componentBody, geometry) {
+    static #normalizeStaticGeometry(componentBody, geometry, matchedComponent) {
         if (
             String(geometry?.kind || '').toLowerCase() !== 'extruded-polygon' ||
             !Array.isArray(geometry?.verticesMil) ||
@@ -185,24 +238,142 @@ export class PcbScene3dStaticBodyPlacementBuilder {
                 geometry.verticesMil
             )
         ) {
-            return geometry
+            return { geometry }
         }
 
         const center =
             PcbScene3dStaticBodyPlacementBuilder.#polygonBoundsCenter(
                 geometry.verticesMil
             )
+        const mirror =
+            PcbScene3dStaticBodyPlacementBuilder.#sourceCoordinateMirror(
+                componentBody,
+                center,
+                matchedComponent
+            )
+        const placementCenter = mirror?.placementCenterMil || center
 
         return {
-            ...geometry,
-            verticesMil: geometry.verticesMil.map((vertex) => ({
-                x: PcbScene3dStaticBodyPlacementBuilder.#roundMil(
-                    Number(vertex?.x || 0) - center.x
-                ),
-                y: PcbScene3dStaticBodyPlacementBuilder.#roundMil(
-                    Number(vertex?.y || 0) - center.y
-                )
-            }))
+            placementCenterMil: placementCenter,
+            geometry: {
+                ...geometry,
+                verticesMil: geometry.verticesMil.map((vertex) => {
+                    const normalizedVertex =
+                        PcbScene3dStaticBodyPlacementBuilder.#normalizeVertex(
+                            vertex,
+                            mirror
+                        )
+
+                    return {
+                        x: PcbScene3dStaticBodyPlacementBuilder.#roundMil(
+                            normalizedVertex.x - placementCenter.x
+                        ),
+                        y: PcbScene3dStaticBodyPlacementBuilder.#roundMil(
+                            normalizedVertex.y - placementCenter.y
+                        )
+                    }
+                })
+            }
+        }
+    }
+
+    /**
+     * Resolves owner-axis mirror transforms for source-coordinate polygons
+     * whose body anchor is opposite their raw polygon bounds.
+     * @param {{ positionMil?: { x?: number, y?: number } }} componentBody Component body.
+     * @param {{ x: number, y: number }} boundsCenter Source-coordinate polygon bounds center.
+     * @param {{ x?: number, y?: number } | null} matchedComponent Matched owner component.
+     * @returns {{ mirrorAxisX?: number, mirrorAxisY?: number, placementCenterMil: { x: number, y: number } } | null}
+     */
+    static #sourceCoordinateMirror(
+        componentBody,
+        boundsCenter,
+        matchedComponent
+    ) {
+        const source =
+            PcbScene3dStaticBodyPlacementBuilder.#sourcePosition(componentBody)
+        const xDecision =
+            PcbScene3dStaticBodyPlacementBuilder.#sourceCoordinateMirrorAxis(
+                boundsCenter.x,
+                source.x,
+                Number(matchedComponent?.x)
+            )
+        const yDecision =
+            PcbScene3dStaticBodyPlacementBuilder.#sourceCoordinateMirrorAxis(
+                boundsCenter.y,
+                source.y,
+                Number(matchedComponent?.y)
+            )
+
+        if (
+            !xDecision.valid ||
+            !yDecision.valid ||
+            (!xDecision.mirrored && !yDecision.mirrored)
+        ) {
+            return null
+        }
+
+        return {
+            mirrorAxisX: xDecision.mirrored
+                ? Number(matchedComponent?.x)
+                : undefined,
+            mirrorAxisY: yDecision.mirrored
+                ? Number(matchedComponent?.y)
+                : undefined,
+            placementCenterMil: {
+                x: source.x,
+                y: source.y
+            }
+        }
+    }
+
+    /**
+     * Checks whether one source-coordinate axis is aligned or mirrored.
+     * @param {number} center Raw polygon center coordinate.
+     * @param {number} source Body source coordinate.
+     * @param {number} ownerAxis Owner coordinate.
+     * @returns {{ valid: boolean, mirrored: boolean }}
+     */
+    static #sourceCoordinateMirrorAxis(center, source, ownerAxis) {
+        const tolerance =
+            PcbScene3dStaticBodyPlacementBuilder
+                .#SOURCE_COORDINATE_MIRROR_TOLERANCE_MIL
+        const offset = Math.abs(Number(center || 0) - Number(source || 0))
+        if (offset <= tolerance) {
+            return { valid: true, mirrored: false }
+        }
+
+        const mirroredCenter = 2 * Number(ownerAxis) - Number(center || 0)
+        const mirrorError = Math.abs(mirroredCenter - Number(source || 0))
+
+        return {
+            valid:
+                Number.isFinite(ownerAxis) &&
+                offset >
+                    PcbScene3dStaticBodyPlacementBuilder
+                        .#SOURCE_COORDINATE_MIRROR_MIN_OFFSET_MIL &&
+                mirrorError <= tolerance,
+            mirrored: true
+        }
+    }
+
+    /**
+     * Converts one source-space vertex into render source-space coordinates.
+     * @param {{ x?: number, y?: number }} vertex Source vertex.
+     * @param {{ mirrorAxisX?: number, mirrorAxisY?: number } | null} mirror Optional mirror transform.
+     * @returns {{ x: number, y: number }}
+     */
+    static #normalizeVertex(vertex, mirror) {
+        const sourceX = Number(vertex?.x || 0)
+        const sourceY = Number(vertex?.y || 0)
+
+        return {
+            x: Number.isFinite(mirror?.mirrorAxisX)
+                ? 2 * mirror.mirrorAxisX - sourceX
+                : sourceX,
+            y: Number.isFinite(mirror?.mirrorAxisY)
+                ? 2 * mirror.mirrorAxisY - sourceY
+                : sourceY
         }
     }
 
@@ -264,12 +435,28 @@ export class PcbScene3dStaticBodyPlacementBuilder {
             metadata.bodyColor = componentBody.bodyColor
         }
 
-        const opacity = Number(componentBody?.bodyOpacity)
-        if (Number.isFinite(opacity)) {
+        const opacity = PcbScene3dStaticBodyRecovery.renderableOpacity(
+            componentBody?.bodyOpacity
+        )
+        if (opacity !== undefined) {
             metadata.bodyOpacity = opacity
         }
 
         return metadata
+    }
+
+    /**
+     * Resolves the stable source identity shared by sibling static bodies.
+     * @param {{ identifier?: string, name?: string, modelId?: string }} componentBody Component body.
+     * @returns {string}
+     */
+    static #sourceIdentityKey(componentBody) {
+        return String(
+            componentBody?.identifier ||
+                componentBody?.name ||
+                componentBody?.modelId ||
+                ''
+        ).trim()
     }
 
     /**
@@ -278,9 +465,15 @@ export class PcbScene3dStaticBodyPlacementBuilder {
      * @param {{ componentIndex?: number, embedded?: boolean, bodyOpacity?: number | string, identifier?: string, name?: string, positionMil?: { x?: number, y?: number } }} componentBody Component body.
      * @param {object} geometry Static geometry.
      * @param {{ componentIndex?: number, x?: number, y?: number, pattern?: string, source?: string, modelPath?: string, description?: string, parameters?: object, provenance?: object }[]} components Components.
+     * @param {{ x: number, y: number }} sourcePosition Source-space placement center.
      * @returns {boolean}
      */
-    static #shouldSuppressStaticBody(componentBody, geometry, components) {
+    static #shouldSuppressStaticBody(
+        componentBody,
+        geometry,
+        components,
+        sourcePosition
+    ) {
         return (
             PcbScene3dStaticBodyPlacementBuilder.#isTranslucentBody(
                 componentBody
@@ -288,7 +481,8 @@ export class PcbScene3dStaticBodyPlacementBuilder {
             !PcbScene3dStaticBodyPlacementBuilder.#hasLikelyComponentOwner(
                 componentBody,
                 geometry,
-                components
+                components,
+                sourcePosition
             )
         )
     }
@@ -299,9 +493,11 @@ export class PcbScene3dStaticBodyPlacementBuilder {
      * @returns {boolean}
      */
     static #isTranslucentBody(componentBody) {
-        const opacity = Number(componentBody?.bodyOpacity)
-
-        return Number.isFinite(opacity) && opacity >= 0 && opacity < 1
+        return (
+            PcbScene3dStaticBodyRecovery.renderableOpacity(
+                componentBody?.bodyOpacity
+            ) !== undefined
+        )
     }
 
     /**
@@ -310,9 +506,15 @@ export class PcbScene3dStaticBodyPlacementBuilder {
      * @param {{ componentIndex?: number, embedded?: boolean, identifier?: string, name?: string, positionMil?: { x?: number, y?: number } }} componentBody Component body.
      * @param {object} geometry Static geometry.
      * @param {{ componentIndex?: number, x?: number, y?: number, pattern?: string, source?: string, modelPath?: string, description?: string, parameters?: object, provenance?: object }[]} components Components.
+     * @param {{ x: number, y: number }} sourcePosition Source-space placement center.
      * @returns {boolean}
      */
-    static #hasLikelyComponentOwner(componentBody, geometry, components) {
+    static #hasLikelyComponentOwner(
+        componentBody,
+        geometry,
+        components,
+        sourcePosition
+    ) {
         if (componentBody?.embedded) {
             return true
         }
@@ -334,6 +536,11 @@ export class PcbScene3dStaticBodyPlacementBuilder {
             PcbScene3dStaticBodyPlacementBuilder.#hasGenericMechanicalIdentity(
                 componentBody
             )
+        const sourceBounds =
+            PcbScene3dStaticBodyPlacementBuilder.#geometrySourceBounds(
+                geometry,
+                sourcePosition
+            )
 
         return (Array.isArray(components) ? components : []).some(
             (component) => {
@@ -349,6 +556,19 @@ export class PcbScene3dStaticBodyPlacementBuilder {
                     )
 
                 return (
+                    (genericMechanical &&
+                        PcbScene3dStaticBodyPlacementBuilder.#isShieldOwner(
+                            component
+                        ) &&
+                        (distance <=
+                            PcbScene3dStaticBodyPlacementBuilder
+                                .#OWNER_AFFINITY_DISTANCE_MIL ||
+                            PcbScene3dStaticBodyPlacementBuilder.#boundsContainPoint(
+                                sourceBounds,
+                                component,
+                                PcbScene3dStaticBodyPlacementBuilder
+                                    .#OWNER_BOUNDS_TOLERANCE_MIL
+                            ))) ||
                     (!genericMechanical &&
                         affinityScore > 0 &&
                         distance <=
@@ -363,6 +583,91 @@ export class PcbScene3dStaticBodyPlacementBuilder {
                                 .#OWNER_EXACT_MAX_SPAN_MIL)
                 )
             }
+        )
+    }
+
+    /**
+     * Resolves source-space bounds for one static polygon geometry.
+     * @param {object} geometry Static geometry.
+     * @param {{ x?: number, y?: number }} sourcePosition Source-space placement center.
+     * @returns {{ minX: number, minY: number, maxX: number, maxY: number } | null}
+     */
+    static #geometrySourceBounds(geometry, sourcePosition) {
+        if (
+            !Array.isArray(geometry?.verticesMil) ||
+            !geometry.verticesMil.length
+        ) {
+            return null
+        }
+
+        const points = geometry.verticesMil
+            .map((vertex) => ({
+                x: Number(vertex?.x || 0) + Number(sourcePosition?.x || 0),
+                y: Number(vertex?.y || 0) + Number(sourcePosition?.y || 0)
+            }))
+            .filter(
+                (point) => Number.isFinite(point.x) && Number.isFinite(point.y)
+            )
+        if (!points.length) {
+            return null
+        }
+
+        const xs = points.map((point) => point.x)
+        const ys = points.map((point) => point.y)
+
+        return {
+            minX: Math.min(...xs),
+            minY: Math.min(...ys),
+            maxX: Math.max(...xs),
+            maxY: Math.max(...ys)
+        }
+    }
+
+    /**
+     * Checks whether bounds contain a component point with tolerance.
+     * @param {{ minX: number, minY: number, maxX: number, maxY: number } | null} bounds Bounds.
+     * @param {{ x?: number, y?: number }} point Candidate point.
+     * @param {number} toleranceMil Bounds tolerance.
+     * @returns {boolean}
+     */
+    static #boundsContainPoint(bounds, point, toleranceMil) {
+        if (!bounds) {
+            return false
+        }
+
+        const x = Number(point?.x || 0)
+        const y = Number(point?.y || 0)
+        const tolerance = Math.max(Number(toleranceMil || 0), 0)
+
+        return (
+            Number.isFinite(x) &&
+            Number.isFinite(y) &&
+            x >= bounds.minX - tolerance &&
+            x <= bounds.maxX + tolerance &&
+            y >= bounds.minY - tolerance &&
+            y <= bounds.maxY + tolerance
+        )
+    }
+
+    /**
+     * Checks whether a component identity describes a shield owner strongly
+     * enough to keep generic translucent shield sub-bodies.
+     * @param {{ designator?: string, pattern?: string, source?: string, description?: string, parameters?: object, provenance?: object }} component Component row.
+     * @returns {boolean}
+     */
+    static #isShieldOwner(component) {
+        const identityText = [
+            component?.pattern,
+            component?.source,
+            component?.description,
+            ...Object.values(component?.parameters || {}),
+            ...Object.values(component?.provenance || {})
+        ]
+            .join(' ')
+            .toLowerCase()
+
+        return /(?:^|[^a-z0-9])(?:emi|rfi|shield)(?:$|[^a-z0-9])/u.test(
+            identityText
         )
     }
 
@@ -390,6 +695,7 @@ export class PcbScene3dStaticBodyPlacementBuilder {
     static #identityTokens(componentBody) {
         return [componentBody?.identifier, componentBody?.name]
             .join(' ')
+            .replace(/([a-z])([A-Z])/gu, '$1 $2')
             .toLowerCase()
             .split(/[^a-z0-9]+/g)
             .flatMap((fragment) => fragment.match(/[a-z]+|\d+/g) || [])

@@ -114,7 +114,7 @@ test('Altium 3D owner repair centers part-code model-anchor connectors', () => {
         y: -40
     })
     assert.deepEqual(placement.modelTransform.offsetMil, {
-        x: -40,
+        x: 40,
         y: -90,
         z: 0
     })

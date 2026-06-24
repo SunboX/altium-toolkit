@@ -1,3 +1,5 @@
+import { AltiumScene3dTwoRowFootprintDetector } from './AltiumScene3dTwoRowFootprintDetector.mjs'
+
 const PASSIVE_BODY_PATTERN =
     /(?:^|[^a-z0-9])(?:cap|capacitor|res|resistor|ind|inductor|ferrite|bead|crystal|xtal|lqw|lqg)(?:$|[^a-z0-9])/i
 const CHIP_PASSIVE_BODY_PATTERN =
@@ -6,6 +8,8 @@ const LOCAL_Y_CHIP_PASSIVE_MODEL_PATTERN =
     /(?:^|[^a-z0-9])local[-_ ]?y(?:$|[^a-z0-9])/i
 const PIN_ONE_CORNER_PACKAGE_PATTERN =
     /(?:^|[^a-z0-9])(?:[avw]?qfn|vfqfn|wqfn|v?qfp|lqfp|tqfp|pqfp|mqfp)(?:[0-9]+)?(?:$|[^a-z0-9])/i
+const TWO_ROW_PIN_ONE_PACKAGE_PATTERN =
+    /(?:^|[^a-z0-9])(?:msop|qsop|soic|sop|ssop|tssop|tsop|vsop)(?:[-_ ]?\d+)?(?:$|[^a-z0-9])/i
 const FIVE_LEAD_SOT_PATTERN =
     /(?:^|[^a-z0-9])sot[-_ ]?(?:23[-_ ]?5|25|5)(?:$|[^a-z0-9])/i
 const THREE_LEAD_SOT23_PATTERN =
@@ -37,6 +41,9 @@ export class AltiumScene3dPlacementRotationPolicy {
     static shouldCorrectYaw(context) {
         return (
             AltiumScene3dPlacementRotationPolicy.#needsSquarePinOneCorrection(
+                context
+            ) ||
+            AltiumScene3dPlacementRotationPolicy.#needsTwoRowPinOneCorrection(
                 context
             ) ||
             AltiumScene3dPlacementRotationPolicy.#needsFiveLeadSotCorrection(
@@ -208,6 +215,43 @@ export class AltiumScene3dPlacementRotationPolicy {
                 componentBody?.modelRotationDeg?.z ??
                     placement?.modelTransform?.rotationDeg?.z
             )
+        )
+    }
+
+    /**
+     * Detects two-row IC packages whose embedded source frame puts the
+     * package pin-one corner opposite the footprint convention.
+     * @param {{ placement?: object, component?: object | null, componentBody?: object | null, pads?: object[] }} context Rotation context.
+     * @returns {boolean}
+     */
+    static #needsTwoRowPinOneCorrection(context) {
+        const { placement, component, componentBody, pads } = context || {}
+        if (
+            !AltiumScene3dPlacementRotationPolicy.#isPadFallback(placement) ||
+            !component ||
+            String(placement?.mountSide || '').toLowerCase() !== 'top' ||
+            AltiumScene3dPlacementRotationPolicy.#isGenericPassiveBody(
+                componentBody
+            ) ||
+            !AltiumScene3dPlacementRotationPolicy.#hasRightAngleModelTilt(
+                componentBody
+            )
+        ) {
+            return false
+        }
+
+        const identityText =
+            AltiumScene3dPlacementRotationPolicy.#packageIdentityText(
+                component,
+                componentBody
+            )
+        if (!TWO_ROW_PIN_ONE_PACKAGE_PATTERN.test(identityText)) {
+            return false
+        }
+
+        return AltiumScene3dTwoRowFootprintDetector.hasTwoRowSurfaceFootprint(
+            component,
+            pads
         )
     }
 

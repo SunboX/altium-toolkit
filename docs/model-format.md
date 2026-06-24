@@ -80,9 +80,8 @@ The legacy renderer compatibility contract is published as a JSON Schema at
 [`docs/schemas/altium_toolkit/normalized_model_a1.schema.json`](schemas/altium_toolkit/normalized_model_a1.schema.json).
 Compatibility fields expose the same id through the top-level `schema` field,
 and consumers can compare it with `NormalizedModelSchema.CURRENT_SCHEMA_ID`.
-The serialized parser return value follows the upstream
-[`tscircuit/circuit-json`](https://github.com/tscircuit/circuit-json) element
-array convention.
+The serialized parser return value follows the Circuit JSON element-array
+convention.
 
 ## Parser Utility Reports
 

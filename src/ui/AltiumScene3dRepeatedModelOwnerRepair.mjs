@@ -1,3 +1,5 @@
+import { PcbScene3dPackageDimensionResolver } from './PcbScene3dPackageDimensionResolver.mjs'
+
 const CONNECTOR_TOKENS = new Set([
     'antenna',
     'coax',
@@ -14,9 +16,14 @@ const TIMING_PACKAGE_PATTERN =
     /(?:^|[^a-z0-9])(?:clock|crystal|osc|oscillator|resonator|tcxo|txco|xtal)(?:$|[^a-z0-9])/i
 const TIMING_DESIGNATOR_PATTERN = /^(?:y|xo)\d+[a-z]?$/i
 const AUTHORED_ANCHOR_IDENTITY_PATTERN =
-    /(?:^|[^a-z0-9])(?:antenna|coax|connector|edge|header|jack|mechanical|module|mount|shield|sma|socket|usb)(?:$|[^a-z0-9])/i
+    /(?:^|[^a-z0-9])(?:antenna|coax|connector|edge|header|jack|mechanical|module|mount|shield|sma|socket)(?:$|[^a-z0-9])/i
 const PAD_FALLBACK_AUTHORED_ANCHOR_PATTERN =
-    /(?:^|[^a-z0-9])(?:antenna|coax|conn|connector|edge|flex|fpc|frame|hardware|header|jack|mechanical|module|shield|sma|socket|usb)(?:$|[^a-z0-9])/i
+    /(?:^|[^a-z0-9])(?:antenna|coax|conn|connector|edge|flex|fpc|frame|hardware|header|jack|mechanical|module|shield|sma|socket)(?:$|[^a-z0-9])/i
+const USB_ANCHOR_IDENTITY_PATTERN = /(?:^|[^a-z0-9])usb(?:$|[^a-z0-9])/i
+const INTEGRATED_CIRCUIT_PACKAGE_PATTERN =
+    /(?:^|[^a-z0-9])(?:u?qfn|v?qfn|dfn|qfp|lqfp|tqfp|bga|lga|sop|soic|ssop|tssop|msop|so[-_ ]?\d+)(?:[-_ ]?\d+)?(?:$|[^a-z0-9])/i
+const SHIELD_COVER_TOKEN_PATTERN =
+    /(?:^|[^a-z0-9])(?:rf|emi|rfi|shield|cover)(?:$|[^a-z0-9])/gi
 
 /**
  * Repairs repeated Altium model-anchor bodies by matching their shared source
@@ -228,8 +235,20 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
             String(placement?.projection?.source || '').toLowerCase() ===
             'pad-fallback'
         ) {
+            if (
+                AltiumScene3dRepeatedModelOwnerRepair.#hasShieldCoverSourceOriginOffset(
+                    placement,
+                    component,
+                    identityText
+                )
+            ) {
+                return false
+            }
+
             return (
-                PAD_FALLBACK_AUTHORED_ANCHOR_PATTERN.test(identityText) ||
+                AltiumScene3dRepeatedModelOwnerRepair.#hasPadFallbackAuthoredAnchorIdentity(
+                    identityText
+                ) ||
                 AltiumScene3dRepeatedModelOwnerRepair.#hasCompactIcSourceOriginOffset(
                     placement,
                     component,
@@ -238,7 +257,149 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
             )
         }
 
-        return AUTHORED_ANCHOR_IDENTITY_PATTERN.test(identityText)
+        return AltiumScene3dRepeatedModelOwnerRepair.#hasAuthoredAnchorIdentity(
+            identityText
+        )
+    }
+
+    /**
+     * Checks whether pad-fallback identity describes an authored hardware
+     * anchor instead of a source-origin-biased IC body.
+     * @param {string} identityText Searchable package identity.
+     * @returns {boolean}
+     */
+    static #hasPadFallbackAuthoredAnchorIdentity(identityText) {
+        return (
+            PAD_FALLBACK_AUTHORED_ANCHOR_PATTERN.test(identityText) ||
+            AltiumScene3dRepeatedModelOwnerRepair.#hasUsbHardwareAnchorIdentity(
+                identityText
+            )
+        )
+    }
+
+    /**
+     * Checks whether non-pad-fallback identity describes authored hardware.
+     * @param {string} identityText Searchable package identity.
+     * @returns {boolean}
+     */
+    static #hasAuthoredAnchorIdentity(identityText) {
+        return (
+            AUTHORED_ANCHOR_IDENTITY_PATTERN.test(identityText) ||
+            AltiumScene3dRepeatedModelOwnerRepair.#hasUsbHardwareAnchorIdentity(
+                identityText
+            )
+        )
+    }
+
+    /**
+     * Allows USB connector-like anchors without treating USB interface ICs as
+     * authored mechanical anchors.
+     * @param {string} identityText Searchable package identity.
+     * @returns {boolean}
+     */
+    static #hasUsbHardwareAnchorIdentity(identityText) {
+        return (
+            USB_ANCHOR_IDENTITY_PATTERN.test(identityText) &&
+            !INTEGRATED_CIRCUIT_PACKAGE_PATTERN.test(identityText)
+        )
+    }
+
+    /**
+     * Checks whether a shield cover body origin is a package corner.
+     * @param {object} placement Scene placement.
+     * @param {object} component PCB component.
+     * @param {string} identityText Searchable package identity.
+     * @returns {boolean}
+     */
+    static #hasShieldCoverSourceOriginOffset(
+        placement,
+        component,
+        identityText
+    ) {
+        const tokens = new Set(
+            [...String(identityText || '').matchAll(SHIELD_COVER_TOKEN_PATTERN)]
+                .map((match) => String(match[0] || '').toLowerCase())
+                .map((token) => token.replace(/[^a-z0-9]+/giu, ''))
+        )
+        if (
+            !tokens.has('cover') ||
+            !['rf', 'emi', 'rfi', 'shield'].some((token) => tokens.has(token))
+        ) {
+            return false
+        }
+
+        const size =
+            PcbScene3dPackageDimensionResolver.resolvePlanarSize(component)
+        if (!size) {
+            return false
+        }
+
+        const offset = {
+            x:
+                Number(placement?.bodyPositionMil?.x || 0) -
+                Number(component?.x || 0),
+            y:
+                Number(placement?.bodyPositionMil?.y || 0) -
+                Number(component?.y || 0)
+        }
+        if (
+            !Number.isFinite(offset.x) ||
+            !Number.isFinite(offset.y) ||
+            Math.hypot(offset.x, offset.y) <=
+                AltiumScene3dRepeatedModelOwnerRepair
+                    .#MIN_PAD_FALLBACK_OWNER_OFFSET_MIL
+        ) {
+            return false
+        }
+
+        return AltiumScene3dRepeatedModelOwnerRepair.#matchesCornerOriginSize(
+            Math.abs(offset.x) * 2,
+            Math.abs(offset.y) * 2,
+            size
+        )
+    }
+
+    /**
+     * Checks whether doubled owner offset matches package dimensions.
+     * @param {number} offsetWidth Doubled X offset.
+     * @param {number} offsetDepth Doubled Y offset.
+     * @param {{ width: number, depth: number }} size Explicit package size.
+     * @returns {boolean}
+     */
+    static #matchesCornerOriginSize(offsetWidth, offsetDepth, size) {
+        return (
+            (AltiumScene3dRepeatedModelOwnerRepair.#matchesDimension(
+                offsetWidth,
+                size.width
+            ) &&
+                AltiumScene3dRepeatedModelOwnerRepair.#matchesDimension(
+                    offsetDepth,
+                    size.depth
+                )) ||
+            (AltiumScene3dRepeatedModelOwnerRepair.#matchesDimension(
+                offsetWidth,
+                size.depth
+            ) &&
+                AltiumScene3dRepeatedModelOwnerRepair.#matchesDimension(
+                    offsetDepth,
+                    size.width
+                ))
+        )
+    }
+
+    /**
+     * Checks whether two dimensions are close enough for source-origin repair.
+     * @param {number} actual Actual dimension.
+     * @param {number} expected Expected dimension.
+     * @returns {boolean}
+     */
+    static #matchesDimension(actual, expected) {
+        if (!Number.isFinite(actual) || !Number.isFinite(expected)) {
+            return false
+        }
+
+        const tolerance = Math.max(35, Math.abs(expected) * 0.08)
+        return Math.abs(actual - expected) <= tolerance
     }
 
     /**
@@ -557,8 +718,12 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
             180
         const cos = Math.cos(rotationRad)
         const sin = Math.sin(rotationRad)
-        const x = Number(offset?.x || 0) * cos - Number(offset?.y || 0) * sin
-        const y = Number(offset?.x || 0) * sin + Number(offset?.y || 0) * cos
+        const sourceY =
+            AltiumScene3dRepeatedModelOwnerRepair.#isBottomPlacement(placement)
+                ? -Number(offset?.y || 0)
+                : Number(offset?.y || 0)
+        const x = Number(offset?.x || 0) * cos - sourceY * sin
+        const y = Number(offset?.x || 0) * sin + sourceY * cos
         const z = Number(
             modelTransform?.offsetMil?.z ?? modelTransform?.dzMil ?? 0
         )

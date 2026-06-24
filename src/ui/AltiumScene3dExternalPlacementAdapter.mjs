@@ -752,8 +752,12 @@ export class AltiumScene3dExternalPlacementAdapter {
             180
         const cos = Math.cos(rotationRad)
         const sin = Math.sin(rotationRad)
-        const x = Number(offset?.x || 0) * cos - Number(offset?.y || 0) * sin
-        const y = Number(offset?.x || 0) * sin + Number(offset?.y || 0) * cos
+        const sourceY =
+            AltiumScene3dExternalPlacementAdapter.#isBottomPlacement(placement)
+                ? -Number(offset?.y || 0)
+                : Number(offset?.y || 0)
+        const x = Number(offset?.x || 0) * cos - sourceY * sin
+        const y = Number(offset?.x || 0) * sin + sourceY * cos
 
         return {
             x: Math.abs(x) < Number.EPSILON ? 0 : Number(x.toFixed(10)),

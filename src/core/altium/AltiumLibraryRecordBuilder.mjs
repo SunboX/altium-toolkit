@@ -163,7 +163,7 @@ export class AltiumLibraryRecordBuilder {
 
     /**
      * Builds model metadata entries.
-     * @param {{ model: object, id: string, checksum: number }[]} models Model rows.
+     * @param {{ bundle: object, model: object, id: string, checksum: number }[]} models Model rows.
      * @returns {Uint8Array}
      */
     static buildModelsData(models) {
@@ -171,11 +171,33 @@ export class AltiumLibraryRecordBuilder {
             models.map((row) =>
                 AltiumLibraryRecordBuilder.createLengthPrefixedAscii(
                     AltiumLibraryRecordBuilder.#pipeRecord({
+                        EMBED: 'TRUE',
+                        MODELSOURCE: 'Undefined',
                         ID: row.id,
+                        ...AltiumLibraryRecordBuilder.#modelMetadataTransform(
+                            row
+                        ),
                         NAME: row.model.name,
                         CHECKSUM: String(row.checksum),
                         FORMAT: row.model.format
                     }) + '\u0000'
+                )
+            )
+        )
+    }
+
+    /**
+     * Builds component-body placement records for embedded model rows.
+     * @param {{ bundle: object, model: object, id: string, checksum: number }[]} models Model rows.
+     * @returns {Uint8Array}
+     */
+    static buildComponentBodiesData(models) {
+        return AltiumLibraryRecordBuilder.concatBytes(
+            models.map((row) =>
+                new TextEncoder().encode(
+                    AltiumLibraryRecordBuilder.#pipeRecord(
+                        AltiumLibraryRecordBuilder.#componentBodyFields(row)
+                    ) + '\u0000'
                 )
             )
         )
@@ -277,6 +299,238 @@ export class AltiumLibraryRecordBuilder {
             (checksum, value) => (checksum + value) >>> 0,
             0
         )
+    }
+
+    /**
+     * Builds model metadata transform fields.
+     * @param {{ bundle: object, model: object }} row Model row.
+     * @returns {Record<string, string>}
+     */
+    static #modelMetadataTransform(row) {
+        const rotation = AltiumLibraryRecordBuilder.#modelRotation(
+            row.model,
+            AltiumLibraryRecordBuilder.#rowComponent(row)
+        )
+
+        return {
+            ROTX: AltiumLibraryRecordBuilder.#numberText(rotation.x),
+            ROTY: AltiumLibraryRecordBuilder.#numberText(rotation.y),
+            ROTZ: AltiumLibraryRecordBuilder.#numberText(rotation.z),
+            DZ: AltiumLibraryRecordBuilder.#milText(
+                AltiumLibraryRecordBuilder.#modelDzMil(row.model)
+            )
+        }
+    }
+
+    /**
+     * Builds one component-body placement record.
+     * @param {{ bundle: object, model: object, id: string, checksum: number }} row Model row.
+     * @returns {Record<string, string>}
+     */
+    static #componentBodyFields(row) {
+        const offset = AltiumLibraryRecordBuilder.#modelOffsetMil(row.model)
+        const rotation = AltiumLibraryRecordBuilder.#modelRotation(
+            row.model,
+            AltiumLibraryRecordBuilder.#rowComponent(row)
+        )
+
+        return {
+            V7_LAYER: 'MECHANICAL1',
+            KIND: '0',
+            SUBPOLYINDEX: '-1',
+            UNIONINDEX: '0',
+            ISSHAPEBASED: 'FALSE',
+            STANDOFFHEIGHT: '0mil',
+            OVERALLHEIGHT: '0mil',
+            IDENTIFIER: AltiumLibraryRecordBuilder.#identifierBytes(
+                row.bundle?.footprint?.name || row.model?.name || row.id
+            ),
+            MODELID: row.id,
+            'MODEL.CHECKSUM': String(row.checksum),
+            'MODEL.EMBED': 'TRUE',
+            'MODEL.NAME': row.model.name,
+            'MODEL.2D.X': AltiumLibraryRecordBuilder.#milText(offset.x),
+            'MODEL.2D.Y': AltiumLibraryRecordBuilder.#milText(offset.y),
+            'MODEL.2D.ROTATION': '0',
+            'MODEL.3D.ROTX': AltiumLibraryRecordBuilder.#numberText(rotation.x),
+            'MODEL.3D.ROTY': AltiumLibraryRecordBuilder.#numberText(rotation.y),
+            'MODEL.3D.ROTZ': AltiumLibraryRecordBuilder.#numberText(rotation.z),
+            'MODEL.3D.DZ': AltiumLibraryRecordBuilder.#milText(
+                AltiumLibraryRecordBuilder.#modelDzMil(row.model)
+            ),
+            'MODEL.MODELSOURCE': 'Undefined'
+        }
+    }
+
+    /**
+     * Resolves the source component attached to a model row.
+     * @param {{ bundle?: object }} row Model row.
+     * @returns {object}
+     */
+    static #rowComponent(row) {
+        return (
+            row?.bundle?.footprint?.component ||
+            row?.bundle?.footprint?.raw?.component ||
+            {}
+        )
+    }
+
+    /**
+     * Resolves one model transform object.
+     * @param {object} model Model asset.
+     * @returns {object}
+     */
+    static #modelTransform(model) {
+        return model?.transform || model?.raw?.transform || {}
+    }
+
+    /**
+     * Resolves model offset in mils.
+     * @param {object} model Model asset.
+     * @returns {{ x: number, y: number }}
+     */
+    static #modelOffsetMil(model) {
+        const transform = AltiumLibraryRecordBuilder.#modelTransform(model)
+        const offsetMil = transform.offsetMil || {}
+
+        return {
+            x: AltiumLibraryRecordBuilder.#round(
+                AltiumLibraryRecordBuilder.#number(
+                    offsetMil.x ?? transform.dxMil,
+                    0
+                )
+            ),
+            y: AltiumLibraryRecordBuilder.#round(
+                AltiumLibraryRecordBuilder.#number(
+                    offsetMil.y ?? transform.dyMil,
+                    0
+                )
+            )
+        }
+    }
+
+    /**
+     * Resolves one model Z offset in mils.
+     * @param {object} model Model asset.
+     * @returns {number}
+     */
+    static #modelDzMil(model) {
+        const transform = AltiumLibraryRecordBuilder.#modelTransform(model)
+        const offsetMil = transform.offsetMil || {}
+
+        return AltiumLibraryRecordBuilder.#round(
+            AltiumLibraryRecordBuilder.#number(
+                offsetMil.z ?? transform.dzMil,
+                0
+            )
+        )
+    }
+
+    /**
+     * Resolves model 3D rotation in footprint-local degrees.
+     * @param {object} model Model asset.
+     * @param {object} component Selected footprint component origin.
+     * @returns {{ x: number, y: number, z: number }}
+     */
+    static #modelRotation(model, component) {
+        const transform = AltiumLibraryRecordBuilder.#modelTransform(model)
+        const rotation = transform.rotationDeg || {}
+        const generatedRotation =
+            AltiumLibraryRecordBuilder.#generatedFrameRotation(model, component)
+
+        return {
+            x: AltiumLibraryRecordBuilder.#round(
+                AltiumLibraryRecordBuilder.#number(rotation.x, 0) +
+                    generatedRotation.x
+            ),
+            y: AltiumLibraryRecordBuilder.#round(
+                AltiumLibraryRecordBuilder.#number(rotation.y, 0) +
+                    generatedRotation.y
+            ),
+            z: AltiumLibraryRecordBuilder.#round(
+                AltiumLibraryRecordBuilder.#number(rotation.z, 0) +
+                    generatedRotation.z
+            )
+        }
+    }
+
+    /**
+     * Resolves correction for generated stitched STEP files.
+     * @param {object} model Model asset.
+     * @param {object} component Selected footprint component origin.
+     * @returns {{ x: number, y: number, z: number }}
+     */
+    static #generatedFrameRotation(model, component) {
+        if (model?.generated !== true && model?.raw?.generated !== true) {
+            return { x: 0, y: 0, z: 0 }
+        }
+
+        return {
+            x: -90,
+            y: 0,
+            z: AltiumLibraryRecordBuilder.#normalizeAngle(
+                -AltiumLibraryRecordBuilder.#number(component?.rotation, 0)
+            )
+        }
+    }
+
+    /**
+     * Encodes one Altium identifier as comma-separated character codes.
+     * @param {string} text Source text.
+     * @returns {string}
+     */
+    static #identifierBytes(text) {
+        return [...String(text || '')]
+            .map((character) => character.charCodeAt(0))
+            .join(',')
+    }
+
+    /**
+     * Formats a model distance in mils.
+     * @param {number} value Value in mils.
+     * @returns {string}
+     */
+    static #milText(value) {
+        return AltiumLibraryRecordBuilder.#numberText(value) + 'mil'
+    }
+
+    /**
+     * Formats one numeric record field.
+     * @param {number} value Numeric value.
+     * @returns {string}
+     */
+    static #numberText(value) {
+        return String(AltiumLibraryRecordBuilder.#round(value))
+    }
+
+    /**
+     * Reads a finite number with fallback.
+     * @param {unknown} value Candidate value.
+     * @param {number} fallback Fallback value.
+     * @returns {number}
+     */
+    static #number(value, fallback) {
+        const number = Number(value)
+        return Number.isFinite(number) ? number : fallback
+    }
+
+    /**
+     * Rounds generated numeric fields.
+     * @param {number} value Numeric value.
+     * @returns {number}
+     */
+    static #round(value) {
+        const rounded = Number(Number(value || 0).toFixed(6))
+        return Object.is(rounded, -0) ? 0 : rounded
+    }
+
+    /**
+     * Normalizes a degree angle to the 0-360 range.
+     * @param {number} angle Angle in degrees.
+     * @returns {number}
+     */
+    static #normalizeAngle(angle) {
+        return ((angle % 360) + 360) % 360
     }
 
     /**

@@ -419,10 +419,21 @@ export class PcbEmbeddedModelExtractor {
                     ? undefined
                     : PcbEmbeddedModelExtractor.#decodeBodyColor(bodyColorRaw),
             bodyOpacity:
-                bodyOpacity === null || !Number.isFinite(bodyOpacity)
-                    ? undefined
-                    : bodyOpacity
+                PcbEmbeddedModelExtractor.#normalizeBodyOpacity(bodyOpacity)
         })
+    }
+
+    /**
+     * Normalizes native body opacity metadata to authored translucency only.
+     * @param {number | null} bodyOpacity Native body opacity value.
+     * @returns {number | undefined}
+     */
+    static #normalizeBodyOpacity(bodyOpacity) {
+        if (!Number.isFinite(bodyOpacity) || Number(bodyOpacity) <= 0) {
+            return undefined
+        }
+
+        return bodyOpacity
     }
 
     /**
