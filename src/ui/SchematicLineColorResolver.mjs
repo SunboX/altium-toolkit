@@ -35,7 +35,7 @@ export class SchematicLineColorResolver {
                   )
         }
 
-        return SchematicColorResolver.resolveColor(
+        return SchematicColorResolver.resolveNonTextColor(
             line?.color,
             '--schematic-default-ink-color'
         )

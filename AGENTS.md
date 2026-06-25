@@ -33,8 +33,8 @@
 ## Library Scope
 
 - Include parser, OLE/binary helpers, schematic SVG rendering, PCB SVG
-  rendering, BOM HTML rendering, 3D scene-description builders, and static 3D
-  summary rendering.
+  rendering, BOM HTML rendering, selected-part library export adapters, 3D
+  scene-description builders, and static 3D summary rendering.
 - Do not add host app interaction to this library: no pan/zoom controllers, DOM
   event orchestration, OrbitControls runtime, picking, download UI, or app state.
 - Keep parser and renderer fixes universal. Never special-case a specific file

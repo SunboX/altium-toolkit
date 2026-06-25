@@ -215,7 +215,8 @@ export class PrintableTextDecoder {
      * @returns {boolean}
      */
     static #hasWindows1252PreferredBytes(bytes) {
-        for (const byte of bytes) {
+        for (let index = 0; index < bytes.length; index += 1) {
+            const byte = bytes[index]
             if (
                 PrintableTextDecoder.#WINDOWS_1252_PRINTABLE_CONTROL_BYTES.has(
                     byte
@@ -223,9 +224,27 @@ export class PrintableTextDecoder {
             ) {
                 return true
             }
+
+            if (
+                byte >= 0xc0 &&
+                byte <= 0xff &&
+                (PrintableTextDecoder.#isAsciiLetter(bytes[index - 1]) ||
+                    PrintableTextDecoder.#isAsciiLetter(bytes[index + 1]))
+            ) {
+                return true
+            }
         }
 
         return false
+    }
+
+    /**
+     * Returns true when one byte is an ASCII letter.
+     * @param {number | undefined} byte Byte value.
+     * @returns {boolean}
+     */
+    static #isAsciiLetter(byte) {
+        return (byte >= 0x41 && byte <= 0x5a) || (byte >= 0x61 && byte <= 0x7a)
     }
 
     /**

@@ -643,10 +643,31 @@ export class PcbScene3dStaticBodySymmetryRecovery {
      */
     static #bodyFamilyKey(componentBody) {
         const geometry = componentBody?.staticGeometry || {}
+        const identityKey = [componentBody?.identifier, componentBody?.name]
+            .map((value) =>
+                String(value ?? '')
+                    .trim()
+                    .toLowerCase()
+            )
+            .filter(Boolean)
+            .join('|')
+        const anonymousModelKey = identityKey
+            ? ''
+            : [componentBody?.modelId, componentBody?.checksum]
+                  .map((value) =>
+                      String(value ?? '')
+                          .trim()
+                          .toLowerCase()
+                  )
+                  .filter(Boolean)
+                  .join('|')
+        const bodyIdentityKey = identityKey || anonymousModelKey
+        if (!bodyIdentityKey) {
+            return ''
+        }
 
         return [
-            componentBody?.identifier,
-            componentBody?.name,
+            bodyIdentityKey,
             geometry.kind,
             PcbScene3dStaticBodySymmetryRecovery.#numberKey(geometry.heightMil),
             PcbScene3dStaticBodySymmetryRecovery.#numberKey(

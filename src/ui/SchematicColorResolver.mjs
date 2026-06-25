@@ -73,6 +73,12 @@ export class SchematicColorResolver {
         fallbackVariable,
         preserveUnknown = false
     ) {
+        const normalized = SchematicColorResolver.#normalizeColor(color)
+
+        if (SchematicColorResolver.#isNearBlackSourceColor(normalized)) {
+            return SchematicColorResolver.#toVariable(fallbackVariable)
+        }
+
         const resolved = SchematicColorResolver.resolveColor(
             color,
             fallbackVariable,
@@ -125,6 +131,29 @@ export class SchematicColorResolver {
         return preserveUnknown
             ? normalized
             : SchematicColorResolver.#toVariable(fallbackVariable)
+    }
+
+    /**
+     * Resolves one non-text fill, using schematic ink when source artwork only
+     * supplies the default black text color.
+     * @param {string | undefined} fill
+     * @param {string} fallbackVariable
+     * @param {boolean} [preserveUnknown]
+     * @returns {string}
+     */
+    static resolveNonTextFill(fill, fallbackVariable, preserveUnknown = false) {
+        const resolved = SchematicColorResolver.resolveFill(
+            fill,
+            fallbackVariable,
+            preserveUnknown
+        )
+
+        return resolved ===
+            SchematicColorResolver.#toVariable('--schematic-text-color')
+            ? SchematicColorResolver.#toVariable(
+                  '--schematic-default-ink-color'
+              )
+            : resolved
     }
 
     /**
@@ -270,6 +299,21 @@ export class SchematicColorResolver {
             g: Number.parseInt(value.slice(2, 4), 16),
             b: Number.parseInt(value.slice(4, 6), 16)
         }
+    }
+
+    /**
+     * Returns true for very dark source colors that usually mean default
+     * schematic text black rather than an intentional artwork color.
+     * @param {string} color Normalized color.
+     * @returns {boolean}
+     */
+    static #isNearBlackSourceColor(color) {
+        const rgb = SchematicColorResolver.#parseHexColor(color)
+        if (!rgb) {
+            return false
+        }
+
+        return Math.max(rgb.r, rgb.g, rgb.b) <= 32
     }
 
     /**

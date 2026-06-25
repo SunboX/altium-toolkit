@@ -6,7 +6,7 @@
  * Assigns selectable keys to static 3D body placements.
  */
 export class PcbScene3dStaticBodySelectionKeyBuilder {
-    static #STATIC_SELECTION_CLUSTER_TOLERANCE_MIL = 20
+    static #STATIC_SELECTION_CLUSTER_TOLERANCE_MIL = 2
 
     /**
      * Assigns stable selectable keys while preserving display designators.
@@ -37,7 +37,7 @@ export class PcbScene3dStaticBodySelectionKeyBuilder {
         })
 
         sourceGroups.forEach((indexes) => {
-            const clusters =
+            let clusters =
                 PcbScene3dStaticBodySelectionKeyBuilder.#clusterPlacementIndexes(
                     placements,
                     indexes
@@ -56,7 +56,20 @@ export class PcbScene3dStaticBodySelectionKeyBuilder {
                 return
             }
 
+            clusters = clusters.flatMap((cluster) =>
+                PcbScene3dStaticBodySelectionKeyBuilder.#displaySubclusters(
+                    placements,
+                    placementRows,
+                    cluster
+                )
+            )
+
             const usedKeys = new Set()
+            const displayDesignatorCounts =
+                PcbScene3dStaticBodySelectionKeyBuilder.#clusterDisplayDesignatorCounts(
+                    placements,
+                    clusters
+                )
             clusters
                 .sort((left, right) =>
                     PcbScene3dStaticBodySelectionKeyBuilder.#compareClusterCenters(
@@ -70,8 +83,17 @@ export class PcbScene3dStaticBodySelectionKeyBuilder {
                             placementRows,
                             cluster.indexes
                         )
+                    const displayDesignator =
+                        PcbScene3dStaticBodySelectionKeyBuilder.#uniquePlacementDesignator(
+                            placements,
+                            cluster.indexes
+                        )
                     const selectionKey =
                         matchedDesignator ||
+                        (displayDesignator &&
+                        displayDesignatorCounts.get(displayDesignator) === 1
+                            ? displayDesignator
+                            : '') ||
                         PcbScene3dStaticBodySelectionKeyBuilder.#uniqueSelectionKey(
                             placements[cluster.indexes[0]],
                             cluster,
@@ -83,7 +105,66 @@ export class PcbScene3dStaticBodySelectionKeyBuilder {
                 })
         })
 
+        PcbScene3dStaticBodySelectionKeyBuilder.#promoteStrictTouchingOwners(
+            placements,
+            placementRows
+        )
+
         return placements
+    }
+
+    /**
+     * Promotes one clear matched owner across physically touching fragments
+     * even when the fragments came from different source body identities.
+     * @param {{ mountSide?: string, selectionKey?: string }[]} placements Mutable placements.
+     * @param {{ matchedComponent?: { designator?: string } | null }[]} placementRows Placement rows.
+     */
+    static #promoteStrictTouchingOwners(placements, placementRows) {
+        const sideGroups = new Map()
+
+        placements.forEach((placement, index) => {
+            const groupKey =
+                PcbScene3dStaticBodySelectionKeyBuilder.#placementSideGroupKey(
+                    placement
+                )
+            if (!sideGroups.has(groupKey)) {
+                sideGroups.set(groupKey, [])
+            }
+            sideGroups.get(groupKey)?.push(index)
+        })
+
+        sideGroups.forEach((indexes) => {
+            PcbScene3dStaticBodySelectionKeyBuilder.#clusterPlacementIndexes(
+                placements,
+                indexes
+            ).forEach((cluster) => {
+                if (cluster.indexes.length <= 1) {
+                    return
+                }
+
+                const matchedDesignator =
+                    PcbScene3dStaticBodySelectionKeyBuilder.#uniqueMatchedDesignator(
+                        placementRows,
+                        cluster.indexes
+                    )
+                if (!matchedDesignator) {
+                    return
+                }
+
+                cluster.indexes.forEach((index) => {
+                    placements[index].selectionKey = matchedDesignator
+                })
+            })
+        })
+    }
+
+    /**
+     * Builds the grouping key used for strict same-side physical clusters.
+     * @param {{ mountSide?: string }} placement Static placement.
+     * @returns {string}
+     */
+    static #placementSideGroupKey(placement) {
+        return String(placement?.mountSide || '').trim()
     }
 
     /**
@@ -133,6 +214,122 @@ export class PcbScene3dStaticBodySelectionKeyBuilder {
         )
 
         return matchedDesignators.size === 1 ? [...matchedDesignators][0] : ''
+    }
+
+    /**
+     * Counts unique display designators across source-body clusters.
+     * @param {{ designator?: string }[]} placements Static placements.
+     * @param {{ indexes: number[] }[]} clusters Static body clusters.
+     * @returns {Map<string, number>}
+     */
+    static #clusterDisplayDesignatorCounts(placements, clusters) {
+        const counts = new Map()
+
+        clusters.forEach((cluster) => {
+            const designator =
+                PcbScene3dStaticBodySelectionKeyBuilder.#uniquePlacementDesignator(
+                    placements,
+                    cluster.indexes
+                )
+            if (!designator) {
+                return
+            }
+
+            counts.set(designator, (counts.get(designator) || 0) + 1)
+        })
+
+        return counts
+    }
+
+    /**
+     * Resolves one unambiguous display designator for a cluster.
+     * @param {{ designator?: string }[]} placements Static placements.
+     * @param {number[]} indexes Cluster indexes.
+     * @returns {string}
+     */
+    static #uniquePlacementDesignator(placements, indexes) {
+        const designators = new Set(
+            indexes
+                .map((index) =>
+                    String(placements[index]?.designator || '').trim()
+                )
+                .filter(Boolean)
+        )
+
+        return designators.size === 1 ? [...designators][0] : ''
+    }
+
+    /**
+     * Splits an ambiguous physical cluster by display designator.
+     * @param {{ designator?: string }[]} placements Static placements.
+     * @param {{ matchedComponent?: { designator?: string } | null }[]} placementRows Placement rows.
+     * @param {{ indexes: number[], bounds: object, center: object }} cluster Static body cluster.
+     * @returns {{ indexes: number[], bounds: object, center: object }[]}
+     */
+    static #displaySubclusters(placements, placementRows, cluster) {
+        if (
+            PcbScene3dStaticBodySelectionKeyBuilder.#uniqueMatchedDesignator(
+                placementRows,
+                cluster.indexes
+            )
+        ) {
+            return [cluster]
+        }
+
+        const groups = new Map()
+        cluster.indexes.forEach((index) => {
+            const designator = String(
+                placements[index]?.designator || ''
+            ).trim()
+            if (!designator) {
+                return
+            }
+
+            if (!groups.has(designator)) {
+                groups.set(designator, [])
+            }
+            groups.get(designator)?.push(index)
+        })
+
+        return groups.size > 1
+            ? [...groups.values()].map((groupIndexes) =>
+                  PcbScene3dStaticBodySelectionKeyBuilder.#clusterForIndexes(
+                      placements,
+                      groupIndexes
+                  )
+              )
+            : [cluster]
+    }
+
+    /**
+     * Builds a cluster record for explicit placement indexes.
+     * @param {object[]} placements Static placements.
+     * @param {number[]} indexes Placement indexes.
+     * @returns {{ indexes: number[], bounds: object, center: object }}
+     */
+    static #clusterForIndexes(placements, indexes) {
+        const bounds = indexes
+            .map((index) =>
+                PcbScene3dStaticBodySelectionKeyBuilder.#placementBounds(
+                    placements[index]
+                )
+            )
+            .reduce((mergedBounds, boundsCandidate) =>
+                mergedBounds
+                    ? PcbScene3dStaticBodySelectionKeyBuilder.#mergeBounds(
+                          mergedBounds,
+                          boundsCandidate
+                      )
+                    : boundsCandidate
+            )
+
+        return {
+            indexes,
+            bounds,
+            center: PcbScene3dStaticBodySelectionKeyBuilder.#boundsCenter(
+                bounds
+            )
+        }
     }
 
     /**

@@ -42,7 +42,7 @@ export class SchematicShapeRenderer {
             ) +
             '" fill="' +
             escapeHtml(
-                SchematicColorResolver.resolveFill(
+                SchematicColorResolver.resolveNonTextFill(
                     polygon.fill || 'none',
                     '--schematic-fill-color',
                     true
@@ -50,7 +50,7 @@ export class SchematicShapeRenderer {
             ) +
             '" stroke="' +
             escapeHtml(
-                SchematicColorResolver.resolveColor(
+                SchematicColorResolver.resolveNonTextColor(
                     polygon.color,
                     '--schematic-default-ink-color'
                 )
@@ -128,7 +128,7 @@ export class SchematicShapeRenderer {
             escapeHtml(path) +
             '" stroke="' +
             escapeHtml(
-                SchematicColorResolver.resolveColor(
+                SchematicColorResolver.resolveNonTextColor(
                     bezier.color,
                     '--schematic-default-ink-color'
                 )
@@ -205,7 +205,7 @@ export class SchematicShapeRenderer {
             escapeHtml(path) +
             '" fill="' +
             escapeHtml(
-                SchematicColorResolver.resolveFill(
+                SchematicColorResolver.resolveNonTextFill(
                     SchematicShapeRenderer.#resolveSchematicPieFill(pie),
                     '--schematic-fill-color',
                     true
@@ -213,7 +213,7 @@ export class SchematicShapeRenderer {
             ) +
             '" stroke="' +
             escapeHtml(
-                SchematicColorResolver.resolveColor(
+                SchematicColorResolver.resolveNonTextColor(
                     pie.color,
                     '--schematic-default-ink-color'
                 )
@@ -256,7 +256,7 @@ export class SchematicShapeRenderer {
                           fill,
                           '--schematic-fill-color'
                       )
-                    : SchematicColorResolver.resolveFill(
+                    : SchematicColorResolver.resolveNonTextFill(
                           fill,
                           '--schematic-fill-color'
                       )
@@ -268,7 +268,7 @@ export class SchematicShapeRenderer {
                           rectangle.color,
                           '--schematic-default-ink-color'
                       )
-                    : SchematicColorResolver.resolveColor(
+                    : SchematicColorResolver.resolveNonTextColor(
                           rectangle.color,
                           '--schematic-default-ink-color'
                       )
@@ -321,7 +321,7 @@ export class SchematicShapeRenderer {
                           fill,
                           '--schematic-fill-color'
                       )
-                    : SchematicColorResolver.resolveFill(
+                    : SchematicColorResolver.resolveNonTextFill(
                           fill,
                           '--schematic-fill-color'
                       )
@@ -333,7 +333,7 @@ export class SchematicShapeRenderer {
                           rectangle.color,
                           '--schematic-default-ink-color'
                       )
-                    : SchematicColorResolver.resolveColor(
+                    : SchematicColorResolver.resolveNonTextColor(
                           rectangle.color,
                           '--schematic-default-ink-color'
                       )
@@ -361,7 +361,7 @@ export class SchematicShapeRenderer {
         const x = Number(symbol?.x || 0)
         const y = projectSchematicY(sheetHeight, Number(symbol?.y || 0))
         const color = escapeHtml(
-            SchematicColorResolver.resolveColor(
+            SchematicColorResolver.resolveNonTextColor(
                 symbol.color,
                 '--schematic-default-ink-color'
             )
@@ -422,7 +422,7 @@ export class SchematicShapeRenderer {
             path +
             '" stroke="' +
             escapeHtml(
-                SchematicColorResolver.resolveColor(
+                SchematicColorResolver.resolveNonTextColor(
                     arc.color,
                     '--schematic-default-ink-color'
                 )
@@ -451,7 +451,7 @@ export class SchematicShapeRenderer {
             formatNumber(Math.max(Number(ellipse.radiusY) || 0, 0.8)) +
             '" fill="' +
             escapeHtml(
-                SchematicColorResolver.resolveFill(
+                SchematicColorResolver.resolveNonTextFill(
                     SchematicShapeRenderer.#resolveSchematicEllipseFill(
                         ellipse
                     ),
@@ -460,7 +460,7 @@ export class SchematicShapeRenderer {
             ) +
             '" stroke="' +
             escapeHtml(
-                SchematicColorResolver.resolveColor(
+                SchematicColorResolver.resolveNonTextColor(
                     ellipse.color,
                     '--schematic-default-ink-color'
                 )

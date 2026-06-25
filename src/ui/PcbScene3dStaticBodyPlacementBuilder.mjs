@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbScene3dPlacementSideResolver } from './PcbScene3dPlacementSideResolver.mjs'
+import { PcbScene3dStaticBodyOwnerPromotion } from './PcbScene3dStaticBodyOwnerPromotion.mjs'
 import { PcbScene3dStaticBodyRecovery } from './PcbScene3dStaticBodyRecovery.mjs'
 import { PcbScene3dStaticBodySelectionKeyBuilder } from './PcbScene3dStaticBodySelectionKeyBuilder.mjs'
 
@@ -21,6 +22,7 @@ export class PcbScene3dStaticBodyPlacementBuilder {
     static #SOURCE_COORDINATE_MIRROR_MIN_OFFSET_MIL = 20
     static #GENERIC_MECHANICAL_IDENTITY_TOKENS = new Set([
         'can',
+        'clip',
         'cover',
         'enclosure',
         'frame',
@@ -65,6 +67,12 @@ export class PcbScene3dStaticBodyPlacementBuilder {
                 )
             )
             .filter(Boolean)
+
+        PcbScene3dStaticBodyOwnerPromotion.promote(
+            placementRows,
+            components,
+            board
+        )
 
         return PcbScene3dStaticBodySelectionKeyBuilder.assign(placementRows)
     }
@@ -183,6 +191,12 @@ export class PcbScene3dStaticBodyPlacementBuilder {
             Number(thicknessMil || 0) / 2 +
             (Number.isFinite(standoffMil) ? standoffMil : 0) +
             heightMil / 2
+        const renderGeometry =
+            PcbScene3dStaticBodyPlacementBuilder.#placementGeometry(
+                geometry,
+                staticGeometry,
+                mountSide
+            )
 
         return {
             designator:
@@ -194,11 +208,21 @@ export class PcbScene3dStaticBodyPlacementBuilder {
                 PcbScene3dStaticBodyPlacementBuilder.#sourceIdentityKey(
                     componentBody
                 ),
-            mountSide,
-            rotationDeg: PcbScene3dStaticBodyPlacementBuilder.#normalizeAngle(
-                Number(componentBody.rotationDeg || 0) +
-                    Number(matchedComponent?.rotation || 0)
+            sourceCoordinateFrame: Boolean(
+                staticGeometry.sourceCoordinateFrame
             ),
+            mountSideLocked:
+                PcbScene3dStaticBodyPlacementBuilder.#hasExplicitMountSide(
+                    componentBody,
+                    matchedComponent
+                ),
+            mountSide,
+            rotationDeg:
+                PcbScene3dStaticBodyPlacementBuilder.#placementRotationDeg(
+                    componentBody,
+                    matchedComponent,
+                    staticGeometry
+                ),
             positionMil: {
                 x: PcbScene3dStaticBodyPlacementBuilder.#roundMil(
                     Number(sourcePosition.x || 0) - Number(board.centerX || 0)
@@ -217,7 +241,107 @@ export class PcbScene3dStaticBodyPlacementBuilder {
             ...PcbScene3dStaticBodyPlacementBuilder.#displayMetadata(
                 componentBody
             ),
-            geometry
+            geometry: renderGeometry
+        }
+    }
+
+    /**
+     * Checks whether one body carries explicit top/bottom side evidence.
+     * @param {{ componentIndex?: number | string, layer?: string, standoffHeightMil?: number | string | null }} componentBody Component body.
+     * @param {{ layer?: string } | null} matchedComponent Matched owner component.
+     * @returns {boolean}
+     */
+    static #hasExplicitMountSide(componentBody, matchedComponent) {
+        if (
+            matchedComponent &&
+            Number.isInteger(Number(componentBody?.componentIndex))
+        ) {
+            return true
+        }
+
+        const layer = String(componentBody?.layer || '').trim()
+        if (!layer) {
+            const standoffMil = Number(componentBody?.standoffHeightMil)
+            return Number.isFinite(standoffMil) && standoffMil < 0
+        }
+
+        if (
+            !PcbScene3dStaticBodyPlacementBuilder.#isAuthoredMechanicalBody(
+                componentBody
+            )
+        ) {
+            return false
+        }
+
+        if (/(^|[^a-z])(top|bottom)([^a-z]|$)/i.test(layer)) {
+            return true
+        }
+
+        return /^MECHANICAL\s*\d+$/i.test(layer)
+    }
+
+    /**
+     * Checks whether one body identity looks like authored board mechanics.
+     * @param {{ identifier?: string, name?: string, modelTypeName?: string }} componentBody Component body.
+     * @returns {boolean}
+     */
+    static #isAuthoredMechanicalBody(componentBody) {
+        return PcbScene3dStaticBodyPlacementBuilder.#identityTokens(
+            componentBody
+        ).some((token) =>
+            PcbScene3dStaticBodyPlacementBuilder.#GENERIC_MECHANICAL_IDENTITY_TOKENS.has(
+                token
+            )
+        )
+    }
+
+    /**
+     * Resolves the rendered rotation for one static shape body.
+     * @param {{ rotationDeg?: number }} componentBody Component body.
+     * @param {{ rotation?: number } | null} matchedComponent Matched owner component.
+     * @param {{ sourceCoordinateFrame?: boolean }} normalizedStaticGeometry Normalized static geometry context.
+     * @returns {number}
+     */
+    static #placementRotationDeg(
+        componentBody,
+        matchedComponent,
+        normalizedStaticGeometry
+    ) {
+        const ownerRotation = normalizedStaticGeometry?.sourceCoordinateFrame
+            ? 0
+            : Number(matchedComponent?.rotation || 0)
+
+        return PcbScene3dStaticBodyPlacementBuilder.#normalizeAngle(
+            Number(componentBody.rotationDeg || 0) + ownerRotation
+        )
+    }
+
+    /**
+     * Converts normalized static geometry into the renderer mount-local frame.
+     * @param {object} geometry Normalized render geometry.
+     * @param {{ sourceCoordinateFrame?: boolean }} normalizedStaticGeometry Normalized static geometry context.
+     * @param {string} mountSide Resolved mount side.
+     * @returns {object}
+     */
+    static #placementGeometry(geometry, normalizedStaticGeometry, mountSide) {
+        if (
+            !normalizedStaticGeometry?.sourceCoordinateFrame ||
+            String(mountSide || 'top').toLowerCase() !== 'bottom' ||
+            !Array.isArray(geometry?.verticesMil)
+        ) {
+            return geometry
+        }
+
+        return {
+            ...geometry,
+            verticesMil: geometry.verticesMil.map((vertex) => ({
+                x: PcbScene3dStaticBodyPlacementBuilder.#roundMil(
+                    Number(vertex?.x || 0)
+                ),
+                y: PcbScene3dStaticBodyPlacementBuilder.#roundMil(
+                    -Number(vertex?.y || 0)
+                )
+            }))
         }
     }
 
@@ -226,19 +350,24 @@ export class PcbScene3dStaticBodyPlacementBuilder {
      * @param {{ positionMil?: { x?: number, y?: number } }} componentBody Component body.
      * @param {object | undefined} geometry Static geometry.
      * @param {{ x?: number, y?: number } | null} matchedComponent Matched owner component.
-     * @returns {{ geometry: object | undefined, placementCenterMil?: { x: number, y: number } }}
+     * @returns {{ geometry: object | undefined, placementCenterMil?: { x: number, y: number }, sourceCoordinateFrame: boolean }}
      */
     static #normalizeStaticGeometry(componentBody, geometry, matchedComponent) {
         if (
             String(geometry?.kind || '').toLowerCase() !== 'extruded-polygon' ||
             !Array.isArray(geometry?.verticesMil) ||
-            geometry.verticesMil.length < 3 ||
+            geometry.verticesMil.length < 3
+        ) {
+            return { geometry, sourceCoordinateFrame: false }
+        }
+
+        if (
             !PcbScene3dStaticBodyPlacementBuilder.#usesSourceCoordinateFrame(
                 componentBody,
                 geometry.verticesMil
             )
         ) {
-            return { geometry }
+            return { geometry, sourceCoordinateFrame: false }
         }
 
         const center =
@@ -255,6 +384,7 @@ export class PcbScene3dStaticBodyPlacementBuilder {
 
         return {
             placementCenterMil: placementCenter,
+            sourceCoordinateFrame: true,
             geometry: {
                 ...geometry,
                 verticesMil: geometry.verticesMil.map((vertex) => {

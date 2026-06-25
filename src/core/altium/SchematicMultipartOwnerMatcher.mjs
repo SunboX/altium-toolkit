@@ -5,6 +5,8 @@
 import { ParserUtils } from './ParserUtils.mjs'
 
 const { getField, parseBoolean, parseNumericField } = ParserUtils
+const WIRED_PART_MIN_SCORE = 2
+const WIRED_PART_DOMINANCE_RATIO = 2
 
 /**
  * Resolves which multipart symbol section is visible for one schematic owner.
@@ -21,6 +23,10 @@ export class SchematicMultipartOwnerMatcher {
         const partBounds = new Map()
         const ownerBounds = new Map()
         const directOwnerIndexesByRecord = new WeakMap()
+        const ownerlessConnectionPoints =
+            SchematicMultipartOwnerMatcher.#collectOwnerlessConnectionPoints(
+                records
+            )
 
         for (const record of records) {
             const ownerIndex = getField(record.fields, 'OwnerIndex')
@@ -92,11 +98,6 @@ export class SchematicMultipartOwnerMatcher {
                 parseNumericField(record.fields, 'CurrentPartId') || ''
             )
             const partCount = parseNumericField(record.fields, 'PartCount') || 0
-
-            if (!currentPartId || partCount <= 1) {
-                continue
-            }
-
             const directOwnerIndex =
                 SchematicMultipartOwnerMatcher.#findSerializedOwnerIndex(
                     records,
@@ -104,6 +105,11 @@ export class SchematicMultipartOwnerMatcher {
                 )
 
             if (!directOwnerIndex) {
+                continue
+            }
+
+            if (!currentPartId || partCount <= 1) {
+                directOwnerIndexesByRecord.set(record, directOwnerIndex)
                 continue
             }
 
@@ -120,12 +126,20 @@ export class SchematicMultipartOwnerMatcher {
             const x = parseNumericField(record.fields, 'Location.X')
             const y = parseNumericField(record.fields, 'Location.Y')
             const isMirrored = parseBoolean(record.fields.IsMirrored)
+            const directOwnerIndex = directOwnerIndexesByRecord.get(record)
 
             if (!currentPartId || partCount <= 1 || x === null || y === null) {
+                const inferredPartId =
+                    SchematicMultipartOwnerMatcher.#inferWiredMultipartOwnerPart(
+                        records,
+                        directOwnerIndex,
+                        ownerlessConnectionPoints
+                    )
+                if (directOwnerIndex && inferredPartId) {
+                    activeOwnerParts.set(directOwnerIndex, inferredPartId)
+                }
                 continue
             }
-
-            const directOwnerIndex = directOwnerIndexesByRecord.get(record)
 
             if (directOwnerIndex) {
                 activeOwnerParts.set(directOwnerIndex, currentPartId)
@@ -250,6 +264,243 @@ export class SchematicMultipartOwnerMatcher {
 
         return !(
             recordType === '41' && getField(fields, 'Name') === 'PinUniqueId'
+        )
+    }
+
+    /**
+     * Infers the visible part for malformed multipart owners from routed pin
+     * endpoint evidence. This only applies when one part clearly owns the
+     * external wire connections, avoiding guesses for ambiguous overlaps.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @param {string | undefined} ownerIndex
+     * @param {{ x: number, y: number }[]} ownerlessConnectionPoints
+     * @returns {string}
+     */
+    static #inferWiredMultipartOwnerPart(
+        records,
+        ownerIndex,
+        ownerlessConnectionPoints
+    ) {
+        const normalizedOwnerIndex = String(ownerIndex || '').trim()
+        if (!normalizedOwnerIndex || !ownerlessConnectionPoints.length) {
+            return ''
+        }
+
+        const scores =
+            SchematicMultipartOwnerMatcher.#scoreWiredMultipartOwnerParts(
+                records,
+                normalizedOwnerIndex,
+                ownerlessConnectionPoints
+            )
+        if (scores.size < 2) {
+            return ''
+        }
+
+        const rankedScores = [...scores.entries()].sort((left, right) => {
+            if (left[1] !== right[1]) {
+                return right[1] - left[1]
+            }
+
+            return Number(left[0]) - Number(right[0])
+        })
+        const [bestPartId, bestScore] = rankedScores[0] || ['', 0]
+        const secondScore = rankedScores[1]?.[1] || 0
+
+        if (bestScore < WIRED_PART_MIN_SCORE) {
+            return ''
+        }
+
+        if (
+            secondScore > 0 &&
+            bestScore < secondScore * WIRED_PART_DOMINANCE_RATIO
+        ) {
+            return ''
+        }
+
+        return bestPartId
+    }
+
+    /**
+     * Scores owner parts by the number of pin endpoints touching ownerless
+     * wire endpoints or vertices.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @param {string} ownerIndex
+     * @param {{ x: number, y: number }[]} ownerlessConnectionPoints
+     * @returns {Map<string, number>}
+     */
+    static #scoreWiredMultipartOwnerParts(
+        records,
+        ownerIndex,
+        ownerlessConnectionPoints
+    ) {
+        const scores = new Map()
+
+        for (const record of records || []) {
+            if (
+                getField(record.fields, 'RECORD') !== '2' ||
+                getField(record.fields, 'OwnerIndex') !== ownerIndex
+            ) {
+                continue
+            }
+
+            const ownerPartId = getField(record.fields, 'OwnerPartId')
+            if (!ownerPartId || ownerPartId === '-1') {
+                continue
+            }
+
+            if (!scores.has(ownerPartId)) {
+                scores.set(ownerPartId, 0)
+            }
+
+            const endpoint =
+                SchematicMultipartOwnerMatcher.#resolvePinConnectionPoint(
+                    record.fields
+                )
+            if (
+                endpoint &&
+                SchematicMultipartOwnerMatcher.#pointTouchesAnyConnectionPoint(
+                    endpoint,
+                    ownerlessConnectionPoints
+                )
+            ) {
+                scores.set(ownerPartId, scores.get(ownerPartId) + 1)
+            }
+        }
+
+        return scores
+    }
+
+    /**
+     * Collects ownerless schematic wire endpoints and vertices.
+     * @param {{ fields: Record<string, string | string[]> }[]} records
+     * @returns {{ x: number, y: number }[]}
+     */
+    static #collectOwnerlessConnectionPoints(records) {
+        const points = []
+
+        for (const record of records || []) {
+            if (getField(record.fields, 'OwnerIndex')) {
+                continue
+            }
+
+            const recordType = getField(record.fields, 'RECORD')
+            if (
+                recordType === '6' ||
+                recordType === '26' ||
+                recordType === '27'
+            ) {
+                points.push(
+                    ...SchematicMultipartOwnerMatcher.#collectSchematicWirePoints(
+                        record.fields
+                    )
+                )
+                continue
+            }
+
+            if (recordType !== '13') {
+                continue
+            }
+
+            const locationX = parseNumericField(record.fields, 'Location.X')
+            const locationY = parseNumericField(record.fields, 'Location.Y')
+            const cornerX = parseNumericField(record.fields, 'Corner.X')
+            const cornerY = parseNumericField(record.fields, 'Corner.Y')
+
+            if (locationX !== null && locationY !== null) {
+                points.push({ x: locationX, y: locationY })
+            }
+
+            if (cornerX !== null && cornerY !== null) {
+                points.push({ x: cornerX, y: cornerY })
+            }
+        }
+
+        return points
+    }
+
+    /**
+     * Collects polyline vertices while preserving omitted unchanged axes.
+     * @param {Record<string, string | string[]>} fields
+     * @returns {{ x: number, y: number }[]}
+     */
+    static #collectSchematicWirePoints(fields) {
+        const locationCount = parseNumericField(fields, 'LocationCount')
+        const points = []
+        let previousX = null
+        let previousY = null
+
+        if (locationCount === null || locationCount < 2) {
+            return points
+        }
+
+        for (let index = 1; index <= locationCount; index += 1) {
+            const x = parseNumericField(fields, 'X' + index)
+            const y = parseNumericField(fields, 'Y' + index)
+
+            if (x === null && y === null) {
+                break
+            }
+
+            const pointX = x === null ? previousX : x
+            const pointY = y === null ? previousY : y
+
+            if (pointX === null || pointY === null) {
+                break
+            }
+
+            points.push({ x: pointX, y: pointY })
+            previousX = pointX
+            previousY = pointY
+        }
+
+        return points
+    }
+
+    /**
+     * Resolves the external route endpoint for one raw pin record.
+     * @param {Record<string, string | string[]>} fields
+     * @returns {{ x: number, y: number } | null}
+     */
+    static #resolvePinConnectionPoint(fields) {
+        const x = parseNumericField(fields, 'Location.X')
+        const y = parseNumericField(fields, 'Location.Y')
+        const length = parseNumericField(fields, 'PinLength')
+        const orientation =
+            SchematicMultipartOwnerMatcher.#inferPinConnectionOrientation(
+                parseNumericField(fields, 'PinConglomerate')
+            )
+
+        if (x === null || y === null || length === null || !orientation) {
+            return null
+        }
+
+        switch (orientation) {
+            case 'right':
+                return { x: x + length, y }
+            case 'left':
+                return { x: x - length, y }
+            case 'top':
+                return { x, y: y + length }
+            case 'bottom':
+                return { x, y: y - length }
+            default:
+                return null
+        }
+    }
+
+    /**
+     * Returns true when one point matches any known connection point.
+     * @param {{ x: number, y: number }} point
+     * @param {{ x: number, y: number }[]} connectionPoints
+     * @returns {boolean}
+     */
+    static #pointTouchesAnyConnectionPoint(point, connectionPoints) {
+        const tolerance = 0.01
+
+        return connectionPoints.some(
+            (connectionPoint) =>
+                Math.abs(connectionPoint.x - point.x) <= tolerance &&
+                Math.abs(connectionPoint.y - point.y) <= tolerance
         )
     }
 
@@ -558,6 +809,36 @@ export class SchematicMultipartOwnerMatcher {
             case 33:
             case 49:
             case 57:
+                return 'bottom'
+            default:
+                return null
+        }
+    }
+
+    /**
+     * Maps raw pin conglomerates into external endpoint orientations.
+     * @param {number | null} conglomerate
+     * @returns {'left' | 'right' | 'top' | 'bottom' | null}
+     */
+    static #inferPinConnectionOrientation(conglomerate) {
+        switch (conglomerate) {
+            case 34:
+            case 42:
+            case 50:
+            case 58:
+                return 'left'
+            case 32:
+            case 40:
+            case 48:
+            case 56:
+                return 'right'
+            case 33:
+            case 49:
+            case 57:
+                return 'top'
+            case 35:
+            case 51:
+            case 59:
                 return 'bottom'
             default:
                 return null

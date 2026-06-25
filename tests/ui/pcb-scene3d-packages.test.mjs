@@ -28,3 +28,27 @@ test('PcbScene3dPackages uses explicit package length and width metadata', () =>
     assert.equal(roundMil(body.sizeMil.depth), 472.441)
     assert.equal(body.sizeMil.height, 40)
 })
+
+test('PcbScene3dPackages recognizes compact passive chip codes', () => {
+    const tinyPassive = PcbScene3dPackages.resolve({
+        pattern: 'CAP01005',
+        height: null
+    })
+    const compactPassive = PcbScene3dPackages.resolve({
+        pattern: 'RES0201',
+        height: null
+    })
+
+    assert.equal(tinyPassive.family, 'chip')
+    assert.deepEqual(tinyPassive.sizeMil, {
+        width: 16,
+        depth: 8,
+        height: 8
+    })
+    assert.equal(compactPassive.family, 'chip')
+    assert.deepEqual(compactPassive.sizeMil, {
+        width: 24,
+        depth: 12,
+        height: 14
+    })
+})

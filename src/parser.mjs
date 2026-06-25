@@ -11,6 +11,7 @@ export { AltiumLibraryBatchExporter } from './core/altium/AltiumLibraryBatchExpo
 export { AltiumLibraryRecordBuilder } from './core/altium/AltiumLibraryRecordBuilder.mjs'
 export { AltiumPcbLibExporter } from './core/altium/AltiumPcbLibExporter.mjs'
 export { AltiumSchLibExporter } from './core/altium/AltiumSchLibExporter.mjs'
+export { SelectedPartAltiumExportAdapter } from './core/altium/SelectedPartAltiumExportAdapter.mjs'
 export { AltiumUnits } from './core/altium/AltiumUnits.mjs'
 export { SourceBundleExporter } from './core/altium/SourceBundleExporter.mjs'
 export { SourceComponentBundleNormalizer } from './core/altium/SourceComponentBundleNormalizer.mjs'

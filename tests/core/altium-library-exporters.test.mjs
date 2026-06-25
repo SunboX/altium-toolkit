@@ -7,6 +7,7 @@ import { OleCompoundDocument } from '../../src/core/ole/OleCompoundDocument.mjs'
 import { PcbLibStreamExtractor } from '../../src/core/altium/PcbLibStreamExtractor.mjs'
 import { PcbLibModelParser } from '../../src/core/altium/PcbLibModelParser.mjs'
 import { SchLibModelParser } from '../../src/core/altium/SchLibModelParser.mjs'
+import { SelectedPartAltiumExportAdapter } from '../../src/core/altium/SelectedPartAltiumExportAdapter.mjs'
 import { SchLibStreamExtractor } from '../../src/core/altium/SchLibStreamExtractor.mjs'
 import { SourceBundleExporter } from '../../src/core/altium/SourceBundleExporter.mjs'
 import { SourceComponentBundleNormalizer } from '../../src/core/altium/SourceComponentBundleNormalizer.mjs'
@@ -330,6 +331,102 @@ test('Altium library exporters preserve selected symbol and footprint geometry',
     assert.equal(footprint.arcs.length, 1)
     assert.equal(footprint.fills.length, 1)
     assert.equal(footprint.texts.length, 1)
+})
+
+test('SelectedPartAltiumExportAdapter exports selected symbol and footprint geometry', () => {
+    const result = SelectedPartAltiumExportAdapter.export(
+        {
+            designator: 'X1',
+            symbol: {
+                name: 'FAKE_SELECTED_SYMBOL',
+                value: 'FAKE',
+                pins: [
+                    { name: 'IN', number: '1' },
+                    { name: 'OUT', number: '2' }
+                ],
+                rectangles: [
+                    {
+                        x: 0,
+                        y: 0,
+                        width: 100,
+                        height: 40
+                    }
+                ]
+            },
+            footprint: {
+                name: 'FAKE_SELECTED_FOOTPRINT',
+                pads: [
+                    {
+                        number: '1',
+                        x: -25,
+                        y: 0,
+                        sizeTopX: 20,
+                        sizeTopY: 30,
+                        layerId: 1
+                    },
+                    {
+                        number: '2',
+                        x: 25,
+                        y: 0,
+                        sizeTopX: 20,
+                        sizeTopY: 30,
+                        layerId: 1
+                    }
+                ],
+                tracks: [
+                    {
+                        x1: -40,
+                        y1: -20,
+                        x2: 40,
+                        y2: -20,
+                        width: 4,
+                        layerId: 21
+                    }
+                ],
+                texts: [{ text: 'X1', x: 0, y: -35, height: 12, layerId: 21 }]
+            }
+        },
+        {
+            partName: 'FAKE_SELECTED',
+            models: [
+                {
+                    name: 'fake-selected.step',
+                    format: 'step',
+                    bytes: new TextEncoder().encode(
+                        'ISO-10303-21;\nEND-ISO-10303-21;'
+                    )
+                }
+            ]
+        }
+    )
+    const entryPaths = result.entries.map((entry) => entry.path).sort()
+    const schEntry = result.entries.find((entry) =>
+        entry.path.endsWith('.SchLib')
+    )
+    const pcbEntry = result.entries.find((entry) =>
+        entry.path.endsWith('.PcbLib')
+    )
+    const schModel = SchLibModelParser.parse(
+        'selected.SchLib',
+        SchLibStreamExtractor.extractFromStreams(openStreams(schEntry.bytes))
+    )
+    const pcbModel = PcbLibModelParser.parse(
+        'selected.PcbLib',
+        PcbLibStreamExtractor.extractFromStreams(openStreams(pcbEntry.bytes))
+    )
+
+    assert.deepEqual(entryPaths, [
+        'altium/FAKE_SELECTED.PcbLib',
+        'altium/FAKE_SELECTED.SchLib',
+        'models/fake-selected.step',
+        'source/manifest.json',
+        'source/source.json'
+    ])
+    assert.equal(result.bundle.name, 'FAKE_SELECTED')
+    assert.equal(schModel.schematicLibrary.symbols[0].declaredPinCount, 2)
+    assert.equal(schModel.schematicLibrary.symbols[0].primitives.length, 1)
+    assert.equal(pcbModel.pcbLibrary.footprints[0].pads.length, 2)
+    assert.equal(pcbModel.pcbLibrary.footprints[0].tracks.length, 1)
 })
 
 test('AltiumLibraryBatchExporter supports merged output, append skip, and progress', async () => {

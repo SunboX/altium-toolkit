@@ -54,7 +54,7 @@ export class PcbScene3dPackages {
     static #resolveFamily(pattern) {
         const normalized = String(pattern || '').toUpperCase()
 
-        if (/(0402|0603|0805|1206|C0805|C0603)/.test(normalized)) {
+        if (PcbScene3dPackages.#hasChipPackageCode(normalized)) {
             return 'chip'
         }
 
@@ -98,6 +98,15 @@ export class PcbScene3dPackages {
     }
 
     /**
+     * Checks whether a footprint pattern contains a compact chip package code.
+     * @param {string} normalized Uppercase footprint pattern.
+     * @returns {boolean}
+     */
+    static #hasChipPackageCode(normalized) {
+        return /(01005|0201|0402|0603|0805|1206|C0805|C0603)/.test(normalized)
+    }
+
+    /**
      * Resolves one default body size for the chosen family.
      * @param {string} family
      * @param {string | undefined} pattern
@@ -107,6 +116,12 @@ export class PcbScene3dPackages {
         const normalized = String(pattern || '').toUpperCase()
 
         if (family === 'chip') {
+            if (normalized.includes('01005')) {
+                return { width: 16, depth: 8, height: 8 }
+            }
+            if (normalized.includes('0201')) {
+                return { width: 24, depth: 12, height: 14 }
+            }
             if (normalized.includes('0402')) {
                 return { width: 24, depth: 12, height: 14 }
             }

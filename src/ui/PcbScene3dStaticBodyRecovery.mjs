@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbScene3dStaticBodySymmetryRecovery } from './PcbScene3dStaticBodySymmetryRecovery.mjs'
+import { PcbScene3dStaticBodyPrototypeRecovery } from './PcbScene3dStaticBodyPrototypeRecovery.mjs'
 
 /**
  * Recovers renderable static-body geometry and display metadata.
@@ -38,8 +39,13 @@ export class PcbScene3dStaticBodyRecovery {
      */
     static recover(componentBodies, bodyMatches = []) {
         const bodies = Array.isArray(componentBodies) ? componentBodies : []
+        const prototypeRecoveredBodies =
+            PcbScene3dStaticBodyPrototypeRecovery.recover(bodies)
         const symmetricRecoveredBodies =
-            PcbScene3dStaticBodySymmetryRecovery.recover(bodies, bodyMatches)
+            PcbScene3dStaticBodySymmetryRecovery.recover(
+                prototypeRecoveredBodies,
+                bodyMatches
+            )
         const topRecoveredBodies = symmetricRecoveredBodies.map(
             (componentBody) =>
                 PcbScene3dStaticBodyRecovery.#recoverCoverTopGeometry(

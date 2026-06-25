@@ -10,6 +10,8 @@ export class AltiumScene3dShapeStackOwnerAdapter {
     static #EXACT_OWNER_TOLERANCE_MIL = 1
     static #STACK_BODY_RADIUS_MIL = 220
     static #HEIGHT_TOLERANCE_MIL = 0.1
+    static #TIMING_PARAMETER_NAME_PATTERN =
+        /(?:^|[^a-z0-9])(?:comment|description|device|function|part|type|value)(?:$|[^a-z0-9])/i
 
     /**
      * Applies authored stack ownership to static and external placements.
@@ -169,19 +171,101 @@ export class AltiumScene3dShapeStackOwnerAdapter {
                     return placement
                 }
 
-                return {
-                    ...placement,
-                    designator: String(assignment.owner.designator || ''),
-                    positionMil:
-                        AltiumScene3dShapeStackOwnerAdapter.#withOwnerAnchor(
-                            placement?.positionMil,
-                            assignment.owner,
-                            board
-                        ),
-                    coLocatedVariantGroupKey: assignment.groupKey
-                }
+                return AltiumScene3dShapeStackOwnerAdapter.#withStaticOwner(
+                    placement,
+                    assignment,
+                    board
+                )
             }
         )
+    }
+
+    /**
+     * Applies one stack owner to a repaired static carrier body.
+     * @param {object} placement Static body placement.
+     * @param {{ owner: object, groupKey: string }} assignment Stack assignment.
+     * @param {object | undefined} board Scene board metadata.
+     * @returns {object}
+     */
+    static #withStaticOwner(placement, assignment, board) {
+        const ownerDesignator = String(assignment?.owner?.designator || '')
+        const mountSide =
+            AltiumScene3dShapeStackOwnerAdapter.#mountSide(assignment?.owner) ||
+            placement?.mountSide
+        const sidePlacement =
+            AltiumScene3dShapeStackOwnerAdapter.#withStaticMountSide(
+                placement,
+                mountSide
+            )
+
+        return {
+            ...sidePlacement,
+            designator: ownerDesignator,
+            selectionKey: ownerDesignator || sidePlacement.selectionKey,
+            positionMil: AltiumScene3dShapeStackOwnerAdapter.#withOwnerAnchor(
+                sidePlacement?.positionMil,
+                assignment.owner,
+                board
+            ),
+            coLocatedVariantGroupKey: assignment.groupKey
+        }
+    }
+
+    /**
+     * Applies a static placement side while preserving its height magnitude.
+     * @param {object} placement Static body placement.
+     * @param {string | undefined} mountSide Owner mount side.
+     * @returns {object}
+     */
+    static #withStaticMountSide(placement, mountSide) {
+        const currentSide =
+            AltiumScene3dShapeStackOwnerAdapter.#normalizeMountSide(
+                placement?.mountSide
+            )
+        const side = AltiumScene3dShapeStackOwnerAdapter.#normalizeMountSide(
+            mountSide || currentSide
+        )
+        const z = Math.abs(Number(placement?.positionMil?.z || 0))
+
+        return {
+            ...placement,
+            mountSide: side,
+            positionMil: {
+                ...(placement?.positionMil || {}),
+                z: side === 'bottom' ? -z : z
+            },
+            geometry:
+                currentSide === side
+                    ? placement?.geometry
+                    : AltiumScene3dShapeStackOwnerAdapter.#mirrorStaticGeometry(
+                          placement
+                      )
+        }
+    }
+
+    /**
+     * Mirrors source-coordinate static geometry for the opposite board side.
+     * @param {{ sourceCoordinateFrame?: boolean, geometry?: object }} placement Static body placement.
+     * @returns {object | undefined}
+     */
+    static #mirrorStaticGeometry(placement) {
+        const geometry = placement?.geometry
+        if (
+            !placement?.sourceCoordinateFrame ||
+            !Array.isArray(geometry?.verticesMil)
+        ) {
+            return geometry
+        }
+
+        return {
+            ...geometry,
+            verticesMil: geometry.verticesMil.map((vertex) => ({
+                x: AltiumScene3dShapeStackOwnerAdapter.#round(vertex?.x || 0),
+                y: AltiumScene3dShapeStackOwnerAdapter.#round(
+                    -Number(vertex?.y || 0)
+                )
+            }))
+        }
     }
 
     /**
@@ -630,15 +714,9 @@ export class AltiumScene3dShapeStackOwnerAdapter {
         return (
             TIMING_DESIGNATOR_PATTERN.test(designator) ||
             TIMING_PACKAGE_PATTERN.test(
-                [
-                    component?.pattern,
-                    component?.source,
-                    component?.description,
-                    component?.provenance?.footprintDescription,
-                    ...Object.values(component?.parameters || {})
-                ]
-                    .map((value) => String(value || ''))
-                    .join(' ')
+                AltiumScene3dShapeStackOwnerAdapter.#timingIdentityText(
+                    component
+                )
             )
         )
     }
@@ -689,6 +767,19 @@ export class AltiumScene3dShapeStackOwnerAdapter {
     static #mountSide(component) {
         const layer = String(component?.layer || '').toUpperCase()
         return layer.includes('BOTTOM') || layer === 'BOT' ? 'bottom' : 'top'
+    }
+
+    /**
+     * Normalizes a static placement side token.
+     * @param {string | undefined} mountSide Candidate mount side.
+     * @returns {'top' | 'bottom'}
+     */
+    static #normalizeMountSide(mountSide) {
+        return String(mountSide || 'top')
+            .trim()
+            .toLowerCase() === 'bottom'
+            ? 'bottom'
+            : 'top'
     }
 
     /**
@@ -768,6 +859,44 @@ export class AltiumScene3dShapeStackOwnerAdapter {
             )
             .filter(Boolean)
             .join(' ')
+    }
+
+    /**
+     * Builds timing-relevant identity text without material metadata.
+     * @param {object} component Source component.
+     * @returns {string}
+     */
+    static #timingIdentityText(component) {
+        return [
+            component?.pattern,
+            component?.source,
+            component?.description,
+            component?.provenance?.footprintDescription,
+            ...AltiumScene3dShapeStackOwnerAdapter.#timingParameterValues(
+                component?.parameters
+            )
+        ]
+            .map((value) => String(value || ''))
+            .join(' ')
+    }
+
+    /**
+     * Returns parameter values whose names describe component identity.
+     * @param {object | undefined} parameters Source component parameters.
+     * @returns {unknown[]}
+     */
+    static #timingParameterValues(parameters) {
+        if (!parameters || typeof parameters !== 'object') {
+            return []
+        }
+
+        return Object.entries(parameters)
+            .filter(([key]) =>
+                AltiumScene3dShapeStackOwnerAdapter.#TIMING_PARAMETER_NAME_PATTERN.test(
+                    String(key || '')
+                )
+            )
+            .map(([, value]) => value)
     }
 
     /**
