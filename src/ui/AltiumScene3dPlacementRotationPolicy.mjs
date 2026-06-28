@@ -744,10 +744,6 @@ export class AltiumScene3dPlacementRotationPolicy {
                 placement,
                 component,
                 componentBody
-            ) &&
-            !AltiumScene3dPlacementRotationPolicy.#hasEmbeddedModelBoundsSourceHalfTurn(
-                placement,
-                component
             )
         ) {
             return false

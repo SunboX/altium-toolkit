@@ -71,6 +71,36 @@ function buildSourceYawConflictModelRegistry() {
 }
 
 /**
+ * Resolves one fake embedded SOT23-3 model whose authored body yaw is already
+ * aligned even though the recovered model source transform is normalized.
+ * @returns {{ resolveComponentModel: () => null, resolveComponentBodyModel: (componentBody: object) => object }}
+ */
+function buildAlignedSot23ModelBoundsRegistry() {
+    return {
+        resolveComponentModel() {
+            return null
+        },
+        resolveComponentBodyModel(componentBody) {
+            return {
+                origin: 'embedded',
+                name: componentBody.name,
+                format: 'step',
+                sourceStream: 'Models/2',
+                boundsMil: {
+                    width: 114,
+                    depth: 110,
+                    height: 60
+                },
+                transform: {
+                    rotationDeg: { x: 0, y: 0, z: 360 },
+                    dzMil: 0
+                }
+            }
+        }
+    }
+}
+
+/**
  * Verifies compact top-side SOT23-3 pad-fallback bodies align their footprint
  * rows and apply the source-frame pin-side half-turn.
  */
@@ -356,6 +386,91 @@ test('PcbScene3dBuilder corrects top-side model-bounds SOT23-5 source yaw', () =
     assert.equal(placement.designator, 'U7')
     assert.equal(placement.projection.source, 'model-bounds')
     assert.equal(placement.rotationDeg, 270)
+})
+
+/**
+ * Verifies top-side SOT23-3 model-bounds bodies keep authored yaw when the
+ * component body yaw already matches the owning footprint rotation.
+ */
+test('PcbScene3dBuilder keeps aligned top-side model-bounds SOT23-3 yaw', () => {
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'demo.PcbDoc',
+            pcb: {
+                boardOutline: buildBoardOutline(),
+                pads: [
+                    {
+                        componentIndex: 4,
+                        x: 538,
+                        y: 456,
+                        sizeTopX: 37,
+                        sizeTopY: 39,
+                        rotation: 180,
+                        hasTopPasteMaskOpening: true
+                    },
+                    {
+                        componentIndex: 4,
+                        x: 462,
+                        y: 456,
+                        sizeTopX: 37,
+                        sizeTopY: 39,
+                        rotation: 180,
+                        hasTopPasteMaskOpening: true
+                    },
+                    {
+                        componentIndex: 4,
+                        x: 500,
+                        y: 544,
+                        sizeTopX: 37,
+                        sizeTopY: 39,
+                        rotation: 180,
+                        hasTopPasteMaskOpening: true
+                    }
+                ],
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: [
+                    {
+                        sourceStream: 'ShapeBasedComponentBodies6/Data',
+                        layer: 'MECHANICAL13',
+                        identifier: 'GENERIC_SOT23-3_ALIGNED_SOURCE',
+                        modelId: '{FAKE-SOT-3-ALIGNED}',
+                        embedded: true,
+                        name: 'generic-sot23-3-aligned.step',
+                        positionMil: { x: 500, y: 500 },
+                        rotationDeg: 0,
+                        modelRotationDeg: { x: 0, y: 0, z: 180 },
+                        standoffHeightMil: 0,
+                        overallHeightMil: 51
+                    }
+                ],
+                components: [
+                    {
+                        componentIndex: 4,
+                        designator: 'Q4',
+                        x: 500,
+                        y: 500,
+                        rotation: 180,
+                        layer: 'TOP',
+                        pattern: 'GENERIC_SOT23-3',
+                        source: 'GENERIC_SWITCH',
+                        description: 'Fake top-side SOT23 transistor package',
+                        height: 43
+                    }
+                ]
+            }
+        },
+        { modelRegistry: buildAlignedSot23ModelBoundsRegistry() }
+    )
+
+    const placement = scene.externalPlacements[0]
+
+    assert.equal(placement.designator, 'Q4')
+    assert.equal(placement.projection.source, 'model-bounds')
+    assert.equal(placement.rotationDeg, 180)
 })
 
 /**
