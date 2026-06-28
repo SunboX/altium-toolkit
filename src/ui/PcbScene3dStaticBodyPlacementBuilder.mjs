@@ -41,7 +41,7 @@ export class PcbScene3dStaticBodyPlacementBuilder {
      * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[]} pads Pads.
      * @param {{ centerX: number, centerY: number, minX?: number, minY?: number, widthMil?: number, heightMil?: number }} board Board.
      * @param {number} thicknessMil Board thickness.
-     * @returns {{ designator: string, selectionKey: string, sourceIdentityKey: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, geometry: object }[]}
+     * @returns {{ designator: string, selectionKey: string, sourceIdentityKey: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, ownerLocked?: boolean, geometry: object }[]}
      */
     static build(
         componentBodies,
@@ -71,19 +71,11 @@ export class PcbScene3dStaticBodyPlacementBuilder {
         PcbScene3dStaticBodyOwnerPromotion.promote(
             placementRows,
             components,
-            board
+            board,
+            pads
         )
 
         return PcbScene3dStaticBodySelectionKeyBuilder.assign(placementRows)
-    }
-
-    /**
-     * Checks whether one static geometry is already complete.
-     * @param {object | undefined} geometry Static geometry.
-     * @returns {boolean}
-     */
-    static #isCompleteGeometry(geometry) {
-        return Boolean(geometry && geometry.status === 'complete')
     }
 
     /**
@@ -93,7 +85,7 @@ export class PcbScene3dStaticBodyPlacementBuilder {
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string }[]} components Components.
      * @param {{ centerX: number, centerY: number, minX?: number, minY?: number, widthMil?: number, heightMil?: number }} board Board.
      * @param {number} thicknessMil Board thickness.
-     * @returns {{ placement: { designator: string, sourceIdentityKey: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, geometry: object }, matchedComponent: object | null } | null}
+     * @returns {{ placement: { designator: string, sourceIdentityKey: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, ownerLocked?: boolean, geometry: object }, matchedComponent: object | null } | null}
      */
     static #buildPlacementRow(
         componentBody,
@@ -125,7 +117,7 @@ export class PcbScene3dStaticBodyPlacementBuilder {
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string }[]} components Components.
      * @param {{ centerX: number, centerY: number, minX?: number, minY?: number, widthMil?: number, heightMil?: number }} board Board.
      * @param {number} thicknessMil Board thickness.
-     * @returns {{ designator: string, sourceIdentityKey: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, geometry: object } | null}
+     * @returns {{ designator: string, sourceIdentityKey: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, ownerLocked?: boolean, geometry: object } | null}
      */
     static #buildPlacement(
         componentBody,
@@ -142,9 +134,7 @@ export class PcbScene3dStaticBodyPlacementBuilder {
             )
         const geometry = staticGeometry.geometry
 
-        if (
-            !PcbScene3dStaticBodyPlacementBuilder.#isCompleteGeometry(geometry)
-        ) {
+        if (geometry?.status !== 'complete') {
             return null
         }
         const sourcePosition =
@@ -197,6 +187,11 @@ export class PcbScene3dStaticBodyPlacementBuilder {
                 staticGeometry,
                 mountSide
             )
+        const ownerLocked =
+            PcbScene3dStaticBodyPlacementBuilder.#hasLockedOwner(
+                componentBody,
+                matchedComponent
+            )
 
         return {
             designator:
@@ -211,7 +206,9 @@ export class PcbScene3dStaticBodyPlacementBuilder {
             sourceCoordinateFrame: Boolean(
                 staticGeometry.sourceCoordinateFrame
             ),
+            ownerLocked,
             mountSideLocked:
+                ownerLocked ||
                 PcbScene3dStaticBodyPlacementBuilder.#hasExplicitMountSide(
                     componentBody,
                     matchedComponent
@@ -278,6 +275,25 @@ export class PcbScene3dStaticBodyPlacementBuilder {
         }
 
         return /^MECHANICAL\s*\d+$/i.test(layer)
+    }
+
+    /**
+     * Checks whether a matched shield owner is deliberate enough to keep away
+     * from later nearest-neighbor fragment promotion.
+     * @param {{ identifier?: string, name?: string }} componentBody Component body.
+     * @param {{ pattern?: string, source?: string, description?: string, parameters?: object, provenance?: object } | null} matchedComponent Matched owner component.
+     * @returns {boolean}
+     */
+    static #hasLockedOwner(componentBody, matchedComponent) {
+        return Boolean(
+            matchedComponent &&
+            PcbScene3dStaticBodyPlacementBuilder.#hasGenericMechanicalIdentity(
+                componentBody
+            ) &&
+            PcbScene3dStaticBodyPlacementBuilder.#isShieldOwner(
+                matchedComponent
+            )
+        )
     }
 
     /**

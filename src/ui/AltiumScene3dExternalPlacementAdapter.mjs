@@ -1,6 +1,8 @@
 import { AltiumScene3dIdentityTokens } from './AltiumScene3dIdentityTokens.mjs'
+import { AltiumScene3dAuthoredConnectorYawPolicy } from './AltiumScene3dAuthoredConnectorYawPolicy.mjs'
 import { AltiumScene3dPlacementRotationPolicy } from './AltiumScene3dPlacementRotationPolicy.mjs'
 import { AltiumScene3dRepeatedModelOwnerRepair } from './AltiumScene3dRepeatedModelOwnerRepair.mjs'
+import { AltiumScene3dBottomSourceHalfTurnPolicy } from './AltiumScene3dBottomSourceHalfTurnPolicy.mjs'
 
 /**
  * Repairs Altium explicit 3D body placements after toolkit scene conversion.
@@ -10,6 +12,8 @@ export class AltiumScene3dExternalPlacementAdapter {
     static #NEAR_ANCHOR_TOLERANCE_MIL = 20
     static #FAR_OWNER_DISTANCE_MIL = 100
     static #MODEL_ANCHOR_NEAR_OWNER_TOLERANCE_MIL = 35
+    static #MODEL_ANCHOR_PAD_PROXIMITY_TOLERANCE_MIL = 10
+    static #MODEL_ANCHOR_METADATA_PROXIMITY_MIL = 350
     static #DEFAULT_BOARD_THICKNESS_MIL = 63
     static #PASSIVE_BODY_PATTERN =
         /(?:^|[^a-z0-9])(?:cap|capacitor|res|resistor|ind|inductor|ferrite|bead|crystal|xtal|lqw|lqg)(?:$|[^a-z0-9])/i
@@ -111,6 +115,15 @@ export class AltiumScene3dExternalPlacementAdapter {
                   currentComponent
               )
             : Number.POSITIVE_INFINITY
+        const currentHasOwnedDrilledPadAnchor = currentComponent
+            ? AltiumScene3dExternalPlacementAdapter.#distanceToNearestOwnedPad(
+                  placement,
+                  currentComponent,
+                  pads
+              ) <=
+              AltiumScene3dExternalPlacementAdapter
+                  .#MODEL_ANCHOR_PAD_PROXIMITY_TOLERANCE_MIL
+            : false
         const currentHasMetadataAffinity = currentComponent
             ? AltiumScene3dExternalPlacementAdapter.#hasMetadataAffinity(
                   placement,
@@ -140,13 +153,15 @@ export class AltiumScene3dExternalPlacementAdapter {
                 components,
                 currentHasMetadataAffinity,
                 currentHasPartCodeAffinity,
-                componentBody
+                componentBody,
+                pads
             )
         const isExactAnchoredOwner =
             (currentComponent &&
                 currentDistance <=
                     AltiumScene3dExternalPlacementAdapter
                         .#EXACT_ANCHOR_TOLERANCE_MIL) ||
+            currentHasOwnedDrilledPadAnchor ||
             (exactComponent &&
                 AltiumScene3dExternalPlacementAdapter.#distanceToBody(
                     placement,
@@ -156,6 +171,7 @@ export class AltiumScene3dExternalPlacementAdapter {
                         .#EXACT_ANCHOR_TOLERANCE_MIL)
         const isFarCurrentOwner =
             currentComponent &&
+            !currentHasOwnedDrilledPadAnchor &&
             currentDistance >
                 AltiumScene3dExternalPlacementAdapter.#FAR_OWNER_DISTANCE_MIL
         const metadataComponent =
@@ -228,14 +244,24 @@ export class AltiumScene3dExternalPlacementAdapter {
                           : placement.modelTransform
                   }
                 : placement
+        const shouldPreserveAuthoredConnectorYaw =
+            AltiumScene3dAuthoredConnectorYawPolicy.shouldPreserve({
+                placement: nextPlacement,
+                component: resolvedComponent,
+                pads,
+                ownerOffsetToleranceMil:
+                    AltiumScene3dExternalPlacementAdapter
+                        .#MODEL_ANCHOR_NEAR_OWNER_TOLERANCE_MIL
+            })
         const shouldUseComponentYaw =
-            Boolean(metadataComponent && !exactComponent) ||
-            Boolean(
-                !exactComponent &&
-                isFarCurrentOwner &&
-                currentHasMetadataAffinity &&
-                !currentIsMechanicalOwner
-            )
+            !shouldPreserveAuthoredConnectorYaw &&
+            (Boolean(metadataComponent && !exactComponent) ||
+                Boolean(
+                    !exactComponent &&
+                    isFarCurrentOwner &&
+                    currentHasMetadataAffinity &&
+                    !currentIsMechanicalOwner
+                ))
         const rotationContext = {
             placement: nextPlacement,
             component: resolvedComponent,
@@ -257,7 +283,11 @@ export class AltiumScene3dExternalPlacementAdapter {
                 AltiumScene3dPlacementRotationPolicy.shouldCorrectYaw(
                     rotationContext
                 ),
-                footprintYaw
+                footprintYaw,
+                AltiumScene3dPlacementRotationPolicy.shouldMirrorSourceZ(
+                    rotationContext
+                ),
+                pads
             )
 
         return AltiumScene3dExternalPlacementAdapter.#withContactPadHints(
@@ -373,6 +403,41 @@ export class AltiumScene3dExternalPlacementAdapter {
     }
 
     /**
+     * Checks whether a component owns drilled or slotted pads.
+     * @param {object | null | undefined} component Owning component.
+     * @param {object[]} pads Source PCB pads.
+     * @returns {boolean}
+     */
+    static #componentHasThroughHolePads(component, pads) {
+        return AltiumScene3dExternalPlacementAdapter.#componentPads(
+            component,
+            pads
+        ).some((pad) =>
+            AltiumScene3dExternalPlacementAdapter.#hasDrilledPadOpening(pad)
+        )
+    }
+
+    /**
+     * Checks whether one pad contains a drilled or slotted board opening.
+     * @param {object} pad Source PCB pad.
+     * @returns {boolean}
+     */
+    static #hasDrilledPadOpening(pad) {
+        const holeGeometry = pad?.holeGeometry || {}
+
+        return [
+            pad?.holeDiameter,
+            pad?.drillDiameter,
+            pad?.holeSize,
+            pad?.holeSlotLength,
+            pad?.slotLength,
+            holeGeometry?.diameter,
+            holeGeometry?.length,
+            holeGeometry?.slotLength
+        ].some((value) => Number(value || 0) > 0)
+    }
+
+    /**
      * Checks whether a pad exposes top paste and should be soldered on the
      * top face.
      * @param {object} pad Source PCB pad.
@@ -408,6 +473,7 @@ export class AltiumScene3dExternalPlacementAdapter {
      * @param {boolean} currentHasMetadataAffinity Whether source metadata confirms the current owner.
      * @param {boolean} currentHasPartCodeAffinity Whether a strong part code confirms the current owner.
      * @param {object | null} componentBody Source component body.
+     * @param {object[]} pads Source PCB pads.
      * @returns {object | null}
      */
     static #resolveAnchorComponent(
@@ -416,7 +482,8 @@ export class AltiumScene3dExternalPlacementAdapter {
         components,
         currentHasMetadataAffinity,
         currentHasPartCodeAffinity,
-        componentBody
+        componentBody,
+        pads
     ) {
         const currentDistance = currentComponent
             ? AltiumScene3dExternalPlacementAdapter.#distanceToBody(
@@ -479,12 +546,14 @@ export class AltiumScene3dExternalPlacementAdapter {
             return AltiumScene3dExternalPlacementAdapter.#nearestModelAnchorOwner(
                 placement,
                 componentBody,
-                components
+                components,
+                pads
             )
         }
 
-        return AltiumScene3dExternalPlacementAdapter.#nearestAnchorComponent(
+        return AltiumScene3dExternalPlacementAdapter.#nearestCompatibleAnchorComponent(
             placement,
+            componentBody,
             components,
             AltiumScene3dExternalPlacementAdapter.#NEAR_ANCHOR_TOLERANCE_MIL
         )
@@ -495,22 +564,37 @@ export class AltiumScene3dExternalPlacementAdapter {
      * @param {object} placement External model placement.
      * @param {object | null} componentBody Source component body.
      * @param {object[]} components PCB components.
+     * @param {object[]} pads Source PCB pads.
      * @returns {object | null}
      */
-    static #nearestModelAnchorOwner(placement, componentBody, components) {
+    static #nearestModelAnchorOwner(
+        placement,
+        componentBody,
+        components,
+        pads
+    ) {
         const candidates = components
             .map((component) => ({
                 component,
                 distance: AltiumScene3dExternalPlacementAdapter.#distanceToBody(
                     placement,
                     component
-                )
+                ),
+                padDistance:
+                    AltiumScene3dExternalPlacementAdapter.#distanceToNearestOwnedPad(
+                        placement,
+                        component,
+                        pads
+                    )
             }))
             .filter(
                 (candidate) =>
-                    candidate.distance <=
+                    (candidate.distance <=
                         AltiumScene3dExternalPlacementAdapter
-                            .#MODEL_ANCHOR_NEAR_OWNER_TOLERANCE_MIL &&
+                            .#MODEL_ANCHOR_NEAR_OWNER_TOLERANCE_MIL ||
+                        candidate.padDistance <=
+                            AltiumScene3dExternalPlacementAdapter
+                                .#MODEL_ANCHOR_PAD_PROXIMITY_TOLERANCE_MIL) &&
                     AltiumScene3dExternalPlacementAdapter.#hasModelAnchorOwnerAffinity(
                         placement,
                         componentBody,
@@ -520,6 +604,71 @@ export class AltiumScene3dExternalPlacementAdapter {
             .sort((left, right) => left.distance - right.distance)
 
         return candidates[0]?.component || null
+    }
+
+    /**
+     * Measures how far one model anchor sits outside pads owned by a component.
+     * @param {object} placement External model placement.
+     * @param {object} component Candidate owner component.
+     * @param {object[]} pads Source PCB pads.
+     * @returns {number}
+     */
+    static #distanceToNearestOwnedPad(placement, component, pads) {
+        const ownedPads = AltiumScene3dExternalPlacementAdapter.#componentPads(
+            component,
+            pads
+        ).filter((pad) =>
+            AltiumScene3dExternalPlacementAdapter.#hasDrilledPadOpening(pad)
+        )
+
+        if (!ownedPads.length) {
+            return Number.POSITIVE_INFINITY
+        }
+
+        return Math.min(
+            ...ownedPads.map((pad) => {
+                const distance =
+                    AltiumScene3dExternalPlacementAdapter.#distanceBetweenPoints(
+                        placement?.bodyPositionMil,
+                        { x: pad?.x, y: pad?.y }
+                    )
+                const radius =
+                    AltiumScene3dExternalPlacementAdapter.#padAnchorRadiusMil(
+                        pad
+                    )
+
+                return radius > 0
+                    ? Math.max(0, distance - radius)
+                    : Number.POSITIVE_INFINITY
+            })
+        )
+    }
+
+    /**
+     * Resolves the effective XY radius around a drilled pad center.
+     * @param {object} pad Source PCB pad.
+     * @returns {number}
+     */
+    static #padAnchorRadiusMil(pad) {
+        const holeGeometry = pad?.holeGeometry || {}
+        const diameter = Math.max(
+            Number(pad?.sizeTopX || 0),
+            Number(pad?.sizeTopY || 0),
+            Number(pad?.sizeMidX || 0),
+            Number(pad?.sizeMidY || 0),
+            Number(pad?.sizeBottomX || 0),
+            Number(pad?.sizeBottomY || 0),
+            Number(pad?.holeDiameter || 0),
+            Number(pad?.drillDiameter || 0),
+            Number(pad?.holeSize || 0),
+            Number(pad?.holeSlotLength || 0),
+            Number(pad?.slotLength || 0),
+            Number(holeGeometry?.diameter || 0),
+            Number(holeGeometry?.length || 0),
+            Number(holeGeometry?.slotLength || 0)
+        )
+
+        return Number.isFinite(diameter) && diameter > 0 ? diameter / 2 : 0
     }
 
     /**
@@ -537,10 +686,22 @@ export class AltiumScene3dExternalPlacementAdapter {
         componentBody,
         pads
     ) {
+        const projectionSource = String(placement?.projection?.source || '')
         if (
             !component ||
-            String(placement?.projection?.source || '') !==
-                'model-anchor-fallback'
+            (projectionSource !== 'model-anchor-fallback' &&
+                projectionSource !== 'model-bounds')
+        ) {
+            return false
+        }
+
+        if (
+            AltiumScene3dExternalPlacementAdapter.#distanceToNearestOwnedPad(
+                placement,
+                component,
+                pads
+            ) <=
+            AltiumScene3dExternalPlacementAdapter.#EXACT_ANCHOR_TOLERANCE_MIL
         ) {
             return false
         }
@@ -562,11 +723,16 @@ export class AltiumScene3dExternalPlacementAdapter {
         }
 
         return (
-            AltiumScene3dExternalPlacementAdapter.#hasPartCodeAffinity(
+            (AltiumScene3dExternalPlacementAdapter.#hasPartCodeAffinity(
                 placement,
                 componentBody,
                 component
-            ) &&
+            ) ||
+                AltiumScene3dExternalPlacementAdapter.#hasModelAnchorOwnerAffinity(
+                    placement,
+                    componentBody,
+                    component
+                )) &&
             AltiumScene3dExternalPlacementAdapter.#hasModelAnchorOwnerComponentAffinity(
                 component
             ) &&
@@ -722,13 +888,19 @@ export class AltiumScene3dExternalPlacementAdapter {
                 placement,
                 { x: offsetX, y: offsetY }
             )
+        const offsetZ = Number(
+            modelTransform?.offsetMil?.z ?? modelTransform?.dzMil ?? 0
+        )
+        const renderableZ = Number.isFinite(offsetZ) ? offsetZ : 0
 
         return {
             ...(modelTransform || {}),
+            dzMil: renderableZ,
             offsetMil: {
                 ...(modelTransform?.offsetMil || {}),
                 x: renderableOffset.x,
-                y: renderableOffset.y
+                y: renderableOffset.y,
+                z: renderableZ
             },
             ownerAnchorOffsetMil: {
                 x: offsetX,
@@ -790,6 +962,8 @@ export class AltiumScene3dExternalPlacementAdapter {
      * @param {boolean} useComponentYaw Whether component yaw should override body yaw.
      * @param {boolean} correctPinOneYaw Whether a square IC pin-one correction applies.
      * @param {number | null} footprintYaw Footprint-derived yaw when available.
+     * @param {boolean} mirrorSourceZ Whether the model source length should be mirrored.
+     * @param {object[]} pads Source PCB pads.
      * @returns {object}
      */
     static #repairRotation(
@@ -798,9 +972,11 @@ export class AltiumScene3dExternalPlacementAdapter {
         componentBody,
         useComponentYaw,
         correctPinOneYaw,
-        footprintYaw
+        footprintYaw,
+        mirrorSourceZ,
+        pads
     ) {
-        const modelTransform =
+        const baseModelTransform =
             AltiumScene3dExternalPlacementAdapter.#repairModelTransform(
                 placement?.modelTransform,
                 componentBody
@@ -835,6 +1011,28 @@ export class AltiumScene3dExternalPlacementAdapter {
                       baseRotation + 180
                   )
                 : baseRotation
+        const yawAdjustedModelTransform =
+            AltiumScene3dExternalPlacementAdapter.#withFootprintRelativeModelYaw(
+                baseModelTransform,
+                placement,
+                componentBody,
+                hasFootprintYaw && !isGenericPassiveBody,
+                rotationDeg
+            )
+        const mirroredModelTransform =
+            mirrorSourceZ && !isGenericPassiveBody
+                ? AltiumScene3dExternalPlacementAdapter.#withMirroredSourceZScale(
+                      yawAdjustedModelTransform
+                  )
+                : yawAdjustedModelTransform
+        const modelTransform =
+            AltiumScene3dExternalPlacementAdapter.#normalizeBottomSurfaceMountHalfTurn(
+                mirroredModelTransform,
+                placement,
+                component,
+                componentBody,
+                pads
+            )
 
         const repairedPlacement = {
             ...placement,
@@ -855,6 +1053,143 @@ export class AltiumScene3dExternalPlacementAdapter {
     }
 
     /**
+     * Preserves authored embedded-model yaw relative to a footprint yaw
+     * override by moving the signed yaw delta into the model-local transform.
+     * @param {object | null | undefined} modelTransform Placement transform.
+     * @param {object | null | undefined} placement External placement.
+     * @param {object | null | undefined} componentBody Source component body.
+     * @param {boolean} enabled Whether footprint yaw overrode body yaw.
+     * @param {number} placementYawDeg Final board-facing placement yaw.
+     * @returns {object | null | undefined}
+     */
+    static #withFootprintRelativeModelYaw(
+        modelTransform,
+        placement,
+        componentBody,
+        enabled,
+        placementYawDeg
+    ) {
+        const sourceYaw = Number(
+            componentBody?.modelRotationDeg?.z ?? placement?.rotationDeg
+        )
+        if (!enabled || !Number.isFinite(sourceYaw)) {
+            return modelTransform
+        }
+
+        const rotationDeg = modelTransform?.rotationDeg || {}
+        const localYaw =
+            AltiumScene3dExternalPlacementAdapter.#resolveFootprintRelativeModelYaw(
+                placement,
+                sourceYaw,
+                placementYawDeg
+            )
+
+        return {
+            ...(modelTransform || {}),
+            rotationDeg: {
+                ...rotationDeg,
+                z: localYaw
+            }
+        }
+    }
+
+    /**
+     * Resolves model-local yaw after a footprint yaw override. Model-bounds
+     * placements retain full source geometry, so their source yaw delta uses
+     * the opposite sign from pad-fallback bodies that were synthesized from
+     * footprint pads.
+     * @param {object | null | undefined} placement External placement.
+     * @param {number} sourceYaw Source STEP yaw.
+     * @param {number} placementYawDeg Board-facing placement yaw.
+     * @returns {number}
+     */
+    static #resolveFootprintRelativeModelYaw(
+        placement,
+        sourceYaw,
+        placementYawDeg
+    ) {
+        const projectionSource = String(
+            placement?.projection?.source || ''
+        ).toLowerCase()
+        const delta =
+            projectionSource === 'model-bounds'
+                ? sourceYaw - Number(placementYawDeg || 0)
+                : Number(placementYawDeg || 0) - sourceYaw
+
+        return AltiumScene3dExternalPlacementAdapter.#normalizeSignedAngle(
+            delta
+        )
+    }
+
+    /**
+     * Mirrors a source model along its local Z axis while preserving any
+     * existing caller-provided scale on the other axes.
+     * @param {object | null | undefined} modelTransform Placement transform.
+     * @returns {object}
+     */
+    static #withMirroredSourceZScale(modelTransform) {
+        const scale = modelTransform?.scale || {}
+        const zScale = Number(scale.z ?? 1)
+        const mirroredZScale =
+            Number.isFinite(zScale) && zScale !== 0 ? -Math.abs(zScale) : -1
+
+        return {
+            ...(modelTransform || {}),
+            scale: {
+                ...scale,
+                z: mirroredZScale
+            }
+        }
+    }
+
+    /**
+     * Clears bottom-side surface-mount half-turns that the mount rig already
+     * supplies through its underside mirror.
+     * @param {object | null | undefined} modelTransform Placement transform.
+     * @param {object} placement External placement.
+     * @param {object | null | undefined} component Owning component.
+     * @param {object | null | undefined} componentBody Source component body.
+     * @param {object[]} pads Source PCB pads.
+     * @returns {object | null | undefined}
+     */
+    static #normalizeBottomSurfaceMountHalfTurn(
+        modelTransform,
+        placement,
+        component,
+        componentBody,
+        pads
+    ) {
+        const rotation = modelTransform?.rotationDeg || {}
+        if (
+            String(placement?.mountSide || '').toLowerCase() !== 'bottom' ||
+            !component ||
+            AltiumScene3dExternalPlacementAdapter.#normalizeAngle(
+                rotation.x
+            ) !== 180 ||
+            AltiumScene3dBottomSourceHalfTurnPolicy.shouldPreserve({
+                component,
+                componentBody,
+                placement,
+                modelTransform
+            }) ||
+            AltiumScene3dExternalPlacementAdapter.#componentHasThroughHolePads(
+                component,
+                pads
+            )
+        ) {
+            return modelTransform
+        }
+
+        return {
+            ...(modelTransform || {}),
+            rotationDeg: {
+                ...rotation,
+                x: 0
+            }
+        }
+    }
+
+    /**
      * Finds the nearest component whose anchor is effectively the body anchor.
      * @param {object} placement External model placement.
      * @param {object[]} components PCB components.
@@ -872,6 +1207,107 @@ export class AltiumScene3dExternalPlacementAdapter {
             .filter((candidate) => candidate.distance <= toleranceMil)
             .sort((left, right) => left.distance - right.distance)
         return candidates[0]?.component || null
+    }
+
+    /**
+     * Finds the nearest component anchor that is compatible with a weak body
+     * fallback assignment.
+     * @param {object} placement External model placement.
+     * @param {object | null} componentBody Source component body.
+     * @param {object[]} components PCB components.
+     * @param {number} toleranceMil Maximum XY body-to-component distance.
+     * @returns {object | null}
+     */
+    static #nearestCompatibleAnchorComponent(
+        placement,
+        componentBody,
+        components,
+        toleranceMil
+    ) {
+        const candidates = components
+            .map((component) => ({
+                component,
+                distance: AltiumScene3dExternalPlacementAdapter.#distanceToBody(
+                    placement,
+                    component
+                )
+            }))
+            .filter(
+                (candidate) =>
+                    candidate.distance <= toleranceMil &&
+                    AltiumScene3dExternalPlacementAdapter.#canUseNearAnchorComponent(
+                        placement,
+                        componentBody,
+                        candidate.component
+                    )
+            )
+            .sort((left, right) => left.distance - right.distance)
+
+        return candidates[0]?.component || null
+    }
+
+    /**
+     * Checks whether a near-anchor owner is strong enough for a weak fallback.
+     * @param {object} placement External model placement.
+     * @param {object | null} componentBody Source component body.
+     * @param {object} component PCB component.
+     * @returns {boolean}
+     */
+    static #canUseNearAnchorComponent(placement, componentBody, component) {
+        if (
+            !AltiumScene3dExternalPlacementAdapter.#hasPlacementComponentSideConflict(
+                placement,
+                component
+            )
+        ) {
+            return true
+        }
+
+        return (
+            AltiumScene3dExternalPlacementAdapter.#hasMetadataAffinity(
+                placement,
+                componentBody,
+                component
+            ) ||
+            AltiumScene3dExternalPlacementAdapter.#hasPartCodeAffinity(
+                placement,
+                componentBody,
+                component
+            )
+        )
+    }
+
+    /**
+     * Checks whether a placement and candidate owner are on opposite board
+     * faces.
+     * @param {object} placement External model placement.
+     * @param {object} component PCB component.
+     * @returns {boolean}
+     */
+    static #hasPlacementComponentSideConflict(placement, component) {
+        const placementSide =
+            AltiumScene3dExternalPlacementAdapter.#normalizeMountSide(
+                placement?.mountSide
+            )
+        const componentSide =
+            AltiumScene3dExternalPlacementAdapter.#resolveComponentMountSide(
+                component
+            )
+
+        return Boolean(
+            placementSide && componentSide && placementSide !== componentSide
+        )
+    }
+
+    /**
+     * Normalizes external placement mount-side labels.
+     * @param {unknown} value Source mount-side value.
+     * @returns {'top' | 'bottom' | null}
+     */
+    static #normalizeMountSide(value) {
+        const side = String(value || '').toLowerCase()
+
+        return side === 'top' || side === 'bottom' ? side : null
     }
 
     /**
@@ -941,7 +1377,57 @@ export class AltiumScene3dExternalPlacementAdapter {
                     right.score - left.score || left.distance - right.distance
             )
 
+        const nearbyModelAnchorCandidate =
+            AltiumScene3dExternalPlacementAdapter.#nearestModelAnchorMetadataCandidate(
+                placement,
+                componentBody,
+                candidates
+            )
+        if (nearbyModelAnchorCandidate) {
+            return nearbyModelAnchorCandidate
+        }
+
         return candidates[0]?.component || null
+    }
+
+    /**
+     * Resolves nearby model-anchor owners before stronger far metadata claims
+     * steal repeated sub-bodies from their physical connector row.
+     * @param {object} placement External model placement.
+     * @param {object | null} componentBody Source component body.
+     * @param {{ component: object, score: number, distance: number }[]} candidates Metadata candidates.
+     * @returns {object | null}
+     */
+    static #nearestModelAnchorMetadataCandidate(
+        placement,
+        componentBody,
+        candidates
+    ) {
+        if (
+            String(placement?.projection?.source || '') !==
+            'model-anchor-fallback'
+        ) {
+            return null
+        }
+
+        const nearbyCandidates = candidates
+            .filter(
+                (candidate) =>
+                    candidate.distance <=
+                        AltiumScene3dExternalPlacementAdapter
+                            .#MODEL_ANCHOR_METADATA_PROXIMITY_MIL &&
+                    AltiumScene3dExternalPlacementAdapter.#hasPartCodeAffinity(
+                        placement,
+                        componentBody,
+                        candidate.component
+                    )
+            )
+            .sort(
+                (left, right) =>
+                    left.distance - right.distance || right.score - left.score
+            )
+
+        return nearbyCandidates[0]?.component || null
     }
 
     /**
@@ -1269,6 +1755,18 @@ export class AltiumScene3dExternalPlacementAdapter {
         const normalized = Number(angle || 0) % 360
 
         return normalized < 0 ? normalized + 360 : normalized
+    }
+
+    /**
+     * Normalizes one angle into the compact signed range [-180, 180).
+     * @param {number} angle Candidate angle.
+     * @returns {number}
+     */
+    static #normalizeSignedAngle(angle) {
+        const normalized =
+            AltiumScene3dExternalPlacementAdapter.#normalizeAngle(angle)
+
+        return normalized >= 180 ? normalized - 360 : normalized
     }
 
     /**

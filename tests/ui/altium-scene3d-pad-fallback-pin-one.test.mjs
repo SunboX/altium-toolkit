@@ -479,6 +479,97 @@ function createTopSot23ThreeLeadPackage() {
 }
 
 /**
+ * Builds a fake bottom-side IPC-named SOT23-3 package whose flat STEP body
+ * creates an equal-distance footprint yaw tie.
+ * @returns {{ scene: object, documentModel: object }}
+ */
+function createBottomFlatSot23ThreeLeadPackage() {
+    return {
+        scene: {
+            sourceFormat: 'altium',
+            board: { thicknessMil: 80 },
+            externalPlacements: [
+                {
+                    designator: 'Q3',
+                    mountSide: 'bottom',
+                    rotationDeg: 90,
+                    positionMil: { x: 320, y: 260, z: -40 },
+                    bodyPositionMil: { x: 320, y: 260 },
+                    projection: { source: 'pad-fallback' },
+                    modelTransform: {
+                        rotationDeg: { x: 0, y: 0, z: 0 },
+                        dzMil: 0
+                    },
+                    externalModel: {
+                        origin: 'embedded',
+                        name: 'GENERIC_IPC_SOT.step',
+                        format: 'step'
+                    }
+                }
+            ]
+        },
+        documentModel: {
+            sourceFormat: 'altium',
+            kind: 'pcb',
+            pcb: {
+                components: [
+                    {
+                        designator: 'Q3',
+                        componentIndex: 11,
+                        x: 320,
+                        y: 260,
+                        layer: 'BOTTOM',
+                        pattern: 'SOT95P240X130-3N',
+                        source: 'GENERIC_TRANSISTOR',
+                        rotation: 270,
+                        parameters: {
+                            Case: 'SOT23-3',
+                            PackageDescription: 'SOT23 3-Leads, Pitch 0.95mm'
+                        }
+                    }
+                ],
+                componentBodies: [
+                    {
+                        identifier: 'SOT95P240X130-3N',
+                        name: 'SOT95P240X130-3N.step',
+                        positionMil: { x: 320, y: 260 },
+                        modelRotationDeg: { x: 0, y: 0, z: 90 },
+                        standoffHeightMil: 0,
+                        overallHeightMil: 50
+                    }
+                ],
+                pads: [
+                    {
+                        componentIndex: 11,
+                        x: 320,
+                        y: 215,
+                        sizeBottomX: 41,
+                        sizeBottomY: 26,
+                        hasBottomPasteMaskOpening: true
+                    },
+                    {
+                        componentIndex: 11,
+                        x: 283,
+                        y: 305,
+                        sizeBottomX: 41,
+                        sizeBottomY: 26,
+                        hasBottomPasteMaskOpening: true
+                    },
+                    {
+                        componentIndex: 11,
+                        x: 357,
+                        y: 305,
+                        sizeBottomX: 41,
+                        sizeBottomY: 26,
+                        hasBottomPasteMaskOpening: true
+                    }
+                ]
+            }
+        }
+    }
+}
+
+/**
  * Builds a fake bottom-side two-terminal passive package whose STEP body uses
  * its local Y axis as the long axis.
  * @returns {{ scene: object, documentModel: object }}
@@ -1082,6 +1173,22 @@ test('Altium bottom three-lead SOT523 package uses source-X footprint yaw', () =
 
     assert.equal(repaired.externalPlacements.length, 1)
     assert.equal(repaired.externalPlacements[0].designator, 'Q1')
+    assert.equal(repaired.externalPlacements[0].rotationDeg, 90)
+})
+
+/**
+ * Verifies bottom-side flat SOT23-3 models mirror the component pin side when
+ * their footprint long-axis yaw has an exact half-turn tie.
+ */
+test('Altium bottom flat SOT23-3 package resolves mirrored component pin-side yaw', () => {
+    const { scene, documentModel } = createBottomFlatSot23ThreeLeadPackage()
+    const repaired = AltiumScene3dExternalPlacementAdapter.apply(
+        scene,
+        documentModel
+    )
+
+    assert.equal(repaired.externalPlacements.length, 1)
+    assert.equal(repaired.externalPlacements[0].designator, 'Q3')
     assert.equal(repaired.externalPlacements[0].rotationDeg, 90)
 })
 

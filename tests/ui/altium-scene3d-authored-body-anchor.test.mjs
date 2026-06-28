@@ -251,6 +251,74 @@ function createWideIcPad(componentIndex, x, y) {
 }
 
 /**
+ * Creates a fake single-row socket whose Altium body source origin is offset
+ * from the footprint owner and whose authored body yaw differs from the
+ * footprint yaw.
+ * @returns {object}
+ */
+function createSingleRowSocketAuthoredAnchorDocument() {
+    return {
+        sourceFormat: 'altium',
+        kind: 'pcb',
+        fileName: 'inline-socket-anchor-board.PcbDoc',
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 1000,
+                heightMil: 1400,
+                segments: []
+            },
+            primitiveLayers: [],
+            pads: Array.from({ length: 14 }, (_, index) => ({
+                componentIndex: 8,
+                x: 500,
+                y: 190 + index * 80,
+                sizeTopX: 42,
+                sizeTopY: 58,
+                sizeMidX: 42,
+                sizeMidY: 58,
+                holeSize: 24,
+                hasTopPasteMaskOpening: false
+            })),
+            tracks: [],
+            arcs: [],
+            vias: [],
+            componentBodies: [
+                {
+                    identifier: 'Fixture Inline Socket 14',
+                    name: 'Fixture-Inline-Socket-14.step',
+                    layer: 'MECHANICAL13',
+                    modelId: 'fixture-inline-socket-model',
+                    positionMil: { x: 548, y: 139 },
+                    rotationDeg: 0,
+                    modelRotationDeg: { x: 0, y: 0, z: 180 }
+                }
+            ],
+            components: [
+                {
+                    componentIndex: 8,
+                    designator: 'J8',
+                    x: 500,
+                    y: 700,
+                    layer: 'TOP',
+                    pattern: 'Fixture Inline Socket 14',
+                    source: 'Connector Fixture Inline Socket 14',
+                    description: 'Fake 14 contact straight socket',
+                    rotation: 90,
+                    parameters: {
+                        Family: 'Socket 14',
+                        'Pin Count': '14',
+                        SMD: 'No'
+                    }
+                }
+            ]
+        },
+        bom: []
+    }
+}
+
+/**
  * Creates a bottom-side embedded connector whose model source anchor is near
  * but not coincident with its footprint owner.
  * @returns {object}
@@ -392,6 +460,25 @@ test('PcbScene3dBuilder preserves offset module body anchors', () => {
     assert.deepEqual(placement.modelTransform.ownerAnchorOffsetMil, {
         x: 0,
         y: -200
+    })
+})
+
+test('PcbScene3dBuilder preserves single-row socket authored body yaw', () => {
+    const scene = PcbScene3dBuilder.build(
+        createSingleRowSocketAuthoredAnchorDocument(),
+        {
+            modelRegistry: createModelRegistry()
+        }
+    )
+    const placement = scene.externalPlacements[0]
+
+    assert.equal(placement.designator, 'J8')
+    assert.deepEqual(placement.positionMil, { x: 48, y: -561, z: 31.5 })
+    assert.equal(placement.rotationDeg, 180)
+    assert.equal(placement.projection.source, 'authored-body-anchor')
+    assert.deepEqual(placement.modelTransform.ownerAnchorOffsetMil, {
+        x: 48,
+        y: -561
     })
 })
 

@@ -208,6 +208,7 @@ export class PcbScene3dStaticBodySymmetricOwnerPromotion {
             .filter(
                 (candidate) =>
                     candidate.position &&
+                    !candidate.row?.placement?.ownerLocked &&
                     candidate.row?.placement?.sourceCoordinateFrame &&
                     PcbScene3dStaticBodySymmetricOwnerPromotion.#isCompactRow(
                         candidate.row

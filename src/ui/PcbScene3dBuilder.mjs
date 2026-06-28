@@ -19,6 +19,7 @@ import { PcbScene3dPadYawResolver } from './PcbScene3dPadYawResolver.mjs'
 import { PcbScene3dTextBoxLayoutResolver } from './PcbScene3dTextBoxLayoutResolver.mjs'
 import { PcbFootprintPadAxisNormalizer } from './PcbFootprintPadAxisNormalizer.mjs'
 import { PcbScene3dCopperRegionDetailBuilder } from './PcbScene3dCopperRegionDetailBuilder.mjs'
+import { AltiumScene3dBottomSourceHalfTurnPolicy } from './AltiumScene3dBottomSourceHalfTurnPolicy.mjs'
 
 /**
  * Builds deterministic 3D scene data from the normalized PCB model.
@@ -45,16 +46,23 @@ export class PcbScene3dBuilder {
         /(?:^|[^a-z0-9])(?:emi|rf|rfi|shield|cover|can)(?:$|[^a-z0-9])/i
     static #MECHANICAL_SHIELD_FALLBACK_PATTERN =
         /(?:^|[^a-z0-9])(?:emi|rfi|shield|cover|can)(?:$|[^a-z0-9])/i
-    static #MECHANICAL_SHIELD_FRAME_OWNER_PATTERN =
-        /(?=.*(?:^|[^a-z0-9])(?:emi|rfi|rf|shield|can)(?:$|[^a-z0-9]))(?=.*(?:^|[^a-z0-9])frame(?:$|[^a-z0-9]))/i
+    static #MECHANICAL_SHIELD_FRAME_OWNER_TOKENS = [
+        'emi',
+        'rfi',
+        'rf',
+        'shield',
+        'can'
+    ]
     static #MECHANICAL_SHIELD_FRAME_BODY_PATTERN =
         /(?:^|[^a-z0-9])(?:frame[0-9]*|leg|rail|side|wall)(?:$|[^a-z0-9])/i
     static #MECHANICAL_SHIELD_FRAME_OWNER_RADIUS_MIL = 750
     static #COMPONENT_PACKAGE_BODY_PATTERN =
-        /(?:^|[^a-z0-9])(?:[a-z0-9]*dfn|[a-z0-9]*qfn|bga|cap|capacitor|crystal|diode|ferrite|ind|inductor|lga|lqg[a-z0-9]*|lqw[a-z0-9]*|osc|qfp|res|resistor|sot|transistor|xtal)(?:$|[^a-z0-9])/i
+        /(?:^|[^a-z0-9])(?:[a-z0-9]*dfn[a-z0-9]*|[a-z0-9]*qfn[a-z0-9]*|bga|cap|capacitor|crystal|diode|ferrite|ind|inductor|lga|lqg[a-z0-9]*|lqw[a-z0-9]*|osc|qfp|res|resistor|sot|transistor|xtal)(?:$|[^a-z0-9])/i
     static #TIMING_STACK_COMPONENT_PATTERN =
         /(?:^|[^a-z0-9])(?:clock|crystal|osc|oscillator|resonator|tcxo|txco|xtal)(?:$|[^a-z0-9])/i
     static #TIMING_STACK_DESIGNATOR_PATTERN = /^(?:y|xo)\d+[a-z]?$/i
+    static #TIMING_STACK_HEIGHT_TOLERANCE_MIL = 0.1
+    static #TIMING_STACK_CARRIER_BOUNDS_TOLERANCE_MIL = 5
 
     /**
      * Builds a scene description for host 3D renderers.
@@ -156,44 +164,55 @@ export class PcbScene3dBuilder {
             appearance3d
         )
 
+        const sceneComponents = components
+            .map((component) =>
+                PcbScene3dBuilder.#buildComponent(
+                    component,
+                    pads,
+                    board,
+                    thicknessMil,
+                    modelRegistry
+                )
+            )
+            .filter(Boolean)
+        const externalPlacements = componentBodies
+            .map((componentBody, index) =>
+                PcbScene3dBuilder.#buildExternalPlacement(
+                    componentBody,
+                    bodyMatches[index],
+                    componentBodyModels[index],
+                    components,
+                    pads,
+                    board,
+                    thicknessMil,
+                    componentBodies
+                )
+            )
+            .filter(Boolean)
+        const staticBodyPlacements = PcbScene3dStaticBodyPlacementBuilder.build(
+            componentBodies,
+            bodyMatches,
+            components,
+            pads,
+            board,
+            thicknessMil
+        )
+
         const sceneDescription = {
             sourceFormat: 'altium',
             board,
             boardAssemblyModel:
                 modelRegistry?.resolveBoardAssemblyModel?.(documentModel) ||
                 null,
-            components: components
-                .map((component) =>
-                    PcbScene3dBuilder.#buildComponent(
-                        component,
-                        pads,
-                        board,
-                        thicknessMil,
-                        modelRegistry
-                    )
-                )
-                .filter(Boolean),
-            externalPlacements: componentBodies
-                .map((componentBody, index) =>
-                    PcbScene3dBuilder.#buildExternalPlacement(
-                        componentBody,
-                        bodyMatches[index],
-                        componentBodyModels[index],
-                        components,
-                        pads,
-                        board,
-                        thicknessMil
-                    )
-                )
-                .filter(Boolean),
-            staticBodyPlacements: PcbScene3dStaticBodyPlacementBuilder.build(
-                componentBodies,
-                bodyMatches,
-                components,
-                pads,
-                board,
-                thicknessMil
-            ),
+            components:
+                PcbScene3dBuilder.#suppressExternallyCoveredFallbackBodies(
+                    sceneComponents,
+                    components,
+                    externalPlacements,
+                    pads
+                ),
+            externalPlacements,
+            staticBodyPlacements,
             detail: {
                 embeddedFonts: Array.isArray(pcb.embeddedFonts)
                     ? pcb.embeddedFonts
@@ -327,6 +346,106 @@ export class PcbScene3dBuilder {
     }
 
     /**
+     * Suppresses procedural fallbacks when explicit body placements already
+     * cover every drilled pad owned by the same component.
+     * @param {object[]} sceneComponents Scene component rows.
+     * @param {object[]} sourceComponents Source PCB component rows.
+     * @param {object[]} externalPlacements Built external placements.
+     * @param {object[]} pads PCB pad rows.
+     * @returns {object[]}
+     */
+    static #suppressExternallyCoveredFallbackBodies(
+        sceneComponents,
+        sourceComponents,
+        externalPlacements,
+        pads
+    ) {
+        const sourceByDesignator = new Map(
+            (Array.isArray(sourceComponents) ? sourceComponents : []).map(
+                (component) => [String(component?.designator || ''), component]
+            )
+        )
+
+        return (Array.isArray(sceneComponents) ? sceneComponents : []).map(
+            (component) =>
+                PcbScene3dBuilder.#hasExternalPlacementPadCoverage(
+                    sourceByDesignator.get(
+                        String(component?.designator || '')
+                    ) || component,
+                    component,
+                    externalPlacements,
+                    pads
+                )
+                    ? { ...component, renderFallbackBody: false }
+                    : component
+        )
+    }
+
+    /**
+     * Checks whether explicit placements occupy all drilled pads for a component.
+     * @param {object} sourceComponent Source PCB component.
+     * @param {object} sceneComponent Scene component.
+     * @param {object[]} externalPlacements Built external placements.
+     * @param {object[]} pads PCB pad rows.
+     * @returns {boolean}
+     */
+    static #hasExternalPlacementPadCoverage(
+        sourceComponent,
+        sceneComponent,
+        externalPlacements,
+        pads
+    ) {
+        if (sceneComponent?.renderFallbackBody === false) {
+            return false
+        }
+
+        const designator = String(sceneComponent?.designator || '')
+        const componentPads = PcbScene3dBuilder.#componentPads(
+            sourceComponent,
+            pads
+        ).filter((pad) => PcbScene3dBuilder.#hasDrilledPadOpening(pad))
+        if (componentPads.length < 2) {
+            return false
+        }
+
+        const placements = (
+            Array.isArray(externalPlacements) ? externalPlacements : []
+        ).filter(
+            (placement) => String(placement?.designator || '') === designator
+        )
+        if (placements.length < componentPads.length) {
+            return false
+        }
+
+        return componentPads.every((pad) =>
+            placements.some((placement) =>
+                PcbScene3dBuilder.#placementCoversPad(placement, pad)
+            )
+        )
+    }
+
+    /**
+     * Checks whether one external placement anchor covers one drilled pad.
+     * @param {object} placement External model placement.
+     * @param {object} pad PCB pad row.
+     * @returns {boolean}
+     */
+    static #placementCoversPad(placement, pad) {
+        const point = placement?.bodyPositionMil
+        if (
+            !Number.isFinite(Number(point?.x)) ||
+            !Number.isFinite(Number(point?.y))
+        ) {
+            return false
+        }
+
+        return (
+            PcbScene3dBuilder.#distanceToPadAnchor(point, pad) <=
+            PcbScene3dBuilder.#EXACT_BODY_MISMATCH_TOLERANCE_MIL
+        )
+    }
+
+    /**
      * Checks whether a generic component row describes authored shield
      * hardware that should not become a filled fallback box.
      * @param {{ pattern?: string, source?: string, description?: string, parameters?: Record<string, unknown>, provenance?: Record<string, unknown> }} component Source component.
@@ -406,6 +525,7 @@ export class PcbScene3dBuilder {
      * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[]} pads
      * @param {{ centerX: number, centerY: number }} board
      * @param {number} thicknessMil
+     * @param {object[]} componentBodies All source component bodies.
      * @returns {{ designator: string, mountSide: string, rotationDeg: number, positionMil: { x: number, y: number, z: number }, bodyPositionMil: { x: number, y: number }, bodyRotationDeg: number, modelTransform: { rotationDeg: { x: number, y: number, z: number }, dzMil: number }, externalModel: { origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } } | null}
      */
     static #buildExternalPlacement(
@@ -415,7 +535,8 @@ export class PcbScene3dBuilder {
         components,
         pads,
         board,
-        thicknessMil
+        thicknessMil,
+        componentBodies
     ) {
         if (PcbScene3dBuilder.#shouldRenderStaticGeometryOnly(componentBody)) {
             return null
@@ -425,18 +546,31 @@ export class PcbScene3dBuilder {
             return null
         }
 
+        const sourcePosition =
+            PcbScene3dBuilder.#resolveExternalPlacementSourcePosition(
+                componentBody
+            )
+        const resolvedMatchedComponent =
+            matchedComponent ||
+            PcbScene3dBuilder.#resolveComponentFromOwnedDrilledPad(
+                sourcePosition,
+                components,
+                pads
+            )
+
         if (
             PcbScene3dBuilder.#isPositiveTimingStackPackageBody(
                 componentBody,
-                matchedComponent,
-                components
+                resolvedMatchedComponent,
+                components,
+                componentBodies
             )
         ) {
             return null
         }
 
         if (
-            !matchedComponent &&
+            !resolvedMatchedComponent &&
             PcbScene3dBuilder.#shouldDropUnmatchedPackageBody(
                 componentBody,
                 components
@@ -446,7 +580,7 @@ export class PcbScene3dBuilder {
         }
 
         if (
-            !matchedComponent &&
+            !resolvedMatchedComponent &&
             !PcbScene3dBuilder.#isBodyPositionNearBoard(componentBody, board)
         ) {
             return null
@@ -454,28 +588,28 @@ export class PcbScene3dBuilder {
 
         const mountSide = PcbScene3dPlacementSideResolver.resolvePlacementSide(
             componentBody,
-            matchedComponent,
+            resolvedMatchedComponent,
             components,
             board
         )
         const halfBoardThickness = thicknessMil / 2
-        const sourcePosition =
-            PcbScene3dBuilder.#resolveExternalPlacementSourcePosition(
-                componentBody
-            )
-        const modelRotation =
-            PcbScene3dBuilder.#resolveExternalModelRotation(componentBody)
+        const modelRotation = PcbScene3dBuilder.#resolveExternalModelRotation(
+            componentBody,
+            resolvedMatchedComponent,
+            pads,
+            mountSide
+        )
 
         return {
             designator:
-                matchedComponent?.designator ||
+                resolvedMatchedComponent?.designator ||
                 String(
                     componentBody.identifier || componentBody.name || '3D model'
                 ),
             mountSide,
             rotationDeg: PcbScene3dBuilder.#resolveExternalPlacementRotation(
                 componentBody,
-                matchedComponent
+                resolvedMatchedComponent
             ),
             positionMil: {
                 x: Number(sourcePosition.x || 0) - Number(board.centerX || 0),
@@ -494,12 +628,13 @@ export class PcbScene3dBuilder {
                 rotationDeg: modelRotation,
                 dzMil: PcbScene3dBuilder.#resolveComponentBodyVerticalOffset(
                     componentBody,
-                    matchedComponent
+                    resolvedMatchedComponent,
+                    mountSide
                 )
             },
             projection: PcbScene3dBuilder.#resolveProjectionDiagnostics(
                 componentBody,
-                matchedComponent,
+                resolvedMatchedComponent,
                 pads,
                 resolvedModel
             ),
@@ -526,32 +661,87 @@ export class PcbScene3dBuilder {
      * raw model bounds on the board face.
      * @param {{ dzMil?: number, standoffHeightMil?: number | null }} componentBody Component-body placement metadata.
      * @param {object | null} matchedComponent Matched owner component.
+     * @param {'top' | 'bottom'} mountSide Resolved mount side.
      * @returns {number}
      */
     static #resolveComponentBodyVerticalOffset(
         componentBody,
-        matchedComponent = null
+        matchedComponent = null,
+        mountSide = 'top'
     ) {
         const standoffHeightMil = Number(componentBody?.standoffHeightMil)
         if (Number.isFinite(standoffHeightMil)) {
-            return standoffHeightMil < 0 ||
-                PcbScene3dBuilder.#shouldPreservePositiveBodyStandoff(
+            if (
+                PcbScene3dBuilder.#shouldPreserveNegativeBodyOffset(
+                    standoffHeightMil,
                     componentBody,
-                    matchedComponent
+                    mountSide
+                ) ||
+                (standoffHeightMil > 0 &&
+                    PcbScene3dBuilder.#shouldPreservePositiveBodyStandoff(
+                        componentBody,
+                        matchedComponent
+                    ))
+            ) {
+                return PcbScene3dBuilder.#toMountSideVerticalOffset(
+                    standoffHeightMil,
+                    mountSide
                 )
-                ? standoffHeightMil
-                : 0
+            }
         }
 
         const dzMil = Number(componentBody?.dzMil)
         return Number.isFinite(dzMil) &&
-            (dzMil < 0 ||
-                PcbScene3dBuilder.#shouldPreservePositiveBodyStandoff(
-                    componentBody,
-                    matchedComponent
-                ))
-            ? dzMil
+            (PcbScene3dBuilder.#shouldPreserveNegativeBodyOffset(
+                dzMil,
+                componentBody,
+                mountSide
+            ) ||
+                (dzMil > 0 &&
+                    PcbScene3dBuilder.#shouldPreservePositiveBodyStandoff(
+                        componentBody,
+                        matchedComponent
+                    )))
+            ? PcbScene3dBuilder.#toMountSideVerticalOffset(dzMil, mountSide)
             : 0
+    }
+
+    /**
+     * Converts preserved source Z offsets to the viewer mount-side convention.
+     * @param {number} value Source vertical offset.
+     * @param {'top' | 'bottom'} mountSide Resolved mount side.
+     * @returns {number}
+     */
+    static #toMountSideVerticalOffset(value, mountSide) {
+        return String(mountSide || '').toLowerCase() === 'bottom' && value < 0
+            ? Math.abs(value)
+            : value
+    }
+
+    /**
+     * Checks whether a negative source offset describes intentional top-side
+     * model penetration instead of a source-origin seating artifact.
+     * @param {number} value Source vertical offset.
+     * @param {{ overallHeightMil?: number | null }} componentBody Component-body placement metadata.
+     * @param {'top' | 'bottom'} mountSide Resolved mount side.
+     * @returns {boolean}
+     */
+    static #shouldPreserveNegativeBodyOffset(value, componentBody, mountSide) {
+        const offset = Number(value)
+        if (
+            !Number.isFinite(offset) ||
+            offset >= 0 ||
+            String(mountSide || '').toLowerCase() !== 'top'
+        ) {
+            return false
+        }
+
+        const overallHeight = Number(componentBody?.overallHeightMil)
+        return (
+            !Number.isFinite(overallHeight) ||
+            overallHeight <= 0 ||
+            Math.abs(offset) < overallHeight
+        )
     }
 
     /**
@@ -950,50 +1140,71 @@ export class PcbScene3dBuilder {
         componentBodies,
         components
     ) {
+        const shieldFrameOwners = components.filter((component) =>
+            PcbScene3dBuilder.#isMechanicalShieldFrameOwner(component)
+        )
+
+        if (!shieldFrameOwners.length) {
+            return
+        }
+
+        const shieldFrameOwnerSet = new Set(shieldFrameOwners)
+
         componentBodies.forEach((componentBody, bodyIndex) => {
-            if (
-                matches[bodyIndex] ||
-                !PcbScene3dBuilder.#isStaticShieldFrameBody(componentBody)
-            ) {
+            if (!PcbScene3dBuilder.#isStaticShieldFrameBody(componentBody)) {
                 return
             }
 
-            const owner = components
-                .filter(
-                    (component) =>
-                        PcbScene3dBuilder.#isMechanicalShieldFrameOwner(
-                            component
-                        ) &&
-                        PcbScene3dBuilder.#isBodyComponentSideCompatible(
-                            componentBody,
-                            component
-                        )
-                )
-                .map((component) => ({
-                    component,
-                    affinityScore:
-                        PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
-                            componentBody,
-                            component
-                        ),
-                    distance:
-                        PcbScene3dBuilder.#distanceBetweenBodyAndComponent(
-                            componentBody,
-                            component
-                        )
-                }))
-                .filter(
-                    ({ distance }) =>
-                        Number.isFinite(distance) &&
-                        distance <=
-                            PcbScene3dBuilder
-                                .#MECHANICAL_SHIELD_FRAME_OWNER_RADIUS_MIL
-                )
-                .sort(
-                    (left, right) =>
-                        right.affinityScore - left.affinityScore ||
-                        left.distance - right.distance
-                )[0]?.component
+            const currentOwner = matches[bodyIndex]
+            if (currentOwner && shieldFrameOwnerSet.has(currentOwner)) {
+                return
+            }
+
+            let owner = null
+            let ownerAffinityScore = -Infinity
+            let ownerDistance = Infinity
+
+            shieldFrameOwners.forEach((component) => {
+                if (
+                    !PcbScene3dBuilder.#isBodyComponentSideCompatible(
+                        componentBody,
+                        component
+                    )
+                ) {
+                    return
+                }
+
+                const distance =
+                    PcbScene3dBuilder.#distanceBetweenBodyAndComponent(
+                        componentBody,
+                        component
+                    )
+
+                if (
+                    !Number.isFinite(distance) ||
+                    distance >
+                        PcbScene3dBuilder
+                            .#MECHANICAL_SHIELD_FRAME_OWNER_RADIUS_MIL
+                ) {
+                    return
+                }
+
+                const affinityScore =
+                    PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
+                        componentBody,
+                        component
+                    )
+                const betterOwner =
+                    affinityScore > ownerAffinityScore ||
+                    (affinityScore === ownerAffinityScore &&
+                        distance < ownerDistance)
+
+                if (betterOwner) {
+                    owner = component
+                    ownerAffinityScore = affinityScore
+                    ownerDistance = distance
+                }
+            })
 
             if (owner) {
                 matches[bodyIndex] = owner
@@ -1007,8 +1218,29 @@ export class PcbScene3dBuilder {
      * @returns {boolean}
      */
     static #isMechanicalShieldFrameOwner(component) {
-        return PcbScene3dBuilder.#MECHANICAL_SHIELD_FRAME_OWNER_PATTERN.test(
+        const identityTokens = PcbScene3dBuilder.#componentIdentityTokens(
             PcbScene3dBuilder.#componentIdentityText(component)
+        )
+
+        return (
+            identityTokens.has('frame') &&
+            PcbScene3dBuilder.#MECHANICAL_SHIELD_FRAME_OWNER_TOKENS.some(
+                (token) => identityTokens.has(token)
+            )
+        )
+    }
+
+    /**
+     * Splits component identity text into lowercase alphanumeric tokens.
+     * @param {string} identityText Component identity text.
+     * @returns {Set<string>}
+     */
+    static #componentIdentityTokens(identityText) {
+        return new Set(
+            String(identityText || '')
+                .toLowerCase()
+                .split(/[^a-z0-9]+/u)
+                .filter(Boolean)
         )
     }
 
@@ -1236,7 +1468,21 @@ export class PcbScene3dBuilder {
         matchContext,
         distanceMil
     ) {
+        const affinityScore =
+            PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
+                componentBody,
+                component
+            )
+        const sideCompatible = PcbScene3dBuilder.#isBodyComponentSideCompatible(
+            componentBody,
+            component
+        )
+
         if (PcbScene3dBuilder.#isPreciseBodyComponentDistance(distanceMil)) {
+            if (!sideCompatible && affinityScore <= 0) {
+                return false
+            }
+
             return !PcbScene3dBuilder.#isIncompatiblePackageBodyMatch(
                 componentBody,
                 component,
@@ -1244,12 +1490,7 @@ export class PcbScene3dBuilder {
             )
         }
 
-        if (
-            PcbScene3dPlacementSideResolver.scoreBodyComponentAffinity(
-                componentBody,
-                component
-            ) <= 0
-        ) {
+        if (affinityScore <= 0) {
             return false
         }
 
@@ -1320,17 +1561,19 @@ export class PcbScene3dBuilder {
     }
 
     /**
-     * Checks whether a package-like shape body is an authored timing-stack
-     * sub-body that should stay represented by its carrier static geometry.
+     * Checks whether a package-like shape body is an unowned timing-stack
+     * support body that is outside a matching carrier surface.
      * @param {object} componentBody Component-body record.
      * @param {object | null} matchedComponent Matched component.
      * @param {{ designator?: string, x?: number, y?: number, pattern?: string, source?: string, description?: string, provenance?: object, parameters?: object }[]} components PCB components.
+     * @param {object[]} componentBodies All source component bodies.
      * @returns {boolean}
      */
     static #isPositiveTimingStackPackageBody(
         componentBody,
         matchedComponent,
-        components
+        components,
+        componentBodies
     ) {
         const standoff = Number(componentBody?.standoffHeightMil)
         const hasTimingOwner = matchedComponent
@@ -1354,7 +1597,107 @@ export class PcbScene3dBuilder {
             !PcbScene3dBuilder.#isTimingStackBodyIdentity(componentBody) &&
             !PcbScene3dBuilder.#isAuthoredBodyIdentity(componentBody) &&
             hasTimingOwner &&
-            !hasLocalComponentOwner
+            !hasLocalComponentOwner &&
+            !PcbScene3dBuilder.#isRaisedBodySeatedOnCarrier(
+                componentBody,
+                componentBodies
+            )
+        )
+    }
+
+    /**
+     * Checks whether one raised body sits on a same-height authored carrier.
+     * @param {{ standoffHeightMil?: number, positionMil?: { x?: number, y?: number } }} componentBody Raised component body.
+     * @param {object[]} componentBodies All source component bodies.
+     * @returns {boolean}
+     */
+    static #isRaisedBodySeatedOnCarrier(componentBody, componentBodies) {
+        const standoff = Number(componentBody?.standoffHeightMil)
+        if (!Number.isFinite(standoff) || standoff <= 0) {
+            return false
+        }
+
+        return (Array.isArray(componentBodies) ? componentBodies : []).some(
+            (candidate) =>
+                candidate !== componentBody &&
+                PcbScene3dBuilder.#shouldRenderStaticGeometryOnly(candidate) &&
+                Math.abs(
+                    Number(
+                        candidate?.staticGeometry?.heightMil ??
+                            candidate?.overallHeightMil ??
+                            0
+                    ) - standoff
+                ) <= PcbScene3dBuilder.#TIMING_STACK_HEIGHT_TOLERANCE_MIL &&
+                PcbScene3dBuilder.#carrierBoundsContainPoint(
+                    candidate,
+                    componentBody?.positionMil
+                )
+        )
+    }
+
+    /**
+     * Checks whether a carrier polygon's source or local bounds contain a point.
+     * @param {{ positionMil?: { x?: number, y?: number }, rotationDeg?: number, staticGeometry?: { verticesMil?: object[] } }} carrierBody Carrier body.
+     * @param {{ x?: number, y?: number } | undefined} point Source point.
+     * @returns {boolean}
+     */
+    static #carrierBoundsContainPoint(carrierBody, point) {
+        const vertices = carrierBody?.staticGeometry?.verticesMil
+        if (!Array.isArray(vertices) || vertices.length < 3) {
+            return false
+        }
+
+        const sourcePoint = {
+            x: Number(point?.x),
+            y: Number(point?.y)
+        }
+        if (
+            !Number.isFinite(sourcePoint.x) ||
+            !Number.isFinite(sourcePoint.y)
+        ) {
+            return false
+        }
+
+        const anchor = {
+            x: Number(carrierBody?.positionMil?.x || 0),
+            y: Number(carrierBody?.positionMil?.y || 0)
+        }
+        const rotationRad =
+            (-Number(carrierBody?.rotationDeg || 0) * Math.PI) / 180
+        const dx = sourcePoint.x - anchor.x
+        const dy = sourcePoint.y - anchor.y
+        const localPoint = {
+            x: dx * Math.cos(rotationRad) - dy * Math.sin(rotationRad),
+            y: dx * Math.sin(rotationRad) + dy * Math.cos(rotationRad)
+        }
+
+        return (
+            PcbScene3dBuilder.#boundsContainPoint(sourcePoint, vertices) ||
+            PcbScene3dBuilder.#boundsContainPoint(localPoint, vertices)
+        )
+    }
+
+    /**
+     * Checks whether one axis-aligned vertex bounds contains a point.
+     * @param {{ x: number, y: number }} point Candidate point.
+     * @param {{ x?: number, y?: number }[]} vertices Bounds vertices.
+     * @returns {boolean}
+     */
+    static #boundsContainPoint(point, vertices) {
+        const points = vertices.map((vertex) => ({
+            x: Number(vertex?.x || 0),
+            y: Number(vertex?.y || 0)
+        }))
+        const xs = points.map((vertex) => vertex.x)
+        const ys = points.map((vertex) => vertex.y)
+        const tolerance =
+            PcbScene3dBuilder.#TIMING_STACK_CARRIER_BOUNDS_TOLERANCE_MIL
+
+        return (
+            point.x >= Math.min(...xs) - tolerance &&
+            point.x <= Math.max(...xs) + tolerance &&
+            point.y >= Math.min(...ys) - tolerance &&
+            point.y <= Math.max(...ys) + tolerance
         )
     }
 
@@ -1841,15 +2184,41 @@ export class PcbScene3dBuilder {
     /**
      * Resolves model-local rotations after converting Altium's positive local
      * rotation fields into the renderer's signed 3D model convention.
-     * @param {{ modelRotationDeg?: { x?: number, y?: number, z?: number } }} componentBody
+     * @param {{ modelRotationDeg?: { x?: number, y?: number, z?: number } }} componentBody Component body.
+     * @param {{ componentIndex?: number, layer?: string } | null} matchedComponent Matched component.
+     * @param {object[]} pads PCB pads.
+     * @param {'top' | 'bottom'} mountSide Placement mount side.
      * @returns {{ x: number, y: number, z: number }}
      */
-    static #resolveExternalModelRotation(componentBody) {
-        return {
+    static #resolveExternalModelRotation(
+        componentBody,
+        matchedComponent,
+        pads,
+        mountSide
+    ) {
+        const rotation = {
             x: -Number(componentBody?.modelRotationDeg?.x || 0),
             y: -Number(componentBody?.modelRotationDeg?.y || 0),
             z: 0
         }
+
+        if (
+            mountSide === 'bottom' &&
+            PcbScene3dBuilder.#normalizeAngle(rotation.x) === 180 &&
+            !AltiumScene3dBottomSourceHalfTurnPolicy.shouldPreserve({
+                component: matchedComponent,
+                componentBody,
+                modelTransform: { rotationDeg: rotation }
+            }) &&
+            !PcbScene3dBuilder.#componentHasThroughHolePads(
+                matchedComponent,
+                pads
+            )
+        ) {
+            rotation.x = 0
+        }
+
+        return rotation
     }
 
     /**
@@ -2310,6 +2679,114 @@ export class PcbScene3dBuilder {
     }
 
     /**
+     * Resolves a component owner when an external body anchor sits on a drilled
+     * pad owned by that component.
+     * @param {{ x?: number, y?: number } | null | undefined} sourcePosition External body anchor.
+     * @param {{ componentIndex?: number, x?: number, y?: number }[]} components PCB components.
+     * @param {object[]} pads PCB pads.
+     * @returns {object | null}
+     */
+    static #resolveComponentFromOwnedDrilledPad(
+        sourcePosition,
+        components,
+        pads
+    ) {
+        const sourceX = Number(sourcePosition?.x)
+        const sourceY = Number(sourcePosition?.y)
+        if (!Number.isFinite(sourceX) || !Number.isFinite(sourceY)) {
+            return null
+        }
+
+        const candidates = (Array.isArray(components) ? components : [])
+            .flatMap((component) =>
+                PcbScene3dBuilder.#componentPads(component, pads)
+                    .filter((pad) =>
+                        PcbScene3dBuilder.#hasDrilledPadOpening(pad)
+                    )
+                    .map((pad) => ({
+                        component,
+                        padDistance: PcbScene3dBuilder.#distanceToPadAnchor(
+                            { x: sourceX, y: sourceY },
+                            pad
+                        ),
+                        componentDistance: Math.hypot(
+                            Number(component?.x || 0) - sourceX,
+                            Number(component?.y || 0) - sourceY
+                        )
+                    }))
+            )
+            .filter(
+                (candidate) =>
+                    candidate.padDistance <=
+                    PcbScene3dBuilder.#EXACT_BODY_MISMATCH_TOLERANCE_MIL
+            )
+            .sort(
+                (left, right) =>
+                    left.padDistance - right.padDistance ||
+                    left.componentDistance - right.componentDistance
+            )
+
+        return candidates[0]?.component || null
+    }
+
+    /**
+     * Measures the distance from a source point to a drilled pad's effective
+     * anchor area.
+     * @param {{ x: number, y: number }} sourcePosition External body anchor.
+     * @param {object} pad PCB pad.
+     * @returns {number}
+     */
+    static #distanceToPadAnchor(sourcePosition, pad) {
+        const centerDistance = Math.hypot(
+            Number(pad?.x || 0) - Number(sourcePosition.x || 0),
+            Number(pad?.y || 0) - Number(sourcePosition.y || 0)
+        )
+        const radius = PcbScene3dBuilder.#padAnchorRadiusMil(pad)
+
+        return radius > 0
+            ? Math.max(0, centerDistance - radius)
+            : Number.POSITIVE_INFINITY
+    }
+
+    /**
+     * Resolves the effective XY radius around a drilled pad center.
+     * @param {object} pad PCB pad.
+     * @returns {number}
+     */
+    static #padAnchorRadiusMil(pad) {
+        const holeGeometry = pad?.holeGeometry || {}
+        const diameter = Math.max(
+            Number(pad?.sizeTopX || 0),
+            Number(pad?.sizeTopY || 0),
+            Number(pad?.sizeMidX || 0),
+            Number(pad?.sizeMidY || 0),
+            Number(pad?.sizeBottomX || 0),
+            Number(pad?.sizeBottomY || 0),
+            Number(pad?.holeDiameter || 0),
+            Number(pad?.drillDiameter || 0),
+            Number(pad?.holeSlotLength || 0),
+            Number(pad?.slotLength || 0),
+            Number(holeGeometry?.diameter || 0),
+            Number(holeGeometry?.length || 0),
+            Number(holeGeometry?.slotLength || 0)
+        )
+
+        return Number.isFinite(diameter) && diameter > 0 ? diameter / 2 : 0
+    }
+
+    /**
+     * Checks whether a component owns drilled or slotted pads.
+     * @param {{ componentIndex?: number, layer?: string } | null} component PCB component.
+     * @param {object[]} pads PCB pads.
+     * @returns {boolean}
+     */
+    static #componentHasThroughHolePads(component, pads) {
+        return PcbScene3dBuilder.#componentPads(component, pads).some((pad) =>
+            PcbScene3dBuilder.#hasDrilledPadOpening(pad)
+        )
+    }
+
+    /**
      * Resolves pads explicitly owned by one component, preferring pads on the
      * mounted surface when paste-mask side metadata is available.
      * @param {{ componentIndex?: number, layer?: string }} component PCB component.
@@ -2343,6 +2820,25 @@ export class PcbScene3dBuilder {
         return mountSide === 'bottom'
             ? Boolean(pad?.hasBottomPasteMaskOpening)
             : Boolean(pad?.hasTopPasteMaskOpening)
+    }
+
+    /**
+     * Checks whether one pad contains a drilled or slotted board opening.
+     * @param {object} pad PCB pad.
+     * @returns {boolean}
+     */
+    static #hasDrilledPadOpening(pad) {
+        const holeGeometry = pad?.holeGeometry || {}
+
+        return [
+            pad?.holeDiameter,
+            pad?.drillDiameter,
+            pad?.holeSlotLength,
+            pad?.slotLength,
+            holeGeometry?.diameter,
+            holeGeometry?.length,
+            holeGeometry?.slotLength
+        ].some((value) => Number(value || 0) > 0)
     }
 
     /**

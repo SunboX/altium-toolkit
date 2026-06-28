@@ -2,6 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+const MILS_PER_METER = 39370.07874015748
+const MILS_PER_MILLIMETER = 1000 / 25.4
+const MILS_PER_INCH = 1000
+
 /**
  * Indexes session companion assets for 3D model lookup.
  */
@@ -9,12 +13,12 @@ export class PcbScene3dModelRegistry {
     /** @type {{ file?: File | Blob | null, name: string, relativePath: string, format: string, source: string, normalizedPath: string, normalizedBaseName: string }[]} */
     #modelFiles
 
-    /** @type {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string }[]} */
+    /** @type {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string, boundsMil?: { width: number, depth: number, height: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } }[]} */
     #embeddedModels
 
     /**
      * @param {{ file?: File | Blob | null, name: string, relativePath: string, format: string, source: string, normalizedPath: string, normalizedBaseName: string }[]} modelFiles
-     * @param {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string }[]} embeddedModels
+     * @param {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string, boundsMil?: { width: number, depth: number, height: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } }[]} embeddedModels
      */
     constructor(modelFiles, embeddedModels) {
         this.#modelFiles = modelFiles
@@ -24,7 +28,7 @@ export class PcbScene3dModelRegistry {
     /**
      * Creates one model registry from session files.
      * @param {{ name?: string, relativePath?: string, source?: string }[]} sessionFiles
-     * @param {{ id?: string, checksum?: number | null, name?: string, format?: string, payloadText?: string, sourceStream?: string }[]} [embeddedModels]
+     * @param {{ id?: string, checksum?: number | null, name?: string, format?: string, payloadText?: string, sourceStream?: string, transform?: object }[]} [embeddedModels]
      * @returns {PcbScene3dModelRegistry}
      */
     static create(sessionFiles, embeddedModels = []) {
@@ -223,11 +227,16 @@ export class PcbScene3dModelRegistry {
      * Resolves the best available model for one normalized component-body
      * placement.
      * @param {{ modelId?: string, checksum?: number | null, name?: string }} componentBody
-     * @returns {{ origin: 'embedded' | 'session', file?: File | Blob | null, name: string, relativePath?: string, format: string, payloadText?: string, sourceStream?: string } | null}
+     * @returns {{ origin: 'embedded' | 'session', file?: File | Blob | null, name: string, relativePath?: string, format: string, payloadText?: string, sourceStream?: string, boundsMil?: { width: number, depth: number, height: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } } | null}
      */
     resolveComponentBodyModel(componentBody) {
         const embeddedMatch = this.#resolveEmbeddedMatch(componentBody)
-        if (embeddedMatch) {
+        if (
+            embeddedMatch &&
+            PcbScene3dModelRegistry.#isRenderableEmbeddedFormat(
+                embeddedMatch.format
+            )
+        ) {
             return embeddedMatch
         }
 
@@ -279,8 +288,8 @@ export class PcbScene3dModelRegistry {
 
     /**
      * Normalizes one embedded payload for registry lookup.
-     * @param {{ id?: string, checksum?: number | null, name?: string, format?: string, payloadText?: string, sourceStream?: string }} model
-     * @returns {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string } | null}
+     * @param {{ id?: string, checksum?: number | null, name?: string, format?: string, payloadText?: string, sourceStream?: string, transform?: object }} model
+     * @returns {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string, boundsMil?: { width: number, depth: number, height: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } } | null}
      */
     static #normalizeEmbeddedModel(model) {
         const id = String(model?.id || '').trim()
@@ -292,6 +301,14 @@ export class PcbScene3dModelRegistry {
         if (!id || !name || !format || !payloadText || !sourceStream) {
             return null
         }
+
+        const boundsMil = PcbScene3dModelRegistry.#resolveEmbeddedBoundsMil(
+            format,
+            payloadText
+        )
+        const transform = PcbScene3dModelRegistry.#normalizeModelTransform(
+            model?.transform
+        )
 
         return {
             id,
@@ -305,14 +322,16 @@ export class PcbScene3dModelRegistry {
             normalizedId: PcbScene3dModelRegistry.#normalizeToken(id),
             normalizedBaseName: PcbScene3dModelRegistry.#normalizeToken(
                 name.replace(/\.[^.]+$/, '')
-            )
+            ),
+            ...(boundsMil ? { boundsMil } : {}),
+            ...(transform ? { transform } : {})
         }
     }
 
     /**
      * Resolves one embedded model match from authored model metadata.
      * @param {{ modelId?: string, checksum?: number | null, name?: string }} componentBody
-     * @returns {{ origin: 'embedded', name: string, format: string, payloadText: string, sourceStream: string } | null}
+     * @returns {{ origin: 'embedded', name: string, format: string, payloadText: string, sourceStream: string, boundsMil?: { width: number, depth: number, height: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } } | null}
      */
     #resolveEmbeddedMatch(componentBody) {
         const normalizedId = PcbScene3dModelRegistry.#normalizeToken(
@@ -351,7 +370,189 @@ export class PcbScene3dModelRegistry {
             name: embeddedMatch.name,
             format: embeddedMatch.format,
             payloadText: embeddedMatch.payloadText,
-            sourceStream: embeddedMatch.sourceStream
+            sourceStream: embeddedMatch.sourceStream,
+            ...(embeddedMatch.boundsMil
+                ? { boundsMil: embeddedMatch.boundsMil }
+                : {}),
+            ...(embeddedMatch.transform
+                ? { transform: embeddedMatch.transform }
+                : {})
+        }
+    }
+
+    /**
+     * Normalizes optional embedded model transform metadata.
+     * @param {object | null | undefined} transform Source transform metadata.
+     * @returns {{ rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } | null}
+     */
+    static #normalizeModelTransform(transform) {
+        if (!transform || typeof transform !== 'object') {
+            return null
+        }
+
+        const normalized = {}
+        const sourceRotation = transform.rotationDeg || {}
+        const rotationDeg = {}
+        for (const axis of ['x', 'y', 'z']) {
+            const value = Number(sourceRotation?.[axis])
+            if (Number.isFinite(value)) {
+                rotationDeg[axis] = value
+            }
+        }
+        if (Object.keys(rotationDeg).length) {
+            normalized.rotationDeg = rotationDeg
+        }
+
+        const dzMil = Number(transform.dzMil)
+        if (Number.isFinite(dzMil)) {
+            normalized.dzMil = dzMil
+        }
+
+        return Object.keys(normalized).length ? normalized : null
+    }
+
+    /**
+     * Resolves an embedded model envelope in mils when the payload format is
+     * inspectable without a geometry engine.
+     * @param {string} format Embedded model format.
+     * @param {string} payloadText Embedded model text payload.
+     * @returns {{ width: number, depth: number, height: number } | null}
+     */
+    static #resolveEmbeddedBoundsMil(format, payloadText) {
+        const normalizedFormat = String(format || '').toLowerCase()
+        if (normalizedFormat !== 'step' && normalizedFormat !== 'stp') {
+            return null
+        }
+
+        return PcbScene3dModelRegistry.#resolveStepBoundsMil(payloadText)
+    }
+
+    /**
+     * Resolves a STEP payload envelope from authored Cartesian points.
+     * @param {string} payloadText STEP text payload.
+     * @returns {{ width: number, depth: number, height: number } | null}
+     */
+    static #resolveStepBoundsMil(payloadText) {
+        const text = String(payloadText || '')
+        const points = []
+        const pointPattern =
+            /CARTESIAN_POINT\s*\(\s*(?:'[^']*'|[^,]*),\s*\(([^)]*)\)\s*\)/giu
+        let match = pointPattern.exec(text)
+
+        while (match) {
+            const coordinates = String(match[1] || '')
+                .split(',')
+                .slice(0, 3)
+                .map((value) => Number(value.trim()))
+            if (
+                coordinates.length === 3 &&
+                coordinates.every((value) => Number.isFinite(value))
+            ) {
+                points.push(coordinates)
+            }
+
+            match = pointPattern.exec(text)
+        }
+
+        if (points.length < 2) {
+            return null
+        }
+
+        const scale = PcbScene3dModelRegistry.#resolveStepMilScale(text)
+        const [firstPoint] = points
+        const bounds = {
+            minX: firstPoint[0],
+            maxX: firstPoint[0],
+            minY: firstPoint[1],
+            maxY: firstPoint[1],
+            minZ: firstPoint[2],
+            maxZ: firstPoint[2]
+        }
+
+        points.slice(1).forEach(([x, y, z]) => {
+            bounds.minX = Math.min(bounds.minX, x)
+            bounds.maxX = Math.max(bounds.maxX, x)
+            bounds.minY = Math.min(bounds.minY, y)
+            bounds.maxY = Math.max(bounds.maxY, y)
+            bounds.minZ = Math.min(bounds.minZ, z)
+            bounds.maxZ = Math.max(bounds.maxZ, z)
+        })
+
+        return {
+            width: (bounds.maxX - bounds.minX) * scale,
+            depth: (bounds.maxY - bounds.minY) * scale,
+            height: (bounds.maxZ - bounds.minZ) * scale
+        }
+    }
+
+    /**
+     * Resolves the STEP length-unit scale to mils.
+     * @param {string} payloadText STEP text payload.
+     * @returns {number}
+     */
+    static #resolveStepMilScale(payloadText) {
+        const text = String(payloadText || '').toUpperCase()
+        if (/\bINCH\b|\.INCH\./u.test(text)) {
+            return MILS_PER_INCH
+        }
+
+        const siUnitMatch = text.match(
+            /SI_UNIT\s*\(\s*(\.[A-Z]+\.|\$)\s*,\s*\.METRE\.\s*\)/u
+        )
+        if (siUnitMatch) {
+            return (
+                PcbScene3dModelRegistry.#metricPrefixMeterScale(
+                    siUnitMatch[1]
+                ) * MILS_PER_METER
+            )
+        }
+
+        return MILS_PER_MILLIMETER
+    }
+
+    /**
+     * Resolves one SI metric prefix into metres per STEP coordinate unit.
+     * @param {string} prefix STEP SI prefix token.
+     * @returns {number}
+     */
+    static #metricPrefixMeterScale(prefix) {
+        switch (String(prefix || '').toUpperCase()) {
+            case '.EXA.':
+                return 1e18
+            case '.PETA.':
+                return 1e15
+            case '.TERA.':
+                return 1e12
+            case '.GIGA.':
+                return 1e9
+            case '.MEGA.':
+                return 1e6
+            case '.KILO.':
+                return 1e3
+            case '.HECTO.':
+                return 1e2
+            case '.DECA.':
+                return 1e1
+            case '$':
+                return 1
+            case '.DECI.':
+                return 1e-1
+            case '.CENTI.':
+                return 1e-2
+            case '.MILLI.':
+                return 1e-3
+            case '.MICRO.':
+                return 1e-6
+            case '.NANO.':
+                return 1e-9
+            case '.PICO.':
+                return 1e-12
+            case '.FEMTO.':
+                return 1e-15
+            case '.ATTO.':
+                return 1e-18
+            default:
+                return 1e-3
         }
     }
 
@@ -362,6 +563,17 @@ export class PcbScene3dModelRegistry {
      */
     static #formatRank(format) {
         return format === 'wrl' ? 0 : 1
+    }
+
+    /**
+     * Checks whether one embedded payload format can be loaded inline.
+     * @param {string} format Embedded payload format.
+     * @returns {boolean}
+     */
+    static #isRenderableEmbeddedFormat(format) {
+        return ['step', 'stp', 'wrl'].includes(
+            String(format || '').toLowerCase()
+        )
     }
 
     /**

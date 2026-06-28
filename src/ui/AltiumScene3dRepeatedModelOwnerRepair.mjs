@@ -1,4 +1,5 @@
 import { PcbScene3dPackageDimensionResolver } from './PcbScene3dPackageDimensionResolver.mjs'
+import { AltiumScene3dRepeatedFullFootprintBodyCollapse } from './AltiumScene3dRepeatedFullFootprintBodyCollapse.mjs'
 
 const CONNECTOR_TOKENS = new Set([
     'antenna',
@@ -12,6 +13,8 @@ const PASSIVE_BODY_PATTERN =
     /(?:^|[^a-z0-9])(?:cap|capacitor|res|resistor|ind|inductor|ferrite|bead|lqw|lqg)(?:$|[^a-z0-9])/i
 const COMPACT_IC_BODY_PATTERN =
     /(?:^|[^a-z0-9])(?:u?qfn(?:[-_ ]?\d+)?|dfn(?:[-_ ]?\d+)?|qfp(?:[-_ ]?\d+)?|bga(?:[-_ ]?\d+)?|lga(?:[-_ ]?\d+)?)(?:$|[^a-z0-9])/i
+const MODEL_BOUNDS_CORNER_ORIGIN_PACKAGE_PATTERN =
+    /(?:^|[^a-z0-9])(?:[a-z0-9]*qfn[a-z0-9]*|[a-z0-9]*dfn[a-z0-9]*|qfp|lqfp|tqfp|bga|lga)(?:[-_ ]?\d+)?(?:$|[^a-z0-9])/i
 const TIMING_PACKAGE_PATTERN =
     /(?:^|[^a-z0-9])(?:clock|crystal|osc|oscillator|resonator|tcxo|txco|xtal)(?:$|[^a-z0-9])/i
 const TIMING_DESIGNATOR_PATTERN = /^(?:y|xo)\d+[a-z]?$/i
@@ -52,6 +55,9 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
         const components = Array.isArray(documentModel?.pcb?.components)
             ? documentModel.pcb.components
             : []
+        const pads = Array.isArray(documentModel?.pcb?.pads)
+            ? documentModel.pcb.pads
+            : []
         if (!components.length) {
             return sceneDescription
         }
@@ -62,15 +68,18 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
                 component
             ])
         )
-        const placements = sceneDescription.externalPlacements.map(
-            (placement) =>
-                AltiumScene3dRepeatedModelOwnerRepair.#withSingleOwnerCenter(
-                    placement,
-                    componentByDesignator.get(
-                        String(placement?.designator || '')
-                    ),
-                    sceneDescription.board
-                )
+        const collapsedPlacements =
+            AltiumScene3dRepeatedFullFootprintBodyCollapse.apply(
+                sceneDescription.externalPlacements,
+                componentByDesignator,
+                pads
+            )
+        const placements = collapsedPlacements.map((placement) =>
+            AltiumScene3dRepeatedModelOwnerRepair.#withSingleOwnerCenter(
+                placement,
+                componentByDesignator.get(String(placement?.designator || '')),
+                sceneDescription.board
+            )
         )
 
         for (const group of AltiumScene3dRepeatedModelOwnerRepair.#groups(
@@ -178,9 +187,13 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
      * @returns {object}
      */
     static #withSingleOwnerCenter(placement, component, board) {
+        const projectionSource = String(
+            placement?.projection?.source || ''
+        ).toLowerCase()
         if (
             !component ||
-            String(placement?.projection?.source || '') !== 'pad-fallback' ||
+            (projectionSource !== 'pad-fallback' &&
+                projectionSource !== 'model-bounds') ||
             AltiumScene3dRepeatedModelOwnerRepair.#isAuthoredAnchorPlacement(
                 placement,
                 component
@@ -204,13 +217,58 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
         ) {
             return placement
         }
+        if (
+            projectionSource === 'model-bounds' &&
+            !AltiumScene3dRepeatedModelOwnerRepair.#hasModelBoundsCornerSourceOriginOffset(
+                placement,
+                component,
+                offset
+            )
+        ) {
+            return placement
+        }
 
         return AltiumScene3dRepeatedModelOwnerRepair.#withOwner(
             placement,
             component,
             board,
             offset,
-            { preserveRotation: true }
+            {
+                preserveRotation: true,
+                carryRenderableSourceOffset: projectionSource !== 'model-bounds'
+            }
+        )
+    }
+
+    /**
+     * Checks whether a model-bounds IC body uses a package-corner source
+     * origin rather than an authored mechanical anchor.
+     * @param {object} placement Scene placement.
+     * @param {object} component PCB component.
+     * @param {{ x: number, y: number }} offset Body anchor offset from owner.
+     * @returns {boolean}
+     */
+    static #hasModelBoundsCornerSourceOriginOffset(
+        placement,
+        component,
+        offset
+    ) {
+        const identityText =
+            AltiumScene3dRepeatedModelOwnerRepair.#identityTextForPlacement(
+                placement,
+                component
+            )
+        if (!MODEL_BOUNDS_CORNER_ORIGIN_PACKAGE_PATTERN.test(identityText)) {
+            return false
+        }
+
+        const offsetWidth = Math.abs(Number(offset?.x || 0)) * 2
+        const offsetDepth = Math.abs(Number(offset?.y || 0)) * 2
+
+        return AltiumScene3dRepeatedModelOwnerRepair.#matchesCornerOriginBounds(
+            offsetWidth,
+            offsetDepth,
+            placement?.projection?.boundsMil
         )
     }
 
@@ -384,6 +442,35 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
                     offsetDepth,
                     size.width
                 ))
+        )
+    }
+
+    /**
+     * Checks whether doubled owner offsets match any planar pair from measured
+     * model bounds. Tilted STEP bodies often expose package height on `depth`
+     * and package width/depth on `width` plus `height`.
+     * @param {number} offsetWidth Doubled X offset.
+     * @param {number} offsetDepth Doubled Y offset.
+     * @param {{ width?: number, depth?: number, height?: number } | null | undefined} bounds Model bounds.
+     * @returns {boolean}
+     */
+    static #matchesCornerOriginBounds(offsetWidth, offsetDepth, bounds) {
+        const dimensions = [
+            Number(bounds?.width),
+            Number(bounds?.depth),
+            Number(bounds?.height)
+        ].filter((dimension) => Number.isFinite(dimension) && dimension > 0)
+
+        return dimensions.some((width, widthIndex) =>
+            dimensions.some(
+                (depth, depthIndex) =>
+                    widthIndex !== depthIndex &&
+                    AltiumScene3dRepeatedModelOwnerRepair.#matchesCornerOriginSize(
+                        offsetWidth,
+                        offsetDepth,
+                        { width, depth }
+                    )
+            )
         )
     }
 
@@ -656,7 +743,7 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
      * @param {object} component Resolved owner.
      * @param {object} board Scene board metadata.
      * @param {{ x: number, y: number }} offset Source-origin offset.
-     * @param {{ preserveRotation?: boolean }} [options] Repair options.
+     * @param {{ preserveRotation?: boolean, carryRenderableSourceOffset?: boolean }} [options] Repair options.
      * @returns {object}
      */
     static #withOwner(placement, component, board, offset, options = {}) {
@@ -671,11 +758,15 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
                   component?.rotation
               )
         const renderableOffset =
-            AltiumScene3dRepeatedModelOwnerRepair.#renderableOwnerAnchorOffset(
-                { mountSide, rotationDeg },
-                offset,
-                placement?.modelTransform
-            )
+            options?.carryRenderableSourceOffset === false
+                ? AltiumScene3dRepeatedModelOwnerRepair.#renderableZOffset(
+                      placement?.modelTransform
+                  )
+                : AltiumScene3dRepeatedModelOwnerRepair.#renderableOwnerAnchorOffset(
+                      { mountSide, rotationDeg },
+                      offset,
+                      placement?.modelTransform
+                  )
 
         return {
             ...placement,
@@ -700,6 +791,19 @@ export class AltiumScene3dRepeatedModelOwnerRepair {
                 }
             }
         }
+    }
+
+    /**
+     * Preserves authored model Z offset while suppressing lateral render shift.
+     * @param {object | undefined} modelTransform Existing model transform.
+     * @returns {{ x: number, y: number, z: number }}
+     */
+    static #renderableZOffset(modelTransform) {
+        const z = Number(
+            modelTransform?.offsetMil?.z ?? modelTransform?.dzMil ?? 0
+        )
+
+        return { x: 0, y: 0, z: Number.isFinite(z) ? z : 0 }
     }
 
     /**

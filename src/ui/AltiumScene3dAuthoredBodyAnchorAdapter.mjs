@@ -35,6 +35,13 @@ export class AltiumScene3dAuthoredBodyAnchorAdapter {
             return sceneDescription
         }
 
+        const repeatedPlacementKeys =
+            AltiumScene3dAuthoredBodyAnchorAdapter.#repeatedPlacementKeys(
+                sceneDescription.externalPlacements
+            )
+        const pads = Array.isArray(sceneDescription?.detail?.pads)
+            ? sceneDescription.detail.pads
+            : []
         let changed = false
         const externalPlacements = sceneDescription.externalPlacements.map(
             (placement) => {
@@ -52,10 +59,18 @@ export class AltiumScene3dAuthoredBodyAnchorAdapter {
                 }
 
                 changed = true
+                const preservesSourceOriginRepair =
+                    AltiumScene3dAuthoredBodyAnchorAdapter.#isRepeatedOwnedDrilledPadAnchor(
+                        placement,
+                        component,
+                        pads,
+                        repeatedPlacementKeys
+                    )
                 return AltiumScene3dAuthoredBodyAnchorAdapter.#markPlacement(
                     placement,
                     component,
-                    sceneDescription?.board
+                    sceneDescription?.board,
+                    { preservesSourceOriginRepair }
                 )
             }
         )
@@ -85,6 +100,55 @@ export class AltiumScene3dAuthoredBodyAnchorAdapter {
     }
 
     /**
+     * Finds repeated external-model identities within one built scene.
+     * @param {object[]} placements Scene external placements.
+     * @returns {Set<string>}
+     */
+    static #repeatedPlacementKeys(placements) {
+        const counts = new Map()
+        const placementList = Array.isArray(placements) ? placements : []
+
+        placementList.forEach((placement) => {
+            const key =
+                AltiumScene3dAuthoredBodyAnchorAdapter.#placementIdentityKey(
+                    placement
+                )
+            if (!key) {
+                return
+            }
+
+            counts.set(key, Number(counts.get(key) || 0) + 1)
+        })
+
+        return new Set(
+            [...counts.entries()]
+                .filter(([, count]) => count > 1)
+                .map(([key]) => key)
+        )
+    }
+
+    /**
+     * Builds a stable model-placement identity for repeated body detection.
+     * @param {object} placement External placement.
+     * @returns {string}
+     */
+    static #placementIdentityKey(placement) {
+        const designator = String(placement?.designator || '').trim()
+        const model = placement?.externalModel || {}
+        const modelParts = [
+            model?.origin,
+            model?.sourceStream,
+            model?.relativePath,
+            model?.name,
+            model?.format
+        ].map((value) => String(value || '').trim())
+
+        return designator && modelParts.some(Boolean)
+            ? [designator, ...modelParts].join('::')
+            : ''
+    }
+
+    /**
      * Checks whether one placement should bypass runtime pad-fallback
      * recentering.
      * @param {object} placement External placement.
@@ -97,6 +161,7 @@ export class AltiumScene3dAuthoredBodyAnchorAdapter {
             !component ||
             String(placement?.projection?.source || '').toLowerCase() !==
                 'pad-fallback' ||
+            placement?.projection?.preservePadFallbackCentering ||
             !placement?.positionMil ||
             !placement?.bodyPositionMil
         ) {
@@ -207,30 +272,186 @@ export class AltiumScene3dAuthoredBodyAnchorAdapter {
     }
 
     /**
+     * Checks whether one placement is one member of a repeated drilled-pad
+     * body set whose source-origin repair must remain enabled.
+     * @param {object} placement External placement.
+     * @param {object | undefined} component Matched scene component.
+     * @param {object[]} pads Scene detail pads.
+     * @param {Set<string>} repeatedPlacementKeys Repeated placement keys.
+     * @returns {boolean}
+     */
+    static #isRepeatedOwnedDrilledPadAnchor(
+        placement,
+        component,
+        pads,
+        repeatedPlacementKeys
+    ) {
+        const key =
+            AltiumScene3dAuthoredBodyAnchorAdapter.#placementIdentityKey(
+                placement
+            )
+
+        return (
+            repeatedPlacementKeys.has(key) &&
+            AltiumScene3dAuthoredBodyAnchorAdapter.#isOwnedDrilledPadAnchor(
+                placement,
+                component,
+                pads
+            )
+        )
+    }
+
+    /**
+     * Checks whether the body anchor sits inside a drilled pad owned by the
+     * resolved component.
+     * @param {object} placement External placement.
+     * @param {object | undefined} component Matched scene component.
+     * @param {object[]} pads Scene detail pads.
+     * @returns {boolean}
+     */
+    static #isOwnedDrilledPadAnchor(placement, component, pads) {
+        const componentIndex = Number(component?.componentIndex)
+        if (!Number.isFinite(componentIndex)) {
+            return false
+        }
+
+        const bodyPosition = placement?.bodyPositionMil
+        if (
+            !AltiumScene3dAuthoredBodyAnchorAdapter.#hasFinitePoint(
+                bodyPosition
+            )
+        ) {
+            return false
+        }
+
+        return (Array.isArray(pads) ? pads : []).some(
+            (pad) =>
+                Number(pad?.componentIndex) === componentIndex &&
+                AltiumScene3dAuthoredBodyAnchorAdapter.#hasDrilledPadOpening(
+                    pad
+                ) &&
+                AltiumScene3dAuthoredBodyAnchorAdapter.#padContainsPoint(
+                    pad,
+                    bodyPosition
+                )
+        )
+    }
+
+    /**
+     * Checks whether a pad contains a drilled or slotted board opening.
+     * @param {object} pad Scene detail pad.
+     * @returns {boolean}
+     */
+    static #hasDrilledPadOpening(pad) {
+        const holeGeometry = pad?.holeGeometry || {}
+
+        return [
+            pad?.holeDiameter,
+            pad?.drillDiameter,
+            pad?.holeSize,
+            pad?.holeSlotLength,
+            pad?.slotLength,
+            holeGeometry?.diameter,
+            holeGeometry?.length,
+            holeGeometry?.slotLength
+        ].some((value) => Number(value || 0) > 0)
+    }
+
+    /**
+     * Checks whether one XY point falls inside the effective pad anchor span.
+     * @param {object} pad Scene detail pad.
+     * @param {{ x?: number, y?: number }} point Board-space point.
+     * @returns {boolean}
+     */
+    static #padContainsPoint(pad, point) {
+        if (!AltiumScene3dAuthoredBodyAnchorAdapter.#hasFinitePoint(pad)) {
+            return false
+        }
+
+        const radius =
+            AltiumScene3dAuthoredBodyAnchorAdapter.#padAnchorRadiusMil(pad)
+        return (
+            radius > 0 &&
+            AltiumScene3dAuthoredBodyAnchorAdapter.#distance(pad, point) <=
+                radius +
+                    AltiumScene3dAuthoredBodyAnchorAdapter
+                        .#BODY_ANCHOR_TOLERANCE_MIL
+        )
+    }
+
+    /**
+     * Resolves the effective XY radius around a drilled pad center.
+     * @param {object} pad Scene detail pad.
+     * @returns {number}
+     */
+    static #padAnchorRadiusMil(pad) {
+        const holeGeometry = pad?.holeGeometry || {}
+        const diameter = Math.max(
+            Number(pad?.sizeTopX || 0),
+            Number(pad?.sizeTopY || 0),
+            Number(pad?.sizeMidX || 0),
+            Number(pad?.sizeMidY || 0),
+            Number(pad?.sizeBottomX || 0),
+            Number(pad?.sizeBottomY || 0),
+            Number(pad?.holeDiameter || 0),
+            Number(pad?.drillDiameter || 0),
+            Number(pad?.holeSize || 0),
+            Number(pad?.holeSlotLength || 0),
+            Number(pad?.slotLength || 0),
+            Number(holeGeometry?.diameter || 0),
+            Number(holeGeometry?.length || 0),
+            Number(holeGeometry?.slotLength || 0)
+        )
+
+        return Number.isFinite(diameter) && diameter > 0 ? diameter / 2 : 0
+    }
+
+    /**
      * Marks one placement as authored-anchor based.
      * @param {object} placement External placement.
      * @param {object} component Matched scene component.
      * @param {object | undefined} board Scene board.
+     * @param {{ preservesSourceOriginRepair?: boolean }} [options] Marking options.
      * @returns {object}
      */
-    static #markPlacement(placement, component, board) {
+    static #markPlacement(placement, component, board, options = {}) {
+        const reason = options.preservesSourceOriginRepair
+            ? 'Altium repeated component body is anchored in an owned drilled pad, so the runtime preserves the body anchor while allowing embedded source-origin repair.'
+            : 'Altium component body uses an authored model-origin anchor offset from the owner footprint.'
+
         return {
             ...placement,
             projection: {
                 ...(placement.projection || {}),
                 source: AltiumScene3dAuthoredBodyAnchorAdapter.#AUTHORED_SOURCE,
-                reason: 'Altium component body uses an authored model-origin anchor offset from the owner footprint.'
+                reason
             },
-            modelTransform: {
-                ...(placement.modelTransform || {}),
-                ownerAnchorOffsetMil:
-                    AltiumScene3dAuthoredBodyAnchorAdapter.#ownerAnchorOffset(
-                        placement,
-                        component,
-                        board
-                    )
-            }
+            modelTransform: options.preservesSourceOriginRepair
+                ? AltiumScene3dAuthoredBodyAnchorAdapter.#withoutOwnerAnchorOffset(
+                      placement.modelTransform
+                  )
+                : {
+                      ...(placement.modelTransform || {}),
+                      ownerAnchorOffsetMil:
+                          AltiumScene3dAuthoredBodyAnchorAdapter.#ownerAnchorOffset(
+                              placement,
+                              component,
+                              board
+                          )
+                  }
         }
+    }
+
+    /**
+     * Removes owner-anchor metadata while preserving renderable transforms.
+     * @param {object | null | undefined} modelTransform Placement transform.
+     * @returns {object}
+     */
+    static #withoutOwnerAnchorOffset(modelTransform) {
+        const { ownerAnchorOffsetMil, ...renderTransform } =
+            modelTransform || {}
+
+        return renderTransform
     }
 
     /**
@@ -311,6 +532,18 @@ export class AltiumScene3dAuthoredBodyAnchorAdapter {
             x: Number(point?.x || 0),
             y: Number(point?.y || 0)
         }
+    }
+
+    /**
+     * Checks whether a value has finite XY coordinates.
+     * @param {object | undefined} point Source point.
+     * @returns {boolean}
+     */
+    static #hasFinitePoint(point) {
+        return (
+            Number.isFinite(Number(point?.x)) &&
+            Number.isFinite(Number(point?.y))
+        )
     }
 
     /**

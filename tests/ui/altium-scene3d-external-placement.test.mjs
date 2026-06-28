@@ -829,16 +829,17 @@ test('ECAD 3D service clamps overlarge Altium negative standoffs', () => {
 })
 
 /**
- * Verifies in-envelope negative Altium body standoffs survive for edge-mounted
- * models that intentionally straddle the board surface.
+ * Verifies in-envelope bottom Altium body standoffs do not override viewer
+ * seating for matched embedded models.
  */
-test('ECAD 3D service preserves in-envelope Altium negative standoffs', () => {
+test('ECAD 3D service seats in-envelope bottom Altium standoffs from bounds', () => {
     const scene = PcbScene3dBuilder.build(createNegativeStandoffDocument(), {
         boardThicknessMil: 80,
         modelRegistry: createModelRegistry([createPreparedBoxPayload()])
     })
 
-    assert.equal(scene.externalPlacements[1].modelTransform.dzMil, -40)
+    assert.equal(scene.externalPlacements[1].mountSide, 'bottom')
+    assert.equal(scene.externalPlacements[1].modelTransform.dzMil, 0)
 })
 
 /**

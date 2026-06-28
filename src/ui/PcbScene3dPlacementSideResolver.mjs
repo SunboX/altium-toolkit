@@ -9,10 +9,21 @@ export class PcbScene3dPlacementSideResolver {
     static #NEARBY_SIDE_HINT_MAX_DISTANCE_MIL = 600
     static #NEGATIVE_STANDOFF_SIDE_RATIO = 0.3
     static #MIN_NEGATIVE_STANDOFF_SIDE_MIL = 20
+    static #IGNORED_IDENTITY_TOKENS = new Set([
+        'con',
+        'step',
+        'stp',
+        'model',
+        'default',
+        'black'
+    ])
+    static #BODY_TOKEN_CACHE = new WeakMap()
+    static #COMPONENT_TOKEN_CACHE = new WeakMap()
+    static #AFFINITY_SCORE_CACHE = new WeakMap()
 
     /**
      * Resolves which board side one explicit model should mount on.
-     * @param {{ layer?: string, positionMil?: { x?: number, y?: number }, standoffHeightMil?: number | null, overallHeightMil?: number | null }} componentBody
+     * @param {{ layer?: string, positionMil?: { x?: number, y?: number }, dzMil?: number | null, standoffHeightMil?: number | null, overallHeightMil?: number | null }} componentBody
      * @param {{ layer?: string } | null} matchedComponent
      * @param {{ layer?: string, pattern?: string, source?: string, modelPath?: string, x?: number, y?: number }[]} components
      * @param {{ minX?: number, minY?: number, widthMil?: number, heightMil?: number } | null} board
@@ -34,14 +45,21 @@ export class PcbScene3dPlacementSideResolver {
 
         const standoffSide =
             PcbScene3dPlacementSideResolver.#resolveStandoffSide(componentBody)
+        const trustedStandoffSide =
+            PcbScene3dPlacementSideResolver.#shouldTrustStandoffSide(
+                componentBody,
+                standoffSide
+            )
+                ? standoffSide
+                : null
         if (
-            standoffSide &&
+            trustedStandoffSide &&
             PcbScene3dPlacementSideResolver.#isBodyAnchorInsideBoard(
                 componentBody,
                 board
             )
         ) {
-            return standoffSide
+            return trustedStandoffSide
         }
 
         const nearbySide =
@@ -61,14 +79,14 @@ export class PcbScene3dPlacementSideResolver {
             return mechanicalSide
         }
 
-        return standoffSide || 'top'
+        return trustedStandoffSide || 'top'
     }
 
     /**
      * Resolves which board side one authored static shape body should mount on.
      * Shape bodies carry explicit mechanical-layer intent, so that side wins
      * over loose nearby-package identity unless the body was directly matched.
-     * @param {{ layer?: string, positionMil?: { x?: number, y?: number }, standoffHeightMil?: number | null, overallHeightMil?: number | null }} componentBody
+     * @param {{ layer?: string, positionMil?: { x?: number, y?: number }, dzMil?: number | null, standoffHeightMil?: number | null, overallHeightMil?: number | null }} componentBody
      * @param {{ layer?: string } | null} matchedComponent
      * @param {{ layer?: string, pattern?: string, source?: string, modelPath?: string, x?: number, y?: number }[]} components
      * @param {{ minX?: number, minY?: number, widthMil?: number, heightMil?: number } | null} board
@@ -90,14 +108,21 @@ export class PcbScene3dPlacementSideResolver {
 
         const standoffSide =
             PcbScene3dPlacementSideResolver.#resolveStandoffSide(componentBody)
+        const trustedStandoffSide =
+            PcbScene3dPlacementSideResolver.#shouldTrustStandoffSide(
+                componentBody,
+                standoffSide
+            )
+                ? standoffSide
+                : null
         if (
-            standoffSide &&
+            trustedStandoffSide &&
             PcbScene3dPlacementSideResolver.#isBodyAnchorInsideBoard(
                 componentBody,
                 board
             )
         ) {
-            return standoffSide
+            return trustedStandoffSide
         }
 
         const mechanicalSide =
@@ -117,7 +142,7 @@ export class PcbScene3dPlacementSideResolver {
             return nearbySide
         }
 
-        return standoffSide || 'top'
+        return trustedStandoffSide || 'top'
     }
 
     /**
@@ -141,21 +166,39 @@ export class PcbScene3dPlacementSideResolver {
      * @returns {number}
      */
     static scoreBodyComponentAffinity(componentBody, component) {
+        const bodyValues =
+            PcbScene3dPlacementSideResolver.#bodyAffinityValues(componentBody)
+        const componentValues =
+            PcbScene3dPlacementSideResolver.#componentAffinityValues(component)
+        const bodyKey =
+            PcbScene3dPlacementSideResolver.#cacheIdentityKey(bodyValues)
+        const componentKey =
+            PcbScene3dPlacementSideResolver.#cacheIdentityKey(componentValues)
+        const cachedScore =
+            PcbScene3dPlacementSideResolver.#cachedAffinityScore(
+                componentBody,
+                component,
+                bodyKey,
+                componentKey
+            )
+        if (cachedScore !== null) {
+            return cachedScore
+        }
+
         const bodyTokens =
-            PcbScene3dPlacementSideResolver.#collectMeaningfulTokens([
-                componentBody?.identifier,
-                String(componentBody?.name || '').replace(/\.[^.]+$/, '')
-            ])
+            PcbScene3dPlacementSideResolver.#cachedMeaningfulTokens(
+                PcbScene3dPlacementSideResolver.#BODY_TOKEN_CACHE,
+                componentBody,
+                bodyKey,
+                bodyValues
+            )
         const componentTokens =
-            PcbScene3dPlacementSideResolver.#collectMeaningfulTokens([
-                component?.pattern,
-                component?.source,
-                component?.modelPath,
-                component?.description,
-                ...PcbScene3dPlacementSideResolver.#componentPackageMetadata(
-                    component
-                )
-            ])
+            PcbScene3dPlacementSideResolver.#cachedMeaningfulTokens(
+                PcbScene3dPlacementSideResolver.#COMPONENT_TOKEN_CACHE,
+                component,
+                componentKey,
+                componentValues
+            )
         let score = 0
 
         bodyTokens.forEach((token) => {
@@ -164,7 +207,164 @@ export class PcbScene3dPlacementSideResolver {
             }
         })
 
+        PcbScene3dPlacementSideResolver.#cacheAffinityScore(
+            componentBody,
+            component,
+            bodyKey,
+            componentKey,
+            score
+        )
+
         return score
+    }
+
+    /**
+     * Resolves body identity fields used for affinity scoring.
+     * @param {{ name?: string, identifier?: string } | null | undefined} componentBody Component-body record.
+     * @returns {(string | undefined)[]}
+     */
+    static #bodyAffinityValues(componentBody) {
+        return [
+            componentBody?.identifier,
+            String(componentBody?.name || '').replace(/\.[^.]+$/, '')
+        ]
+    }
+
+    /**
+     * Resolves component identity fields used for affinity scoring.
+     * @param {{ pattern?: string, source?: string, modelPath?: string, description?: string, parameters?: object, provenance?: object } | null | undefined} component Component record.
+     * @returns {(string | undefined)[]}
+     */
+    static #componentAffinityValues(component) {
+        return [
+            component?.pattern,
+            component?.source,
+            component?.modelPath,
+            component?.description,
+            ...PcbScene3dPlacementSideResolver.#componentPackageMetadata(
+                component
+            )
+        ]
+    }
+
+    /**
+     * Resolves a deterministic key for identity fields.
+     * @param {unknown[]} values Identity field values.
+     * @returns {string}
+     */
+    static #cacheIdentityKey(values) {
+        return (Array.isArray(values) ? values : [])
+            .map((value) => String(value || ''))
+            .join('\u0000')
+    }
+
+    /**
+     * Returns a cached score when both input identity keys still match.
+     * @param {unknown} componentBody Component-body record.
+     * @param {unknown} component Component record.
+     * @param {string} bodyKey Current body identity key.
+     * @param {string} componentKey Current component identity key.
+     * @returns {number | null}
+     */
+    static #cachedAffinityScore(
+        componentBody,
+        component,
+        bodyKey,
+        componentKey
+    ) {
+        if (
+            !PcbScene3dPlacementSideResolver.#isObjectLike(componentBody) ||
+            !PcbScene3dPlacementSideResolver.#isObjectLike(component)
+        ) {
+            return null
+        }
+
+        const componentScores =
+            PcbScene3dPlacementSideResolver.#AFFINITY_SCORE_CACHE.get(
+                componentBody
+            )
+        const cachedScore = componentScores?.get(component)
+
+        return cachedScore?.bodyKey === bodyKey &&
+            cachedScore?.componentKey === componentKey
+            ? cachedScore.score
+            : null
+    }
+
+    /**
+     * Caches one body/component affinity score.
+     * @param {unknown} componentBody Component-body record.
+     * @param {unknown} component Component record.
+     * @param {string} bodyKey Current body identity key.
+     * @param {string} componentKey Current component identity key.
+     * @param {number} score Affinity score.
+     * @returns {void}
+     */
+    static #cacheAffinityScore(
+        componentBody,
+        component,
+        bodyKey,
+        componentKey,
+        score
+    ) {
+        if (
+            !PcbScene3dPlacementSideResolver.#isObjectLike(componentBody) ||
+            !PcbScene3dPlacementSideResolver.#isObjectLike(component)
+        ) {
+            return
+        }
+
+        let componentScores =
+            PcbScene3dPlacementSideResolver.#AFFINITY_SCORE_CACHE.get(
+                componentBody
+            )
+        if (!componentScores) {
+            componentScores = new WeakMap()
+            PcbScene3dPlacementSideResolver.#AFFINITY_SCORE_CACHE.set(
+                componentBody,
+                componentScores
+            )
+        }
+
+        componentScores.set(component, { bodyKey, componentKey, score })
+    }
+
+    /**
+     * Collects cached normalized identity tokens.
+     * @param {WeakMap<object, { key: string, tokens: Set<string> }>} cache Token cache.
+     * @param {unknown} owner Source object that owns the identity fields.
+     * @param {string} key Current identity key.
+     * @param {unknown[]} values Identity field values.
+     * @returns {Set<string>}
+     */
+    static #cachedMeaningfulTokens(cache, owner, key, values) {
+        if (!PcbScene3dPlacementSideResolver.#isObjectLike(owner)) {
+            return PcbScene3dPlacementSideResolver.#collectMeaningfulTokens(
+                values
+            )
+        }
+
+        const cached = cache.get(owner)
+        if (cached?.key === key) {
+            return cached.tokens
+        }
+
+        const tokens =
+            PcbScene3dPlacementSideResolver.#collectMeaningfulTokens(values)
+        cache.set(owner, { key, tokens })
+        return tokens
+    }
+
+    /**
+     * Returns true when a value can be used as a WeakMap key.
+     * @param {unknown} value Candidate value.
+     * @returns {boolean}
+     */
+    static #isObjectLike(value) {
+        return (
+            (typeof value === 'object' && value !== null) ||
+            typeof value === 'function'
+        )
     }
 
     /**
@@ -246,6 +446,46 @@ export class PcbScene3dPlacementSideResolver {
                       .#MIN_NEGATIVE_STANDOFF_SIDE_MIL
 
         return Math.abs(standoff) >= threshold ? 'bottom' : null
+    }
+
+    /**
+     * Checks whether negative standoff metadata is reliable enough to infer
+     * the board side before nearby package or mechanical-layer evidence.
+     * @param {{ dzMil?: number | null, standoffHeightMil?: number | null, overallHeightMil?: number | null } | null} componentBody Component body row.
+     * @param {'bottom' | null} standoffSide Side inferred from the standoff.
+     * @returns {boolean}
+     */
+    static #shouldTrustStandoffSide(componentBody, standoffSide) {
+        if (!standoffSide) {
+            return false
+        }
+
+        return !PcbScene3dPlacementSideResolver.#hasInEnvelopeDzAgainstOverlargeStandoff(
+            componentBody
+        )
+    }
+
+    /**
+     * Returns true for source-origin artifacts where Altium's standoff exceeds
+     * the model envelope but the authored dz offset is still physically valid.
+     * @param {{ dzMil?: number | null, standoffHeightMil?: number | null, overallHeightMil?: number | null } | null} componentBody Component body row.
+     * @returns {boolean}
+     */
+    static #hasInEnvelopeDzAgainstOverlargeStandoff(componentBody) {
+        const standoff = Number(componentBody?.standoffHeightMil)
+        const dz = Number(componentBody?.dzMil)
+        const overallHeight = Number(componentBody?.overallHeightMil)
+
+        return (
+            Number.isFinite(standoff) &&
+            standoff < 0 &&
+            Number.isFinite(dz) &&
+            dz < 0 &&
+            Number.isFinite(overallHeight) &&
+            overallHeight > 0 &&
+            Math.abs(standoff) > overallHeight &&
+            Math.abs(dz) < overallHeight
+        )
     }
 
     /**
@@ -383,7 +623,7 @@ export class PcbScene3dPlacementSideResolver {
     static #isMeaningfulToken(token) {
         return (
             String(token || '').length >= 2 &&
-            !new Set(['con', 'step', 'stp', 'model', 'default', 'black']).has(
+            !PcbScene3dPlacementSideResolver.#IGNORED_IDENTITY_TOKENS.has(
                 String(token || '')
             )
         )

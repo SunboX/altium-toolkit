@@ -1,4 +1,6 @@
 import { AltiumScene3dTwoRowFootprintDetector } from './AltiumScene3dTwoRowFootprintDetector.mjs'
+import { AltiumScene3dQfnFootprintDetector } from './AltiumScene3dQfnFootprintDetector.mjs'
+import { AltiumScene3dDisplayModuleYawPolicy } from './AltiumScene3dDisplayModuleYawPolicy.mjs'
 
 const PASSIVE_BODY_PATTERN =
     /(?:^|[^a-z0-9])(?:cap|capacitor|res|resistor|ind|inductor|ferrite|bead|crystal|xtal|lqw|lqg)(?:$|[^a-z0-9])/i
@@ -7,9 +9,11 @@ const CHIP_PASSIVE_BODY_PATTERN =
 const LOCAL_Y_CHIP_PASSIVE_MODEL_PATTERN =
     /(?:^|[^a-z0-9])local[-_ ]?y(?:$|[^a-z0-9])/i
 const PIN_ONE_CORNER_PACKAGE_PATTERN =
-    /(?:^|[^a-z0-9])(?:[avw]?qfn|vfqfn|wqfn|v?qfp|lqfp|tqfp|pqfp|mqfp)(?:[0-9]+)?(?:$|[^a-z0-9])/i
+    /(?:^|[^a-z0-9])(?:[auvw]?qfn|[uv]?fqfn|v?qfp|lqfp|tqfp|pqfp|mqfp)(?:[0-9]+)?(?:$|[^a-z0-9])/i
 const TWO_ROW_PIN_ONE_PACKAGE_PATTERN =
     /(?:^|[^a-z0-9])(?:msop|qsop|soic|sop|ssop|tssop|tsop|vsop)(?:[-_ ]?\d+)?(?:$|[^a-z0-9])/i
+const DFN_FOOTPRINT_YAW_PATTERN =
+    /(?:^|[^a-z0-9])(?:[a-z0-9]*dfn)(?:[-_ ]?[a-z0-9]+)*(?:$|[^a-z0-9])/i
 const FIVE_LEAD_SOT_PATTERN =
     /(?:^|[^a-z0-9])sot[-_ ]?(?:23[-_ ]?5|25|5)(?:$|[^a-z0-9])/i
 const THREE_LEAD_SOT23_PATTERN =
@@ -28,6 +32,8 @@ const EDGE_CONNECTOR_TOKENS = new Set([
     'sma',
     'socket'
 ])
+const THROUGH_HOLE_CONNECTOR_PATTERN =
+    /(?:^|[^a-z0-9])(?:connector|header|socket|terminal|wire[-_ ]?to[-_ ]?board)(?:$|[^a-z0-9])/i
 
 /**
  * Resolves generic Altium external-model yaw correction rules.
@@ -52,6 +58,12 @@ export class AltiumScene3dPlacementRotationPolicy {
             AltiumScene3dPlacementRotationPolicy.#needsThreeLeadSot23Correction(
                 context
             ) ||
+            AltiumScene3dPlacementRotationPolicy.#needsDisplayModelBoundsEdgeCorrection(
+                context
+            ) ||
+            AltiumScene3dPlacementRotationPolicy.#needsAlignedThroughHoleConnectorCorrection(
+                context
+            ) ||
             AltiumScene3dPlacementRotationPolicy.#needsTiltedEdgeCorrection(
                 context
             )
@@ -73,6 +85,40 @@ export class AltiumScene3dPlacementRotationPolicy {
             footprintYaw !== null &&
             footprintYaw !== undefined &&
             Number.isFinite(Number(footprintYaw))
+        )
+    }
+
+    /**
+     * Checks whether an embedded source model should be mirrored along its
+     * local length axis after the Altium tilt is applied.
+     * @param {{ placement?: object, component?: object | null, componentBody?: object | null, pads?: object[], isExactAnchoredOwner?: boolean }} context Rotation context.
+     * @returns {boolean}
+     */
+    static shouldMirrorSourceZ(context) {
+        const { placement, component, componentBody, pads } = context || {}
+        if (!component) {
+            return false
+        }
+
+        const identityText =
+            AltiumScene3dPlacementRotationPolicy.#packageIdentityText(
+                component,
+                componentBody
+            )
+
+        return (
+            AltiumScene3dPlacementRotationPolicy.#isPadFallback(placement) &&
+            AltiumScene3dPlacementRotationPolicy.#shouldUseDfnFootprintYaw(
+                placement,
+                component,
+                componentBody,
+                pads,
+                identityText
+            ) &&
+            AltiumScene3dPlacementRotationPolicy.#hasPowerDfnPinOneEndPattern(
+                component,
+                pads
+            )
         )
     }
 
@@ -140,6 +186,38 @@ export class AltiumScene3dPlacementRotationPolicy {
             )
         }
 
+        if (
+            AltiumScene3dDisplayModuleYawPolicy.shouldUseComponentYaw({
+                placement,
+                component,
+                pads,
+                identityText
+            }) &&
+            !AltiumScene3dPlacementRotationPolicy.#sourceYawMatchesComponentYaw(
+                placement,
+                component,
+                componentBody
+            )
+        ) {
+            return AltiumScene3dPlacementRotationPolicy.#normalizeAngle(
+                Number(component?.rotation || 0)
+            )
+        }
+
+        if (
+            AltiumScene3dPlacementRotationPolicy.#shouldUseDfnFootprintYaw(
+                placement,
+                component,
+                componentBody,
+                pads,
+                identityText
+            )
+        ) {
+            return AltiumScene3dPlacementRotationPolicy.#normalizeAngle(
+                Number(component?.rotation || 0)
+            )
+        }
+
         return null
     }
 
@@ -150,9 +228,9 @@ export class AltiumScene3dPlacementRotationPolicy {
      * @returns {boolean}
      */
     static #needsSquarePinOneCorrection(context) {
-        const { placement, component, componentBody } = context || {}
+        const { placement, component, componentBody, pads } = context || {}
         if (
-            !AltiumScene3dPlacementRotationPolicy.#isAnchoredOrPadFallback(
+            !AltiumScene3dPlacementRotationPolicy.#supportsSquarePinOneProjection(
                 context
             ) ||
             !component ||
@@ -172,7 +250,8 @@ export class AltiumScene3dPlacementRotationPolicy {
             ? AltiumScene3dPlacementRotationPolicy.#hasSquarePinOneFrameMismatch(
                   placement,
                   component,
-                  componentBody
+                  componentBody,
+                  pads
               )
             : false
     }
@@ -183,26 +262,77 @@ export class AltiumScene3dPlacementRotationPolicy {
      * @param {object | undefined} placement External model placement.
      * @param {object} component PCB component.
      * @param {object | null | undefined} componentBody Source component body.
+     * @param {object[]} pads Source PCB pads.
      * @returns {boolean}
      */
-    static #hasSquarePinOneFrameMismatch(placement, component, componentBody) {
+    static #hasSquarePinOneFrameMismatch(
+        placement,
+        component,
+        componentBody,
+        pads
+    ) {
         const mountSide = String(placement?.mountSide || '').toLowerCase()
         if (mountSide === 'top') {
-            return (
-                !AltiumScene3dPlacementRotationPolicy.#isPadFallback(
-                    placement
+            if (
+                !AltiumScene3dPlacementRotationPolicy.#isPadFallback(placement)
+            ) {
+                if (
+                    AltiumScene3dPlacementRotationPolicy.#hasEmbeddedModelBoundsSourceHalfTurn(
+                        placement,
+                        component
+                    ) ||
+                    !AltiumScene3dPlacementRotationPolicy.#sourceYawMatchesComponentYaw(
+                        placement,
+                        component,
+                        componentBody
+                    )
+                ) {
+                    return true
+                }
+
+                return (
+                    (AltiumScene3dPlacementRotationPolicy.#hasRightAngleModelTilt(
+                        componentBody
+                    ) &&
+                        AltiumScene3dQfnFootprintDetector.hasExposedPadPerimeterSequence(
+                            component,
+                            pads
+                        )) ||
+                    AltiumScene3dPlacementRotationPolicy.#surfacePads(
+                        component,
+                        pads
+                    ).length === 0
+                )
+            }
+            if (
+                AltiumScene3dPlacementRotationPolicy.#hasEmbeddedModelBoundsSourceHalfTurn(
+                    placement,
+                    component
                 ) ||
                 !AltiumScene3dPlacementRotationPolicy.#sourceYawMatchesComponentYaw(
                     placement,
                     component,
                     componentBody
                 )
+            ) {
+                return true
+            }
+
+            return (
+                AltiumScene3dPlacementRotationPolicy.#hasRightAngleModelTilt(
+                    componentBody
+                ) &&
+                AltiumScene3dQfnFootprintDetector.hasExposedPadPerimeterSequence(
+                    component,
+                    pads
+                )
             )
         }
 
         return (
             mountSide === 'bottom' &&
-            AltiumScene3dPlacementRotationPolicy.#hasRightAngleModelTilt(
+            AltiumScene3dPlacementRotationPolicy.#isPadFallback(placement) &&
+            AltiumScene3dPlacementRotationPolicy.#hasBottomPinOneFrame(
                 componentBody
             ) &&
             AltiumScene3dPlacementRotationPolicy.#isHalfTurnAngle(
@@ -215,6 +345,18 @@ export class AltiumScene3dPlacementRotationPolicy {
                 componentBody?.modelRotationDeg?.z ??
                     placement?.modelTransform?.rotationDeg?.z
             )
+        )
+    }
+
+    /**
+     * Checks whether a bottom-side square package source frame needs the
+     * mirrored pin-one comparison path.
+     * @param {object | null | undefined} componentBody Source component body.
+     * @returns {boolean}
+     */
+    static #hasBottomPinOneFrame(componentBody) {
+        return AltiumScene3dPlacementRotationPolicy.#hasRightAngleModelTilt(
+            componentBody
         )
     }
 
@@ -253,6 +395,189 @@ export class AltiumScene3dPlacementRotationPolicy {
             component,
             pads
         )
+    }
+
+    /**
+     * Checks whether a DFN-style pad-fallback body should follow footprint yaw.
+     * @param {object | undefined} placement External model placement.
+     * @param {object} component PCB component.
+     * @param {object | null | undefined} componentBody Source component body.
+     * @param {object[]} pads Source PCB pads.
+     * @param {string} identityText Package metadata text.
+     * @returns {boolean}
+     */
+    static #shouldUseDfnFootprintYaw(
+        placement,
+        component,
+        componentBody,
+        pads,
+        identityText
+    ) {
+        return (
+            String(placement?.mountSide || '').toLowerCase() === 'top' &&
+            AltiumScene3dPlacementRotationPolicy.#isFootprintDerivedProjection(
+                placement
+            ) &&
+            String(placement?.externalModel?.origin || '').toLowerCase() ===
+                'embedded' &&
+            DFN_FOOTPRINT_YAW_PATTERN.test(identityText) &&
+            AltiumScene3dPlacementRotationPolicy.#hasRightAngleModelTilt(
+                componentBody
+            ) &&
+            !AltiumScene3dPlacementRotationPolicy.#sourceYawMatchesComponentYaw(
+                placement,
+                component,
+                componentBody
+            ) &&
+            AltiumScene3dTwoRowFootprintDetector.hasTwoRowSurfaceFootprint(
+                component,
+                pads
+            )
+        )
+    }
+
+    /**
+     * Checks whether placement projection came from footprint geometry or
+     * footprint-matched model bounds.
+     * @param {object | undefined} placement External placement.
+     * @returns {boolean}
+     */
+    static #isFootprintDerivedProjection(placement) {
+        return ['pad-fallback', 'model-bounds'].includes(
+            String(placement?.projection?.source || '').toLowerCase()
+        )
+    }
+
+    /**
+     * Detects two-column power DFN footprints where one side is a tied power
+     * row and the opposite side has a single isolated control pad at one end.
+     * @param {object} component PCB component.
+     * @param {object[]} pads Source PCB pads.
+     * @returns {boolean}
+     */
+    static #hasPowerDfnPinOneEndPattern(component, pads) {
+        const surfacePads = AltiumScene3dPlacementRotationPolicy.#surfacePads(
+            component,
+            pads
+        )
+        if (surfacePads.length !== 8) {
+            return false
+        }
+
+        const xSpread = AltiumScene3dPlacementRotationPolicy.#spread(
+            surfacePads,
+            'x'
+        )
+        const ySpread = AltiumScene3dPlacementRotationPolicy.#spread(
+            surfacePads,
+            'y'
+        )
+        const sideAxis = xSpread >= ySpread ? 'x' : 'y'
+        const endAxis = sideAxis === 'x' ? 'y' : 'x'
+        const sides = AltiumScene3dPlacementRotationPolicy.#splitByMidpoint(
+            surfacePads,
+            sideAxis
+        )
+        if (sides.lower.length !== 4 || sides.upper.length !== 4) {
+            return false
+        }
+
+        return (
+            (AltiumScene3dPlacementRotationPolicy.#hasUniformNet(sides.lower) &&
+                AltiumScene3dPlacementRotationPolicy.#hasThreePlusIsolatedEndNet(
+                    sides.upper,
+                    endAxis
+                )) ||
+            (AltiumScene3dPlacementRotationPolicy.#hasUniformNet(sides.upper) &&
+                AltiumScene3dPlacementRotationPolicy.#hasThreePlusIsolatedEndNet(
+                    sides.lower,
+                    endAxis
+                ))
+        )
+    }
+
+    /**
+     * Splits pads into two side groups around one axis midpoint.
+     * @param {object[]} pads Source PCB pads.
+     * @param {'x' | 'y'} axis Axis key.
+     * @returns {{ lower: object[], upper: object[] }}
+     */
+    static #splitByMidpoint(pads, axis) {
+        const values = pads.map((pad) => Number(pad?.[axis] || 0))
+        const midpoint = (Math.min(...values) + Math.max(...values)) / 2
+
+        return {
+            lower: pads.filter((pad) => Number(pad?.[axis] || 0) <= midpoint),
+            upper: pads.filter((pad) => Number(pad?.[axis] || 0) > midpoint)
+        }
+    }
+
+    /**
+     * Checks whether every pad in a side group shares one routed net.
+     * @param {object[]} pads Source PCB pads.
+     * @returns {boolean}
+     */
+    static #hasUniformNet(pads) {
+        const netKeys = pads
+            .map((pad) => AltiumScene3dPlacementRotationPolicy.#netKey(pad))
+            .filter(Boolean)
+
+        return netKeys.length === pads.length && new Set(netKeys).size === 1
+    }
+
+    /**
+     * Checks for a side group with three tied pads plus one isolated end pad.
+     * @param {object[]} pads Source PCB pads.
+     * @param {'x' | 'y'} endAxis Axis that orders pins along a side.
+     * @returns {boolean}
+     */
+    static #hasThreePlusIsolatedEndNet(pads, endAxis) {
+        const groups = new Map()
+        for (const pad of pads) {
+            const netKey = AltiumScene3dPlacementRotationPolicy.#netKey(pad)
+            if (!netKey) {
+                return false
+            }
+
+            groups.set(netKey, [...(groups.get(netKey) || []), pad])
+        }
+
+        const groupSizes = [...groups.values()]
+            .map((group) => group.length)
+            .sort((a, b) => a - b)
+        if (
+            groupSizes.length !== 2 ||
+            groupSizes[0] !== 1 ||
+            groupSizes[1] !== 3
+        ) {
+            return false
+        }
+
+        const isolatedPad = [...groups.values()].find(
+            (group) => group.length === 1
+        )?.[0]
+        const orderedValues = pads.map((pad) => Number(pad?.[endAxis] || 0))
+        const isolatedValue = Number(isolatedPad?.[endAxis] || 0)
+
+        return (
+            isolatedValue === Math.min(...orderedValues) ||
+            isolatedValue === Math.max(...orderedValues)
+        )
+    }
+
+    /**
+     * Builds a stable routed-net key for grouping footprint pads.
+     * @param {object} pad Source PCB pad.
+     * @returns {string}
+     */
+    static #netKey(pad) {
+        const netName = String(pad?.netName || '').trim()
+        if (netName) {
+            return 'name:' + netName
+        }
+
+        const netIndex = Number(pad?.netIndex)
+        return Number.isFinite(netIndex) ? 'index:' + netIndex : ''
     }
 
     /**
@@ -308,18 +633,83 @@ export class AltiumScene3dPlacementRotationPolicy {
         }
 
         if (
-            AltiumScene3dPlacementRotationPolicy.#sourceYawMatchesComponentYaw(
-                placement,
+            !AltiumScene3dPlacementRotationPolicy.#hasAsymmetricFivePads(
                 component,
-                componentBody
+                pads
             )
         ) {
             return false
         }
 
-        return AltiumScene3dPlacementRotationPolicy.#hasAsymmetricFivePads(
+        if (
+            AltiumScene3dPlacementRotationPolicy.#hasEmbeddedModelBoundsSourceHalfTurn(
+                placement,
+                component
+            ) ||
+            !AltiumScene3dPlacementRotationPolicy.#sourceYawMatchesComponentYaw(
+                placement,
+                component,
+                componentBody
+            )
+        ) {
+            return true
+        }
+
+        return AltiumScene3dPlacementRotationPolicy.#hasTopQuarterTurnFiveLeadSotPinSideMismatch(
+            placement,
+            component,
+            componentBody,
+            pads
+        )
+    }
+
+    /**
+     * Checks for layerless top SOT23-5 source frames whose yaw equals the
+     * component yaw but whose horizontal asymmetric pad row needs a half-turn.
+     * @param {object | undefined} placement External model placement.
+     * @param {object} component PCB component.
+     * @param {object | null | undefined} componentBody Source component body.
+     * @param {object[]} pads Source PCB pads.
+     * @returns {boolean}
+     */
+    static #hasTopQuarterTurnFiveLeadSotPinSideMismatch(
+        placement,
+        component,
+        componentBody,
+        pads
+    ) {
+        const mountSide = String(placement?.mountSide || '').toLowerCase()
+        const componentYaw =
+            AltiumScene3dPlacementRotationPolicy.#normalizeAngle(
+                Number(component?.rotation || 0)
+            )
+        const bodyYaw = AltiumScene3dPlacementRotationPolicy.#normalizeAngle(
+            Number(
+                componentBody?.modelRotationDeg?.z ??
+                    placement?.modelTransform?.rotationDeg?.z ??
+                    placement?.rotationDeg ??
+                    0
+            )
+        )
+        const surfacePads = AltiumScene3dPlacementRotationPolicy.#surfacePads(
             component,
             pads
+        )
+
+        return (
+            mountSide === 'top' &&
+            AltiumScene3dPlacementRotationPolicy.#isPadFallback(placement) &&
+            String(componentBody?.layer || '').trim() === '' &&
+            String(componentBody?.sourceStream || '').includes(
+                'ShapeBasedComponentBodies'
+            ) &&
+            AltiumScene3dPlacementRotationPolicy.#isQuarterTurnAngle(
+                componentYaw
+            ) &&
+            bodyYaw === componentYaw &&
+            surfacePads.length === 5 &&
+            AltiumScene3dPlacementRotationPolicy.#spread(surfacePads, 'y') >
+                AltiumScene3dPlacementRotationPolicy.#spread(surfacePads, 'x')
         )
     }
 
@@ -354,6 +744,10 @@ export class AltiumScene3dPlacementRotationPolicy {
                 placement,
                 component,
                 componentBody
+            ) &&
+            !AltiumScene3dPlacementRotationPolicy.#hasEmbeddedModelBoundsSourceHalfTurn(
+                placement,
+                component
             )
         ) {
             return false
@@ -363,6 +757,30 @@ export class AltiumScene3dPlacementRotationPolicy {
             component,
             pads
         )
+    }
+
+    /**
+     * Detects display modules whose full model-bounds source was authored from
+     * the connector edge but currently extends away from its pad row.
+     * @param {{ placement?: object, component?: object | null, componentBody?: object | null, pads?: object[] }} context Rotation context.
+     * @returns {boolean}
+     */
+    static #needsDisplayModelBoundsEdgeCorrection(context) {
+        const { placement, component, componentBody, pads } = context || {}
+        if (!component) {
+            return false
+        }
+
+        return AltiumScene3dDisplayModuleYawPolicy.shouldReverseModelBoundsYaw({
+            placement,
+            component,
+            pads,
+            identityText:
+                AltiumScene3dPlacementRotationPolicy.#packageIdentityText(
+                    component,
+                    componentBody
+                )
+        })
     }
 
     /**
@@ -400,6 +818,55 @@ export class AltiumScene3dPlacementRotationPolicy {
     }
 
     /**
+     * Detects top-side through-hole connectors whose embedded source frame is
+     * aligned numerically but board-facing backwards after source mirroring.
+     * @param {{ placement?: object, component?: object | null, componentBody?: object | null, pads?: object[], isExactAnchoredOwner?: boolean }} context Rotation context.
+     * @returns {boolean}
+     */
+    static #needsAlignedThroughHoleConnectorCorrection(context) {
+        const { placement, component, componentBody, pads } = context || {}
+        const hasAuthoredProjection =
+            AltiumScene3dPlacementRotationPolicy.#isAuthoredOrAnchoredProjection(
+                context
+            ) ||
+            AltiumScene3dPlacementRotationPolicy.#isModelBoundsProjection(
+                placement
+            )
+
+        if (
+            !component ||
+            String(placement?.mountSide || '').toLowerCase() !== 'top' ||
+            String(placement?.externalModel?.origin || '').toLowerCase() !==
+                'embedded' ||
+            !hasAuthoredProjection ||
+            !AltiumScene3dPlacementRotationPolicy.#hasAuthoredBodyYaw(
+                componentBody
+            ) ||
+            !AltiumScene3dPlacementRotationPolicy.#sourceYawMatchesComponentYaw(
+                placement,
+                component,
+                componentBody
+            )
+        ) {
+            return false
+        }
+
+        const identityText =
+            AltiumScene3dPlacementRotationPolicy.#packageIdentityText(
+                component,
+                componentBody
+            )
+        if (!THROUGH_HOLE_CONNECTOR_PATTERN.test(identityText)) {
+            return false
+        }
+
+        return AltiumScene3dPlacementRotationPolicy.#hasThroughHoleOnlyPads(
+            component,
+            pads
+        )
+    }
+
+    /**
      * Checks whether one placement is exact-anchored or pad-fallback projected.
      * @param {{ placement?: object, isExactAnchoredOwner?: boolean }} context Rotation context.
      * @returns {boolean}
@@ -414,12 +881,113 @@ export class AltiumScene3dPlacementRotationPolicy {
     }
 
     /**
+     * Checks whether one projection can use square-package pin-one correction.
+     * @param {{ placement?: object, componentBody?: object | null, isExactAnchoredOwner?: boolean }} context Rotation context.
+     * @returns {boolean}
+     */
+    static #supportsSquarePinOneProjection(context) {
+        return (
+            AltiumScene3dPlacementRotationPolicy.#isAnchoredOrPadFallback(
+                context
+            ) ||
+            AltiumScene3dPlacementRotationPolicy.#isBottomModelBoundsProjection(
+                context
+            )
+        )
+    }
+
+    /**
+     * Checks whether a bottom-side embedded model-bounds projection still
+     * carries the source-frame signals needed for pin-one normalization.
+     * @param {{ placement?: object, componentBody?: object | null }} context Rotation context.
+     * @returns {boolean}
+     */
+    static #isBottomModelBoundsProjection(context) {
+        const placement = context?.placement || {}
+
+        return (
+            String(placement?.projection?.source || '').toLowerCase() ===
+                'model-bounds' &&
+            String(placement?.mountSide || '').toLowerCase() === 'bottom' &&
+            String(placement?.externalModel?.origin || '').toLowerCase() ===
+                'embedded' &&
+            AltiumScene3dPlacementRotationPolicy.#hasRightAngleModelTilt(
+                context?.componentBody
+            )
+        )
+    }
+
+    /**
      * Checks whether a placement was synthesized from footprint pads.
      * @param {object | undefined} placement External model placement.
      * @returns {boolean}
      */
     static #isPadFallback(placement) {
         return String(placement?.projection?.source || '') === 'pad-fallback'
+    }
+
+    /**
+     * Checks whether one projection keeps an authored Altium owner/body anchor.
+     * @param {{ placement?: object, isExactAnchoredOwner?: boolean }} context Rotation context.
+     * @returns {boolean}
+     */
+    static #isAuthoredOrAnchoredProjection(context) {
+        const projectionSource = String(
+            context?.placement?.projection?.source || ''
+        ).toLowerCase()
+
+        return (
+            AltiumScene3dPlacementRotationPolicy.#isAnchoredOrPadFallback(
+                context
+            ) || projectionSource === 'authored-body-anchor'
+        )
+    }
+
+    /**
+     * Checks whether one placement was projected from resolved model bounds.
+     * @param {object | undefined} placement External model placement.
+     * @returns {boolean}
+     */
+    static #isModelBoundsProjection(placement) {
+        return (
+            String(placement?.projection?.source || '').toLowerCase() ===
+            'model-bounds'
+        )
+    }
+
+    /**
+     * Checks whether recovered embedded model-bounds metadata carries a source
+     * yaw opposite the owning footprint yaw.
+     * @param {object | undefined} placement External model placement.
+     * @param {object} component PCB component.
+     * @returns {boolean}
+     */
+    static #hasEmbeddedModelBoundsSourceHalfTurn(placement, component) {
+        if (
+            !AltiumScene3dPlacementRotationPolicy.#isModelBoundsProjection(
+                placement
+            ) ||
+            String(placement?.externalModel?.origin || '').toLowerCase() !==
+                'embedded'
+        ) {
+            return false
+        }
+
+        const sourceYaw = Number(
+            placement?.externalModel?.transform?.rotationDeg?.z
+        )
+        if (!Number.isFinite(sourceYaw)) {
+            return false
+        }
+
+        const componentYaw =
+            AltiumScene3dPlacementRotationPolicy.#normalizeAngle(
+                Number(component?.rotation || 0)
+            )
+
+        return AltiumScene3dPlacementRotationPolicy.#isHalfTurnAngle(
+            sourceYaw - componentYaw
+        )
     }
 
     /**
@@ -688,11 +1256,83 @@ export class AltiumScene3dPlacementRotationPolicy {
             )
                 ? bodyLongAxisAngle
                 : bodyLongAxisAngle - 90
+        const bottomFlatTieYaw =
+            AltiumScene3dPlacementRotationPolicy.#resolveBottomFlatThreeLeadSotTieYaw(
+                component,
+                surfacePads,
+                identityText,
+                componentBody,
+                componentYaw,
+                modelYaw
+            )
+        if (bottomFlatTieYaw !== null) {
+            return bottomFlatTieYaw
+        }
 
         return AltiumScene3dPlacementRotationPolicy.#nearestLineAngle(
             componentYaw,
             modelYaw
         )
+    }
+
+    /**
+     * Resolves the mirrored component pin side for flat bottom-side SOT23-3 source
+     * models when long-axis alignment has an exact 180-degree tie.
+     * @param {object} component PCB component.
+     * @param {object[]} surfacePads Surface pads owned by the component.
+     * @param {string} identityText Package metadata text.
+     * @param {object | null | undefined} componentBody Source component body.
+     * @param {number} componentYaw Component yaw.
+     * @param {number} modelYaw Candidate footprint yaw.
+     * @returns {number | null}
+     */
+    static #resolveBottomFlatThreeLeadSotTieYaw(
+        component,
+        surfacePads,
+        identityText,
+        componentBody,
+        componentYaw,
+        modelYaw
+    ) {
+        if (
+            !THREE_LEAD_SOT23_PATTERN.test(identityText) ||
+            surfacePads.length !== 3 ||
+            !AltiumScene3dPlacementRotationPolicy.#isBottomComponent(
+                component
+            ) ||
+            AltiumScene3dPlacementRotationPolicy.#hasRightAngleModelTilt(
+                componentBody
+            ) ||
+            !AltiumScene3dPlacementRotationPolicy.#usesSourceXLongAxisSot(
+                identityText,
+                componentBody
+            )
+        ) {
+            return null
+        }
+
+        const normalizedModelYaw =
+            AltiumScene3dPlacementRotationPolicy.#normalizeAngle(modelYaw)
+        const oppositeModelYaw =
+            AltiumScene3dPlacementRotationPolicy.#normalizeAngle(
+                normalizedModelYaw + 180
+            )
+        const modelDistance =
+            AltiumScene3dPlacementRotationPolicy.#angleDistance(
+                componentYaw,
+                normalizedModelYaw
+            )
+        const oppositeDistance =
+            AltiumScene3dPlacementRotationPolicy.#angleDistance(
+                componentYaw,
+                oppositeModelYaw
+            )
+
+        return Math.abs(modelDistance - oppositeDistance) < 0.001
+            ? AltiumScene3dPlacementRotationPolicy.#normalizeAngle(
+                  componentYaw + 180
+              )
+            : null
     }
 
     /**
@@ -765,13 +1405,9 @@ export class AltiumScene3dPlacementRotationPolicy {
      * @returns {object[]}
      */
     static #surfacePads(component, pads) {
-        const componentIndex = Number(component?.componentIndex)
-        if (!Number.isFinite(componentIndex)) {
-            return []
-        }
-
-        const ownedPads = (Array.isArray(pads) ? pads : []).filter(
-            (pad) => Number(pad?.componentIndex) === componentIndex
+        const ownedPads = AltiumScene3dPlacementRotationPolicy.#ownedPads(
+            component,
+            pads
         )
         const bottom =
             String(component?.layer || '')
@@ -785,6 +1421,96 @@ export class AltiumScene3dPlacementRotationPolicy {
         )
 
         return surfacePads.length ? surfacePads : ownedPads
+    }
+
+    /**
+     * Checks whether one component has only directional through-hole pads.
+     * @param {object} component PCB component.
+     * @param {object[] | undefined} pads Source PCB pads.
+     * @returns {boolean}
+     */
+    static #hasThroughHoleOnlyPads(component, pads) {
+        const measurablePads = AltiumScene3dPlacementRotationPolicy.#ownedPads(
+            component,
+            pads
+        ).filter((pad) =>
+            AltiumScene3dPlacementRotationPolicy.#hasMeasurablePadSize(pad)
+        )
+        if (measurablePads.length < 2) {
+            return false
+        }
+
+        return measurablePads.every(
+            (pad) =>
+                AltiumScene3dPlacementRotationPolicy.#hasDrilledPadOpening(
+                    pad
+                ) &&
+                !pad?.hasTopPasteMaskOpening &&
+                !pad?.hasBottomPasteMaskOpening
+        )
+    }
+
+    /**
+     * Returns pads owned by one component index.
+     * @param {object} component PCB component.
+     * @param {object[] | undefined} pads Source PCB pads.
+     * @returns {object[]}
+     */
+    static #ownedPads(component, pads) {
+        const componentIndex = Number(component?.componentIndex)
+        if (!Number.isFinite(componentIndex)) {
+            return []
+        }
+
+        return (Array.isArray(pads) ? pads : []).filter(
+            (pad) => Number(pad?.componentIndex) === componentIndex
+        )
+    }
+
+    /**
+     * Checks whether one pad exposes enough physical size to guide yaw.
+     * @param {object} pad Source PCB pad.
+     * @returns {boolean}
+     */
+    static #hasMeasurablePadSize(pad) {
+        const width = Math.max(
+            Number(pad?.sizeTopX || 0),
+            Number(pad?.sizeMidX || 0),
+            Number(pad?.sizeBottomX || 0)
+        )
+        const depth = Math.max(
+            Number(pad?.sizeTopY || 0),
+            Number(pad?.sizeMidY || 0),
+            Number(pad?.sizeBottomY || 0)
+        )
+
+        return width > 0 && depth > 0
+    }
+
+    /**
+     * Checks whether one pad is drilled or otherwise through-hole-like.
+     * @param {object} pad Source PCB pad.
+     * @returns {boolean}
+     */
+    static #hasDrilledPadOpening(pad) {
+        return (
+            Number(pad?.holeDiameter || 0) > 0 ||
+            Number(pad?.holeSize || 0) > 0 ||
+            Number(pad?.drillDiameter || 0) > 0 ||
+            Number(pad?.holeShape || 0) > 0 ||
+            Number(pad?.layerCode || 0) > 16
+        )
+    }
+
+    /**
+     * Checks whether a source component is mounted on the PCB bottom.
+     * @param {object | null | undefined} component PCB component.
+     * @returns {boolean}
+     */
+    static #isBottomComponent(component) {
+        const layer = String(component?.layer || '').toUpperCase()
+
+        return layer.includes('BOTTOM') || layer === 'BOT'
     }
 
     /**
@@ -831,6 +1557,15 @@ export class AltiumScene3dPlacementRotationPolicy {
         )
 
         return angle === 90 || angle === 270
+    }
+
+    /**
+     * Checks whether one body row carries an explicit board-facing yaw.
+     * @param {object | null | undefined} componentBody Source component body.
+     * @returns {boolean}
+     */
+    static #hasAuthoredBodyYaw(componentBody) {
+        return Number.isFinite(Number(componentBody?.modelRotationDeg?.z))
     }
 
     /**
@@ -904,6 +1639,18 @@ export class AltiumScene3dPlacementRotationPolicy {
         return (
             AltiumScene3dPlacementRotationPolicy.#normalizeAngle(angle) === 180
         )
+    }
+
+    /**
+     * Checks whether an angle is a quarter-turn after normalization.
+     * @param {number} angle Source angle.
+     * @returns {boolean}
+     */
+    static #isQuarterTurnAngle(angle) {
+        const normalized =
+            AltiumScene3dPlacementRotationPolicy.#normalizeAngle(angle)
+
+        return normalized === 90 || normalized === 270
     }
 
     /**

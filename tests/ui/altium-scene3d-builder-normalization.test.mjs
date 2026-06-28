@@ -175,6 +175,69 @@ test('PcbScene3dBuilder rejects inset cutout outlines during board refinement', 
 })
 
 /**
+ * Verifies rigid layer-stack regions can refine rasterized edge routes even
+ * when their generated contour is inset from the route stroke envelope.
+ */
+test('PcbScene3dBuilder accepts inset rigid board-body regions during board refinement', () => {
+    const scene = PcbScene3dBuilder.build({
+        sourceFormat: 'altium',
+        kind: 'pcb',
+        fileName: 'generic-board.PcbDoc',
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 100,
+                heightMil: 100,
+                segments: createStairStepSegments()
+            },
+            primitiveLayers: [],
+            boardRegions: [
+                {
+                    objectKind: 'BoardRegion',
+                    isBoardCutout: true,
+                    isRigidRegion: true,
+                    layerStackId: '{00000000-0000-0000-0000-000000000000}',
+                    substackIndex: 0,
+                    points: [
+                        { x: 4, y: 96 },
+                        { x: 4, y: 5 },
+                        { x: 95, y: 5 },
+                        { x: 95, y: 80 },
+                        { x: 90, y: 92 },
+                        { x: 78, y: 96 }
+                    ]
+                }
+            ],
+            pads: [],
+            tracks: [],
+            arcs: [],
+            vias: [],
+            components: [
+                {
+                    designator: 'U1',
+                    x: 70,
+                    y: 60,
+                    layer: 'TOP',
+                    pattern: 'GENERIC',
+                    height: 20
+                }
+            ]
+        }
+    })
+
+    assert.equal(scene.board.minX, 4)
+    assert.equal(scene.board.minY, 5)
+    assert.equal(scene.board.widthMil, 91)
+    assert.equal(scene.board.heightMil, 91)
+    assert.equal(scene.board.centerX, 49.5)
+    assert.equal(scene.board.centerY, 50.5)
+    assert.equal(scene.board.segments.length, 6)
+    assert.equal(scene.components[0].positionMil.x, 20.5)
+    assert.equal(scene.components[0].positionMil.y, 9.5)
+})
+
+/**
  * Verifies procedural fallback bodies use component-owned pads in dense areas
  * instead of all nearby pads.
  */

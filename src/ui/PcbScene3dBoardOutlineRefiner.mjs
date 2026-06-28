@@ -254,6 +254,10 @@ export class PcbScene3dBoardOutlineRefiner {
             return false
         }
 
+        if (PcbScene3dBoardOutlineRefiner.#isLayerStackBodyRegion(region)) {
+            return false
+        }
+
         const candidateBounds =
             PcbScene3dBoardOutlineRefiner.#resolveOutlineBounds(candidate)
         if (!candidateBounds) {
@@ -273,6 +277,24 @@ export class PcbScene3dBoardOutlineRefiner {
             Math.abs(candidateBounds.maxY - current.maxY) <= epsilon
 
         return insideEnvelope && !touchesOuterEdge
+    }
+
+    /**
+     * Returns true when a board region describes a layer-stack body contour
+     * rather than a separate internal cutout aperture.
+     * @param {object} region Source board region.
+     * @returns {boolean}
+     */
+    static #isLayerStackBodyRegion(region) {
+        if (region?.objectKind !== 'BoardRegion') {
+            return false
+        }
+
+        return (
+            region?.isRigidRegion === true ||
+            region?.isFlexRegion === true ||
+            String(region?.layerStackId || '').trim().length > 0
+        )
     }
 
     /**

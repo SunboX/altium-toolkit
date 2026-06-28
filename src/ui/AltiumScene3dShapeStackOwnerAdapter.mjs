@@ -1,6 +1,4 @@
-const TIMING_PACKAGE_PATTERN =
-    /(?:^|[^a-z0-9])(?:clock|crystal|osc|oscillator|resonator|tcxo|txco|xtal)(?:$|[^a-z0-9])/i
-const TIMING_DESIGNATOR_PATTERN = /^(?:y|xo)\d+[a-z]?$/i
+import { AltiumScene3dShapeStackOwnerConflictPolicy } from './AltiumScene3dShapeStackOwnerConflictPolicy.mjs'
 
 /**
  * Keeps authored shape-based sub-bodies grouped under their carrier owner.
@@ -10,9 +8,8 @@ export class AltiumScene3dShapeStackOwnerAdapter {
     static #EXACT_OWNER_TOLERANCE_MIL = 1
     static #STACK_BODY_RADIUS_MIL = 220
     static #HEIGHT_TOLERANCE_MIL = 0.1
-    static #TIMING_PARAMETER_NAME_PATTERN =
-        /(?:^|[^a-z0-9])(?:comment|description|device|function|part|type|value)(?:$|[^a-z0-9])/i
-
+    static #OPPOSITE_SIDE_OWNER_DISTANCE_MARGIN_MIL = 10
+    static #STACK_BODY_OWNER_CONFLICT_MARGIN_MIL = 5
     /**
      * Applies authored stack ownership to static and external placements.
      * @param {object} sceneDescription Built scene description.
@@ -55,23 +52,25 @@ export class AltiumScene3dShapeStackOwnerAdapter {
             ])
         )
 
+        const repairedExternalPlacements =
+            AltiumScene3dShapeStackOwnerAdapter.#repairExternalPlacements(
+                sceneDescription.externalPlacements,
+                componentBodies,
+                assignments,
+                sceneDescription.board,
+                components
+            )
+
         return {
             ...sceneDescription,
             components: AltiumScene3dShapeStackOwnerAdapter.#markComponents(
                 sceneDescription.components,
                 ownerGroupKeys
             ),
-            externalPlacements:
-                AltiumScene3dShapeStackOwnerAdapter.#repairExternalPlacements(
-                    sceneDescription.externalPlacements,
-                    componentBodies,
-                    assignments,
-                    sceneDescription.board
-                ),
+            externalPlacements: repairedExternalPlacements,
             staticBodyPlacements:
                 AltiumScene3dShapeStackOwnerAdapter.#repairStaticPlacements(
                     sceneDescription.staticBodyPlacements,
-                    componentBodies,
                     assignments,
                     sceneDescription.board
                 )
@@ -104,17 +103,19 @@ export class AltiumScene3dShapeStackOwnerAdapter {
      * @param {object[]} componentBodies Source component-body rows.
      * @param {object[]} assignments Carrier assignments.
      * @param {object | undefined} board Scene board metadata.
+     * @param {object[]} components Source components.
      * @returns {object[]}
      */
     static #repairExternalPlacements(
         placements,
         componentBodies,
         assignments,
-        board
+        board,
+        components
     ) {
         const usedComponentBodies = new Set()
 
-        return (Array.isArray(placements) ? placements : []).map(
+        return (Array.isArray(placements) ? placements : []).flatMap(
             (placement) => {
                 const componentBody =
                     AltiumScene3dShapeStackOwnerAdapter.#resolveComponentBody(
@@ -129,18 +130,27 @@ export class AltiumScene3dShapeStackOwnerAdapter {
                 const assignment =
                     AltiumScene3dShapeStackOwnerAdapter.#assignmentForBody(
                         componentBody,
-                        assignments
+                        assignments,
+                        components
                     )
                 if (!assignment) {
-                    return placement
+                    return AltiumScene3dShapeStackOwnerAdapter.#shouldDropConflictingStackBody(
+                        componentBody,
+                        assignments,
+                        components
+                    )
+                        ? []
+                        : [placement]
                 }
 
-                return AltiumScene3dShapeStackOwnerAdapter.#withOwner(
-                    placement,
-                    componentBody,
-                    assignment,
-                    board
-                )
+                return [
+                    AltiumScene3dShapeStackOwnerAdapter.#withOwner(
+                        placement,
+                        componentBody,
+                        assignment,
+                        board
+                    )
+                ]
             }
         )
     }
@@ -148,17 +158,11 @@ export class AltiumScene3dShapeStackOwnerAdapter {
     /**
      * Repairs carrier static body ownership.
      * @param {object[] | undefined} placements Scene static body placements.
-     * @param {object[]} componentBodies Source component-body rows.
      * @param {object[]} assignments Carrier assignments.
      * @param {object | undefined} board Scene board metadata.
      * @returns {object[]}
      */
-    static #repairStaticPlacements(
-        placements,
-        componentBodies,
-        assignments,
-        board
-    ) {
+    static #repairStaticPlacements(placements, assignments, board) {
         return (Array.isArray(placements) ? placements : []).map(
             (placement) => {
                 const assignment = assignments.find((candidate) =>
@@ -298,7 +302,9 @@ export class AltiumScene3dShapeStackOwnerAdapter {
             AltiumScene3dShapeStackOwnerAdapter.#isCarrierBase(body)
         )
         const timingComponents = components.filter((component) =>
-            AltiumScene3dShapeStackOwnerAdapter.#isTimingComponent(component)
+            AltiumScene3dShapeStackOwnerConflictPolicy.isTimingComponent(
+                component
+            )
         )
         const groups =
             AltiumScene3dShapeStackOwnerAdapter.#groupCarrierBases(bases)
@@ -313,20 +319,26 @@ export class AltiumScene3dShapeStackOwnerAdapter {
                 return []
             }
 
-            const owners = timingComponents
-                .filter(
-                    (component) =>
-                        AltiumScene3dShapeStackOwnerAdapter.#distance(
-                            group.anchor,
-                            component
-                        ) <=
-                        AltiumScene3dShapeStackOwnerAdapter
-                            .#BASE_OWNER_TOLERANCE_MIL
-                )
-                .sort(
+            const owners =
+                AltiumScene3dShapeStackOwnerConflictPolicy.preferredSideOwners(
+                    group.anchor,
+                    timingComponents.filter(
+                        (component) =>
+                            AltiumScene3dShapeStackOwnerAdapter.#distance(
+                                group.anchor,
+                                component
+                            ) <=
+                            AltiumScene3dShapeStackOwnerAdapter
+                                .#BASE_OWNER_TOLERANCE_MIL
+                    ),
+                    AltiumScene3dShapeStackOwnerAdapter
+                        .#OPPOSITE_SIDE_OWNER_DISTANCE_MARGIN_MIL
+                ).sort(
                     (left, right) =>
-                        AltiumScene3dShapeStackOwnerAdapter.#ownerRank(right) -
-                            AltiumScene3dShapeStackOwnerAdapter.#ownerRank(
+                        AltiumScene3dShapeStackOwnerConflictPolicy.ownerRank(
+                            right
+                        ) -
+                            AltiumScene3dShapeStackOwnerConflictPolicy.ownerRank(
                                 left
                             ) ||
                         String(left?.designator || '').localeCompare(
@@ -389,12 +401,12 @@ export class AltiumScene3dShapeStackOwnerAdapter {
         return (
             exactOwners.some(
                 (component) =>
-                    !AltiumScene3dShapeStackOwnerAdapter.#isTimingComponent(
+                    !AltiumScene3dShapeStackOwnerConflictPolicy.isTimingComponent(
                         component
                     )
             ) &&
             !exactOwners.some((component) =>
-                AltiumScene3dShapeStackOwnerAdapter.#isTimingComponent(
+                AltiumScene3dShapeStackOwnerConflictPolicy.isTimingComponent(
                     component
                 )
             )
@@ -452,44 +464,21 @@ export class AltiumScene3dShapeStackOwnerAdapter {
      * Finds a carrier assignment for one positive-height sub-body.
      * @param {object | null} componentBody Source component-body row.
      * @param {object[]} assignments Carrier assignments.
+     * @param {object[]} components Source components.
      * @returns {object | null}
      */
-    static #assignmentForBody(componentBody, assignments) {
-        if (
-            !componentBody ||
-            !AltiumScene3dShapeStackOwnerAdapter.#isShapeBasedBody(
-                componentBody
-            ) ||
-            Number(componentBody?.standoffHeightMil || 0) <= 0
-        ) {
-            return null
-        }
-
-        const standoff = Number(componentBody.standoffHeightMil)
-        const bodyPosition = AltiumScene3dShapeStackOwnerAdapter.#point(
-            componentBody.positionMil
-        )
-
+    static #assignmentForBody(componentBody, assignments, components) {
         return (
-            assignments
-                .map((assignment) => ({
-                    assignment,
-                    heightError: Math.abs(
-                        Number(assignment.heightMil || 0) - standoff
-                    ),
-                    distance: AltiumScene3dShapeStackOwnerAdapter.#distance(
-                        bodyPosition,
-                        assignment.owner
+            AltiumScene3dShapeStackOwnerAdapter.#assignmentCandidatesForBody(
+                componentBody,
+                assignments
+            )
+                .filter((candidate) =>
+                    AltiumScene3dShapeStackOwnerAdapter.#canAssignStackBodyCandidate(
+                        componentBody,
+                        candidate,
+                        components
                     )
-                }))
-                .filter(
-                    (candidate) =>
-                        candidate.heightError <=
-                            AltiumScene3dShapeStackOwnerAdapter
-                                .#HEIGHT_TOLERANCE_MIL &&
-                        candidate.distance <=
-                            AltiumScene3dShapeStackOwnerAdapter
-                                .#STACK_BODY_RADIUS_MIL
                 )
                 .sort(
                     (left, right) =>
@@ -497,6 +486,122 @@ export class AltiumScene3dShapeStackOwnerAdapter {
                         left.distance - right.distance
                 )[0]?.assignment || null
         )
+    }
+
+    /**
+     * Checks whether a candidate stack owner can claim a raised body.
+     * @param {object | null} componentBody Source component-body row.
+     * @param {{ assignment: { owner: object } }} candidate Candidate assignment row.
+     * @param {object[]} components Source components.
+     * @returns {boolean}
+     */
+    static #canAssignStackBodyCandidate(componentBody, candidate, components) {
+        const hasConflictingOwner =
+            AltiumScene3dShapeStackOwnerConflictPolicy.hasConflictingComponentOwner(
+                componentBody,
+                candidate.assignment.owner,
+                components,
+                AltiumScene3dShapeStackOwnerAdapter
+                    .#STACK_BODY_OWNER_CONFLICT_MARGIN_MIL
+            )
+        if (!hasConflictingOwner) {
+            return true
+        }
+
+        return (
+            AltiumScene3dShapeStackOwnerConflictPolicy.hasStackDetailBodyIdentity(
+                componentBody
+            ) &&
+            !AltiumScene3dShapeStackOwnerConflictPolicy.hasExactOppositeSideOwner(
+                componentBody,
+                candidate.assignment.owner,
+                components,
+                AltiumScene3dShapeStackOwnerAdapter.#EXACT_OWNER_TOLERANCE_MIL
+            )
+        )
+    }
+
+    /**
+     * Checks whether an unassigned positive-height body should be suppressed
+     * because it conflicts with an opposite-side owner but has no exact owner
+     * of its own.
+     * @param {object | null} componentBody Source component-body row.
+     * @param {object[]} assignments Carrier assignments.
+     * @param {object[]} components Source components.
+     * @returns {boolean}
+     */
+    static #shouldDropConflictingStackBody(
+        componentBody,
+        assignments,
+        components
+    ) {
+        const conflict =
+            AltiumScene3dShapeStackOwnerAdapter.#assignmentCandidatesForBody(
+                componentBody,
+                assignments
+            ).find((candidate) =>
+                AltiumScene3dShapeStackOwnerConflictPolicy.hasConflictingComponentOwner(
+                    componentBody,
+                    candidate.assignment.owner,
+                    components,
+                    AltiumScene3dShapeStackOwnerAdapter
+                        .#STACK_BODY_OWNER_CONFLICT_MARGIN_MIL
+                )
+            )
+
+        return Boolean(
+            conflict &&
+            !AltiumScene3dShapeStackOwnerConflictPolicy.hasExactOppositeSideOwner(
+                componentBody,
+                conflict.assignment.owner,
+                components,
+                AltiumScene3dShapeStackOwnerAdapter.#EXACT_OWNER_TOLERANCE_MIL
+            )
+        )
+    }
+
+    /**
+     * Builds stack assignment candidates for one positive-height body.
+     * @param {object | null} componentBody Source component-body row.
+     * @param {object[]} assignments Carrier assignments.
+     * @returns {{ assignment: object, heightError: number, distance: number }[]}
+     */
+    static #assignmentCandidatesForBody(componentBody, assignments) {
+        if (
+            !componentBody ||
+            !AltiumScene3dShapeStackOwnerAdapter.#isShapeBasedBody(
+                componentBody
+            ) ||
+            Number(componentBody?.standoffHeightMil || 0) <= 0
+        ) {
+            return []
+        }
+
+        const standoff = Number(componentBody.standoffHeightMil)
+        const bodyPosition = AltiumScene3dShapeStackOwnerAdapter.#point(
+            componentBody.positionMil
+        )
+
+        return (Array.isArray(assignments) ? assignments : [])
+            .map((assignment) => ({
+                assignment,
+                heightError: Math.abs(
+                    Number(assignment.heightMil || 0) - standoff
+                ),
+                distance: AltiumScene3dShapeStackOwnerAdapter.#distance(
+                    bodyPosition,
+                    assignment.owner
+                )
+            }))
+            .filter(
+                (candidate) =>
+                    candidate.heightError <=
+                        AltiumScene3dShapeStackOwnerAdapter
+                            .#HEIGHT_TOLERANCE_MIL &&
+                    candidate.distance <=
+                        AltiumScene3dShapeStackOwnerAdapter
+                            .#STACK_BODY_RADIUS_MIL
+            )
     }
 
     /**
@@ -704,51 +809,6 @@ export class AltiumScene3dShapeStackOwnerAdapter {
     }
 
     /**
-     * Checks whether a component is a timing-package owner.
-     * @param {object} component Source component.
-     * @returns {boolean}
-     */
-    static #isTimingComponent(component) {
-        const designator = String(component?.designator || '').trim()
-
-        return (
-            TIMING_DESIGNATOR_PATTERN.test(designator) ||
-            TIMING_PACKAGE_PATTERN.test(
-                AltiumScene3dShapeStackOwnerAdapter.#timingIdentityText(
-                    component
-                )
-            )
-        )
-    }
-
-    /**
-     * Scores how strongly a component looks like the fitted stack owner.
-     * @param {object} component Source component.
-     * @returns {number}
-     */
-    static #ownerRank(component) {
-        const parameters = Object.values(component?.parameters || {}).filter(
-            (value) => String(value || '').trim()
-        )
-        return (
-            parameters.length * 10 +
-            (TIMING_DESIGNATOR_PATTERN.test(component?.designator) ? 5 : 0) +
-            (TIMING_PACKAGE_PATTERN.test(
-                [
-                    component?.pattern,
-                    component?.source,
-                    component?.description,
-                    component?.provenance?.footprintDescription
-                ]
-                    .map((value) => String(value || ''))
-                    .join(' ')
-            )
-                ? 3
-                : 0)
-        )
-    }
-
-    /**
      * Checks whether one body row came from shape-based component metadata.
      * @param {object | null | undefined} componentBody Source body row.
      * @returns {boolean}
@@ -859,44 +919,6 @@ export class AltiumScene3dShapeStackOwnerAdapter {
             )
             .filter(Boolean)
             .join(' ')
-    }
-
-    /**
-     * Builds timing-relevant identity text without material metadata.
-     * @param {object} component Source component.
-     * @returns {string}
-     */
-    static #timingIdentityText(component) {
-        return [
-            component?.pattern,
-            component?.source,
-            component?.description,
-            component?.provenance?.footprintDescription,
-            ...AltiumScene3dShapeStackOwnerAdapter.#timingParameterValues(
-                component?.parameters
-            )
-        ]
-            .map((value) => String(value || ''))
-            .join(' ')
-    }
-
-    /**
-     * Returns parameter values whose names describe component identity.
-     * @param {object | undefined} parameters Source component parameters.
-     * @returns {unknown[]}
-     */
-    static #timingParameterValues(parameters) {
-        if (!parameters || typeof parameters !== 'object') {
-            return []
-        }
-
-        return Object.entries(parameters)
-            .filter(([key]) =>
-                AltiumScene3dShapeStackOwnerAdapter.#TIMING_PARAMETER_NAME_PATTERN.test(
-                    String(key || '')
-                )
-            )
-            .map(([, value]) => value)
     }
 
     /**

@@ -110,8 +110,118 @@ test('PcbScene3dModelRegistry resolves embedded body references before session b
     assert.equal(embeddedMatch?.origin, 'embedded')
     assert.equal(embeddedMatch?.payloadText, 'ISO-10303-21;')
     assert.equal(embeddedMatch?.sourceStream, 'Models/0')
+    assert.deepEqual(embeddedMatch?.transform, {
+        rotationDeg: { x: 0, y: 0, z: 270 },
+        dzMil: 11.811
+    })
     assert.equal(sessionMatch?.origin, 'session')
     assert.equal(sessionMatch?.relativePath, 'Models/QFN32.wrl')
+})
+
+test('PcbScene3dModelRegistry derives embedded STEP payload bounds', () => {
+    const registry = PcbScene3dModelRegistry.create(
+        [],
+        [
+            {
+                id: '{FIXTURE-STEP-BODY}',
+                checksum: 98,
+                name: 'fixture-body.step',
+                format: 'step',
+                payloadText: [
+                    'ISO-10303-21;',
+                    'DATA;',
+                    "#1=CARTESIAN_POINT('',(-0.635,-1.2,-2.3));",
+                    "#2=CARTESIAN_POINT('',(1.905,1.2,5.0));",
+                    "#3=CARTESIAN_POINT('',(0.0,0.0,0.0));",
+                    '#4=SI_UNIT(.MILLI.,.METRE.);',
+                    'ENDSEC;',
+                    'END-ISO-10303-21;'
+                ].join('\n'),
+                sourceStream: 'Models/3'
+            }
+        ]
+    )
+
+    const match = registry.resolveComponentBodyModel({
+        modelId: '{FIXTURE-STEP-BODY}',
+        checksum: 98,
+        embedded: true,
+        name: 'fixture-body.step'
+    })
+
+    assert.equal(match?.origin, 'embedded')
+    assert.ok(Math.abs(match.boundsMil.width - 100) < 1e-9)
+    assert.ok(Math.abs(match.boundsMil.depth - 94.4881889764) < 1e-9)
+    assert.ok(Math.abs(match.boundsMil.height - 287.4015748031) < 1e-9)
+})
+
+test('PcbScene3dModelRegistry honors embedded STEP inch payload bounds', () => {
+    const registry = PcbScene3dModelRegistry.create(
+        [],
+        [
+            {
+                id: '{FIXTURE-INCH-BODY}',
+                checksum: 99,
+                name: 'fixture-inch-body.step',
+                format: 'step',
+                payloadText: [
+                    'ISO-10303-21;',
+                    'DATA;',
+                    "#1=CARTESIAN_POINT('',(0.0,0.0,0.0));",
+                    "#2=CARTESIAN_POINT('',(0.1,0.2,0.3));",
+                    "#3=CONVERSION_BASED_UNIT('INCH',#4);",
+                    '#4=SI_UNIT($,.METRE.);',
+                    'ENDSEC;',
+                    'END-ISO-10303-21;'
+                ].join('\n'),
+                sourceStream: 'Models/4'
+            }
+        ]
+    )
+
+    const match = registry.resolveComponentBodyModel({
+        modelId: '{FIXTURE-INCH-BODY}',
+        checksum: 99,
+        embedded: true,
+        name: 'fixture-inch-body.step'
+    })
+
+    assert.equal(match?.origin, 'embedded')
+    assert.equal(match.boundsMil.width, 100)
+    assert.equal(match.boundsMil.depth, 200)
+    assert.equal(match.boundsMil.height, 300)
+})
+
+test('PcbScene3dModelRegistry skips unsupported embedded body payloads', () => {
+    const registry = PcbScene3dModelRegistry.create(
+        [
+            {
+                name: 'fixture-body.step',
+                relativePath: 'Models/fixture-body.step'
+            }
+        ],
+        [
+            {
+                id: '{FIXTURE-BODY}',
+                checksum: 72,
+                name: 'fixture-body.sldprt',
+                format: 'solidworks',
+                payloadText: 'solidworks-binary-ish',
+                sourceStream: 'Models/4'
+            }
+        ]
+    )
+
+    const match = registry.resolveComponentBodyModel({
+        modelId: '{FIXTURE-BODY}',
+        checksum: 72,
+        embedded: true,
+        name: 'fixture-body.sldprt'
+    })
+
+    assert.equal(match?.origin, 'session')
+    assert.equal(match?.format, 'step')
+    assert.equal(match?.relativePath, 'Models/fixture-body.step')
 })
 
 /**

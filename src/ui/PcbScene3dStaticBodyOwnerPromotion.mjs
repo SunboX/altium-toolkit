@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbScene3dStaticBodySymmetricOwnerPromotion } from './PcbScene3dStaticBodySymmetricOwnerPromotion.mjs'
+import { PcbScene3dStaticBodyPadOwnerPromotion } from './PcbScene3dStaticBodyPadOwnerPromotion.mjs'
 
 /**
  * Promotes compact static body fragments to one clear touching owner.
@@ -11,7 +12,20 @@ export class PcbScene3dStaticBodyOwnerPromotion {
     static #NEAREST_OWNER_DISTANCE_MIL = 20
     static #NEAREST_OWNER_AMBIGUITY_MARGIN_MIL = 2
     static #CLUSTER_CENTER_MAX_SPAN_MIL = 45
+    static #CENTERED_PACKAGE_OWNER_MAX_SPAN_MIL = 180
     static #GENERIC_SUBPART_OWNER_MAX_SPAN_MIL = 80
+    static #AUTHORED_MECHANICAL_TOKENS = new Set([
+        'can',
+        'clip',
+        'cover',
+        'enclosure',
+        'frame',
+        'hardware',
+        'leg',
+        'mechanical',
+        'plate',
+        'shield'
+    ])
     static #GENERIC_SUBPART_TOKENS = new Set(['plastic'])
 
     /**
@@ -19,8 +33,9 @@ export class PcbScene3dStaticBodyOwnerPromotion {
      * @param {{ placement: object, matchedComponent: object | null }[]} placementRows Mutable placement rows.
      * @param {{ designator?: string, x?: number, y?: number, layer?: string }[]} [components] PCB components.
      * @param {{ centerX?: number, centerY?: number } | null} [board] Board context.
+     * @param {{ componentIndex?: number, x?: number, y?: number, hasTopPasteMaskOpening?: boolean, hasBottomPasteMaskOpening?: boolean }[]} [pads] PCB pads.
      */
-    static promote(placementRows, components = [], board = null) {
+    static promote(placementRows, components = [], board = null, pads = []) {
         PcbScene3dStaticBodyOwnerPromotion.#promoteNearestOwners(
             placementRows,
             components
@@ -29,6 +44,12 @@ export class PcbScene3dStaticBodyOwnerPromotion {
         PcbScene3dStaticBodySymmetricOwnerPromotion.promote(
             placementRows,
             components
+        )
+
+        PcbScene3dStaticBodyPadOwnerPromotion.promote(
+            placementRows,
+            components,
+            pads
         )
 
         const clusters =
@@ -91,6 +112,11 @@ export class PcbScene3dStaticBodyOwnerPromotion {
             )
             .forEach((cluster) => {
                 if (
+                    cluster.indexes.some((index) =>
+                        PcbScene3dStaticBodyOwnerPromotion.#hasLockedOwner(
+                            placementRows[index]
+                        )
+                    ) ||
                     cluster.indexes.length <= 1 ||
                     PcbScene3dStaticBodyOwnerPromotion.#boundsMaxSpan(
                         cluster.bounds
@@ -620,6 +646,10 @@ export class PcbScene3dStaticBodyOwnerPromotion {
      * @returns {boolean}
      */
     static #canPromote(row) {
+        if (PcbScene3dStaticBodyOwnerPromotion.#hasLockedOwner(row)) {
+            return false
+        }
+
         if (row.matchedComponent) {
             return true
         }
@@ -640,9 +670,14 @@ export class PcbScene3dStaticBodyOwnerPromotion {
      * @returns {boolean}
      */
     static #canPromoteNearestOwner(row) {
+        if (PcbScene3dStaticBodyOwnerPromotion.#hasLockedOwner(row)) {
+            return false
+        }
+
         if (
             PcbScene3dStaticBodyOwnerPromotion.#canPromote(row) ||
-            PcbScene3dStaticBodyOwnerPromotion.#isCompactRow(row)
+            PcbScene3dStaticBodyOwnerPromotion.#isCompactRow(row) ||
+            PcbScene3dStaticBodyOwnerPromotion.#isCenteredPackageBody(row)
         ) {
             return true
         }
@@ -660,6 +695,15 @@ export class PcbScene3dStaticBodyOwnerPromotion {
     }
 
     /**
+     * Checks whether a placement already carries a deliberate static owner.
+     * @param {{ placement?: { ownerLocked?: boolean } } | null} row Placement row.
+     * @returns {boolean}
+     */
+    static #hasLockedOwner(row) {
+        return Boolean(row?.placement?.ownerLocked)
+    }
+
+    /**
      * Checks whether one row is compact enough for cluster-center ownership.
      * @param {{ placement: object }} row Placement row.
      * @returns {boolean}
@@ -669,6 +713,47 @@ export class PcbScene3dStaticBodyOwnerPromotion {
             PcbScene3dStaticBodyOwnerPromotion.#maxSpan(
                 row.placement?.geometry
             ) <= 40
+        )
+    }
+
+    /**
+     * Checks whether one source-coordinate body looks like a complete package
+     * body centered on a component rather than authored board mechanics.
+     * @param {{ placement: object, matchedComponent: object | null }} row Placement row.
+     * @returns {boolean}
+     */
+    static #isCenteredPackageBody(row) {
+        const placement = row?.placement
+        const span = PcbScene3dStaticBodyOwnerPromotion.#maxSpan(
+            placement?.geometry
+        )
+
+        return (
+            !row?.matchedComponent &&
+            placement?.sourceCoordinateFrame &&
+            !placement?.mountSideLocked &&
+            span > 40 &&
+            span <=
+                PcbScene3dStaticBodyOwnerPromotion
+                    .#CENTERED_PACKAGE_OWNER_MAX_SPAN_MIL &&
+            !PcbScene3dStaticBodyOwnerPromotion.#hasAuthoredMechanicalIdentity(
+                placement
+            )
+        )
+    }
+
+    /**
+     * Checks whether one placement identity names authored board mechanics.
+     * @param {{ designator?: string, sourceIdentityKey?: string } | null} placement Static placement.
+     * @returns {boolean}
+     */
+    static #hasAuthoredMechanicalIdentity(placement) {
+        return PcbScene3dStaticBodyOwnerPromotion.#identityTokens(
+            placement
+        ).some((token) =>
+            PcbScene3dStaticBodyOwnerPromotion.#AUTHORED_MECHANICAL_TOKENS.has(
+                token
+            )
         )
     }
 

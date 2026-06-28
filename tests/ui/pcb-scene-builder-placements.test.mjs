@@ -1011,6 +1011,112 @@ test('PcbScene3dBuilder keeps in-board negative standoff repeated bodies on the 
 })
 
 /**
+ * Verifies repeated pin sub-bodies inherit the side and owner of the drilled
+ * connector pads they occupy, even when their anchors are far from the
+ * component origin.
+ */
+test('PcbScene3dBuilder resolves repeated pin bodies from owned drilled pads', () => {
+    const pinPositions = [
+        { x: 440, y: 170 },
+        { x: 560, y: 170 },
+        { x: 680, y: 170 },
+        { x: 440, y: 270 },
+        { x: 560, y: 270 },
+        { x: 680, y: 270 }
+    ]
+    const scene = PcbScene3dBuilder.build(
+        {
+            fileName: 'demo.PcbDoc',
+            pcb: {
+                boardOutline: buildBoardOutline(),
+                pads: pinPositions.map((position) => ({
+                    componentIndex: 94,
+                    x: position.x,
+                    y: position.y,
+                    sizeTopX: 40,
+                    sizeTopY: 40,
+                    sizeMidX: 40,
+                    sizeMidY: 40,
+                    holeDiameter: 24
+                })),
+                tracks: [],
+                arcs: [],
+                fills: [],
+                vias: [],
+                polygons: [],
+                componentBodies: pinPositions.map((position) => ({
+                    sourceStream: 'ComponentBodies6/Data',
+                    layer: 'MECHANICAL13',
+                    identifier: 'pinheader1_27_2',
+                    modelId: '{MODEL-PIN}',
+                    checksum: 456,
+                    embedded: true,
+                    name: 'pinheader1-27-2.step',
+                    positionMil: position,
+                    rotationDeg: 0,
+                    modelRotationDeg: { x: 0, y: 0, z: 270 },
+                    dzMil: 0,
+                    overallHeightMil: 196,
+                    standoffHeightMil: -90
+                })),
+                components: [
+                    {
+                        componentIndex: 94,
+                        designator: 'J1',
+                        x: 560,
+                        y: 220,
+                        rotation: 0,
+                        layer: 'TOP',
+                        pattern: 'HEADER_2X3_HALF_PITCH',
+                        source: 'Header 2X3',
+                        height: 80
+                    }
+                ]
+            }
+        },
+        { modelRegistry: buildModelRegistry() }
+    )
+
+    assert.equal(
+        scene.components.find((component) => component.designator === 'J1')
+            .renderFallbackBody,
+        false
+    )
+    assert.equal(scene.externalPlacements.length, 6)
+    assert.deepEqual(
+        scene.externalPlacements.map((placement) => placement.designator),
+        ['J1', 'J1', 'J1', 'J1', 'J1', 'J1']
+    )
+    assert.deepEqual(
+        scene.externalPlacements.map((placement) => placement.mountSide),
+        ['top', 'top', 'top', 'top', 'top', 'top']
+    )
+    assert.deepEqual(
+        scene.externalPlacements.map((placement) => placement.positionMil),
+        [
+            { x: -60, y: -80, z: 31.5 },
+            { x: 60, y: -80, z: 31.5 },
+            { x: 180, y: -80, z: 31.5 },
+            { x: -60, y: 20, z: 31.5 },
+            { x: 60, y: 20, z: 31.5 },
+            { x: 180, y: 20, z: 31.5 }
+        ]
+    )
+    assert.deepEqual(
+        scene.externalPlacements.map(
+            (placement) => placement.projection.source
+        ),
+        new Array(6).fill('authored-body-anchor')
+    )
+    assert.deepEqual(
+        scene.externalPlacements.map(
+            (placement) => placement.modelTransform.ownerAnchorOffsetMil
+        ),
+        new Array(6).fill(undefined)
+    )
+})
+
+/**
  * Verifies metadata-backed offset external bodies use component yaw while
  * keeping the native body anchor instead of moving onto the component origin.
  */
@@ -1187,6 +1293,7 @@ test('PcbScene3dBuilder keeps unmatched top mechanical connector bodies on top',
         y: 0,
         z: 31.5
     })
+    assert.equal(scene.externalPlacements[0].modelTransform.dzMil, -60)
 })
 
 /**
