@@ -277,6 +277,62 @@ test('renderSchematicSvg keeps top parameter-set labels near the info marker', (
 })
 
 /**
+ * Verifies compact parameter-set styles render as small attachment markers
+ * instead of full labeled callouts that collide with nearby net labels.
+ */
+test('renderSchematicSvg draws style-1 parameter sets as compact markers', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Compact directive schematic' },
+        schematic: {
+            sheet: {
+                width: 160,
+                height: 120,
+                fonts: {
+                    1: {
+                        size: 10,
+                        family: 'Times New Roman',
+                        bold: false
+                    }
+                }
+            },
+            lines: [],
+            texts: [
+                {
+                    x: 86,
+                    y: 70,
+                    text: 'NODE_A',
+                    color: '#800000',
+                    fontSize: 10,
+                    fontFamily: 'Times New Roman',
+                    fontWeight: 400
+                }
+            ],
+            components: [],
+            pins: [],
+            ports: [],
+            crosses: [],
+            directives: [
+                {
+                    x: 80,
+                    y: 70,
+                    color: '#ff0000',
+                    name: 'RULE_A',
+                    orientation: 1,
+                    style: 1
+                }
+            ]
+        }
+    })
+
+    assert.match(
+        markup,
+        /<line x1="80" y1="50" x2="80" y2="47" stroke="var\(--schematic-alert-color\)" stroke-width="1" \/><circle cx="80" cy="44" r="3" fill="none" stroke="var\(--schematic-alert-color\)" stroke-width="1" \/>/
+    )
+    assert.doesNotMatch(markup, /class="schematic-directive-label"/)
+    assert.doesNotMatch(markup, /class="schematic-directive-info"/)
+})
+
+/**
  * Verifies authored outer pin symbols stay visible as single triangles and
  * escaped active-low runs render as overlined pin-name spans.
  */

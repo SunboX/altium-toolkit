@@ -137,7 +137,7 @@ export class SchematicTextParser {
      * @param {{ width: number, marginWidth: number, titleBlockOn?: boolean }} sheet
      * @param {Record<string, { size: number, family: string, bold: boolean, italic?: boolean, rotation: number }>} fonts
      * @param {Map<string, Record<string, string>>} [ownerMetadata]
-     * @returns {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end', verticalAnchor?: 'top', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] } | null}
+     * @returns {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end', verticalAnchor?: 'middle' | 'top', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] } | null}
      */
     static normalizeSchematicTextRecord(
         fields,

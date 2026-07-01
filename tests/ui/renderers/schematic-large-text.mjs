@@ -42,6 +42,46 @@ test('parseAltiumArrayBuffer and renderSchematicSvg preserve authored placement 
 })
 
 /**
+ * Verifies schematic text records honor the vertical row encoded in Altium's
+ * justification grid instead of treating centered text coordinates as SVG
+ * baselines.
+ */
+test('parseAltiumArrayBuffer and renderSchematicSvg center vertically justified schematic text', () => {
+    const records = [
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=520|CustomY=220|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=2|Size1=18|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+            '|Size2=10|FontName2=Times New Roman|Bold2=F|Rotation2=0',
+        '|RECORD=14|IndexInSheet=1|Location.X=80|Location.Y=80|Corner.X=420|Corner.Y=200' +
+            '|LineWidth=1|Color=4078660|AreaColor=11599871|Transparent=T',
+        '|RECORD=6|IndexInSheet=2|LineWidth=1|Color=4078660|LocationCount=3' +
+            '|X1=80|Y1=180|X2=220|Y2=180|X3=220|Y3=200',
+        '|RECORD=4|IndexInSheet=3|Location.X=95|Location.Y=190|Justification=3' +
+            '|Color=4078660|FontID=1|Text=INPUT STAGE',
+        '|RECORD=1|IndexInSheet=4|Location.X=130|Location.Y=150|LibReference=FAKE/SMALL-CELL' +
+            '|DesignItemId=FAKE/SMALL-CELL|UniqueID=CMP-A',
+        '|RECORD=41|OwnerIndex=4|IndexInSheet=-1|Location.X=145|Location.Y=175' +
+            '|Justification=4|Color=8388608|FontID=2|Text=CELL-A|Name=Comment'
+    ]
+    const arrayBuffer = new TextEncoder().encode(records.join('')).buffer
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'vertically-justified-text.SchDoc',
+        arrayBuffer
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.match(
+        markup,
+        /<text class="schematic-label" x="95" y="56\.12"[^>]*>INPUT STAGE<\/text>/
+    )
+    assert.match(
+        markup,
+        /<text class="schematic-label" x="145" y="68\.24"[^>]*>CELL-A<\/text>/
+    )
+})
+
+/**
  * Verifies imported schematic font italics survive parser normalization and
  * are emitted on both free text and recovered title-block value hints.
  */

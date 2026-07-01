@@ -15,7 +15,7 @@ const { createSvgText, escapeHtml, formatNumber, projectSchematicY } =
 export class SchematicDirectiveRenderer {
     /**
      * Builds directive markup for supported schematic directive primitives.
-     * @param {{ x: number, y: number, color: string, name: string, orientation?: number }[]} directives
+     * @param {{ x: number, y: number, color: string, name: string, orientation?: number, style?: number }[]} directives
      * @param {number} sheetHeight
      * @param {{ fonts?: Record<string, { size: number, family: string, bold: boolean }> }} sheet
      * @returns {string}
@@ -34,7 +34,7 @@ export class SchematicDirectiveRenderer {
 
     /**
      * Builds one supported directive glyph.
-     * @param {{ x: number, y: number, color: string, name: string, orientation?: number }} directive
+     * @param {{ x: number, y: number, color: string, name: string, orientation?: number, style?: number }} directive
      * @param {number} sheetHeight
      * @param {{ fonts?: Record<string, { size: number, family: string, bold: boolean }> }} sheet
      * @returns {string}
@@ -67,13 +67,24 @@ export class SchematicDirectiveRenderer {
 
     /**
      * Builds the labeled info-callout marker for one parameter-set directive.
-     * @param {{ x: number, y: number, color: string, name: string, orientation?: number }} directive
+     * @param {{ x: number, y: number, color: string, name: string, orientation?: number, style?: number }} directive
      * @param {number} sheetHeight
      * @param {{ fonts?: Record<string, { size: number, family: string, bold: boolean }> }} sheet
      * @param {string} classModifier
      * @returns {string}
      */
     static #buildRouteMarkup(directive, sheetHeight, sheet, classModifier) {
+        if (
+            classModifier === 'parameter-set' &&
+            Number(directive?.style) === 1
+        ) {
+            return SchematicDirectiveRenderer.#buildCompactParameterSetMarkup(
+                directive,
+                sheetHeight,
+                classModifier
+            )
+        }
+
         const color = SchematicColorResolver.resolveColor(
             directive.color,
             '--schematic-alert-color'
@@ -150,6 +161,61 @@ export class SchematicDirectiveRenderer {
                 'middle',
                 infoOptions
             ) +
+            '</g>'
+        )
+    }
+
+    /**
+     * Builds the compact style-1 parameter-set marker used for connection
+     * adornments whose class name is carried as metadata rather than text.
+     * @param {{ x: number, y: number, color: string, orientation?: number }} directive
+     * @param {number} sheetHeight
+     * @param {string} classModifier
+     * @returns {string}
+     */
+    static #buildCompactParameterSetMarkup(
+        directive,
+        sheetHeight,
+        classModifier
+    ) {
+        const color = SchematicColorResolver.resolveColor(
+            directive.color,
+            '--schematic-alert-color'
+        )
+        const projectedY = projectSchematicY(sheetHeight, directive.y)
+        const direction = SchematicDirectiveRenderer.#resolveCalloutDirection(
+            directive.orientation
+        )
+        const circleRadius = 3
+        const circleCenterX = directive.x + direction.x * 6
+        const circleCenterY = projectedY + direction.y * 6
+        const leaderEndX = circleCenterX - direction.x * circleRadius
+        const leaderEndY = circleCenterY - direction.y * circleRadius
+
+        return (
+            '<g class="schematic-directive schematic-directive--' +
+            escapeHtml(classModifier) +
+            '">' +
+            '<line x1="' +
+            formatNumber(directive.x) +
+            '" y1="' +
+            formatNumber(projectedY) +
+            '" x2="' +
+            formatNumber(leaderEndX) +
+            '" y2="' +
+            formatNumber(leaderEndY) +
+            '" stroke="' +
+            escapeHtml(color) +
+            '" stroke-width="1" />' +
+            '<circle cx="' +
+            formatNumber(circleCenterX) +
+            '" cy="' +
+            formatNumber(circleCenterY) +
+            '" r="' +
+            formatNumber(circleRadius) +
+            '" fill="none" stroke="' +
+            escapeHtml(color) +
+            '" stroke-width="1" />' +
             '</g>'
         )
     }

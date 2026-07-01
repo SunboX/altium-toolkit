@@ -24,6 +24,7 @@ export class SchematicPinSvgRenderer {
      * @param {Map<string, number>} explicitOwnerPinLabelOffsets
      * @param {Map<string, 'left' | 'right'>} compactExternalNumberLabelSides
      * @param {Map<string, { left: number, right: number }>} internalNumberLabelBoxes
+     * @param {Set<string>} explicitOwnerPinNumberLabelKeys
      * @param {Set<string>} overlappingExternalNumberLabelKeys
      * @returns {string}
      */
@@ -36,6 +37,7 @@ export class SchematicPinSvgRenderer {
         explicitOwnerPinLabelOffsets,
         compactExternalNumberLabelSides = new Map(),
         internalNumberLabelBoxes = new Map(),
+        explicitOwnerPinNumberLabelKeys = new Set(),
         overlappingExternalNumberLabelKeys = new Set()
     ) {
         const geometry =
@@ -76,13 +78,14 @@ export class SchematicPinSvgRenderer {
             null
         const internalNumberLabelBox =
             internalNumberLabelBoxes.get(String(pin.ownerIndex || '')) || null
-        const shouldRenderExternalNumber =
-            !overlappingExternalNumberLabelKeys.has(
-                SchematicOwnerPinLabelLayout.buildOwnerPinLabelKey(
-                    pin.ownerIndex,
-                    pin.designator
-                )
+        const ownerPinNumberLabelKey =
+            SchematicOwnerPinLabelLayout.buildOwnerPinLabelKey(
+                pin.ownerIndex,
+                pin.designator
             )
+        const shouldRenderExternalNumber =
+            !explicitOwnerPinNumberLabelKeys.has(ownerPinNumberLabelKey) &&
+            !overlappingExternalNumberLabelKeys.has(ownerPinNumberLabelKey)
 
         if (pin.orientation === 'left') {
             if (labelMode !== 'hidden' && labelMode !== 'name-only') {
@@ -247,6 +250,7 @@ export class SchematicPinSvgRenderer {
         if (
             labelMode !== 'hidden' &&
             labelMode !== 'name-only' &&
+            shouldRenderExternalNumber &&
             (pin.orientation === 'top' || pin.orientation === 'bottom')
         ) {
             texts.push(

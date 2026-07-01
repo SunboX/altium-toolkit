@@ -122,3 +122,41 @@ test('renderSchematicSvg colors near-black owner artwork as schematic ink', () =
     )
     assert.doesNotMatch(markup, /stroke="#506f2a"/)
 })
+
+/**
+ * Verifies non-electrical free graphics preserve authored dark gray section
+ * frame colors instead of collapsing into the default wire color.
+ */
+test('renderSchematicSvg preserves unknown free graphic line colors', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Free graphic color schematic' },
+        schematic: {
+            sheet: { width: 180, height: 120 },
+            lines: [
+                {
+                    x1: 20,
+                    y1: 80,
+                    x2: 160,
+                    y2: 80,
+                    color: '#443c3e',
+                    width: 1,
+                    recordType: '6'
+                }
+            ],
+            texts: [],
+            components: [],
+            pins: [],
+            ports: [],
+            crosses: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /<line x1="20" y1="40" x2="160" y2="40" stroke="#443c3e" stroke-width="1" \/>/
+    )
+    assert.doesNotMatch(
+        markup,
+        /<line x1="20" y1="40" x2="160" y2="40" stroke="var\(--schematic-default-ink-color\)"/
+    )
+})

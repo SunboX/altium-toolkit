@@ -12,7 +12,7 @@ export class SchematicDirectiveParser {
     /**
      * Normalizes schematic directive records into drawable directive metadata.
      * @param {{ fields: Record<string, string | string[]> }[]} records
-     * @returns {{ x: number, y: number, color: string, name: string, orientation: number }[]}
+     * @returns {{ x: number, y: number, color: string, name: string, orientation: number, style?: number }[]}
      */
     static parseSchematicDirectives(records) {
         return records
@@ -31,7 +31,11 @@ export class SchematicDirectiveParser {
                     return null
                 }
 
-                return {
+                const style = ParserUtils.parseNumericField(
+                    record.fields,
+                    'Style'
+                )
+                const directive = {
                     x,
                     y,
                     color: ParserUtils.toColor(record.fields.Color, '#ff0000'),
@@ -42,6 +46,12 @@ export class SchematicDirectiveParser {
                             'Orientation'
                         ) || 0
                 }
+
+                if (style !== null) {
+                    directive.style = style
+                }
+
+                return directive
             })
             .filter(Boolean)
     }
@@ -210,6 +220,8 @@ export class SchematicDirectiveParser {
             orientation:
                 ParserUtils.parseNumericField(record.fields, 'Orientation') ||
                 0,
+            style:
+                ParserUtils.parseNumericField(record.fields, 'Style') ?? null,
             parameters,
             parameterMap,
             isDifferentialPair,

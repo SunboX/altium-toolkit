@@ -528,7 +528,7 @@ test('renderSchematicSvg honors generic free-text justification anchors', () => 
     )
     assert.match(
         markup,
-        /<text class="schematic-label" x="120" y="120" fill="var\(--schematic-default-ink-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">StandBy</
+        /<text class="schematic-label" x="120" y="129" fill="var\(--schematic-default-ink-color\)" text-anchor="start" font-size="9" font-family="Times New Roman" font-weight="400">StandBy</
     )
 })
 

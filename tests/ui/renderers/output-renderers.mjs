@@ -1418,9 +1418,9 @@ test('pcb viewer stylesheet colors overlay silkscreen regions and text', async (
 })
 
 /**
- * Verifies schematic viewer colors use the app and PCB palette family.
+ * Verifies schematic viewer colors use ECAD Forge defaults.
  */
-test('schematic viewer stylesheet aligns schematic theme variables with the app palette', async () => {
+test('schematic viewer stylesheet aligns schematic theme variables with ECAD Forge colors', async () => {
     const cssPath = new URL(
         '../../../src/styles/altium-renderers.css',
         import.meta.url

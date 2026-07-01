@@ -34,6 +34,7 @@ const SECTION_HEADING_LINE_X_PADDING = 15
 const BODY_TEXT_ASCENT_RATIO = 0.72
 const BODY_TEXT_DESCENT_RATIO = 0.14
 const BODY_TEXT_FLAT_DESCENT_RATIO = 0
+const TEXT_VERTICAL_MIDDLE_BASELINE_RATIO = 0.36
 const BODY_TEXT_MIN_SEPARATOR_SPAN_RATIO = 0.3
 const BODY_TEXT_DESCENDER_PATTERN = /[gjpqyQ_,;]/
 
@@ -45,7 +46,7 @@ export class SchematicSvgRenderer {
 
     /**
      * Renders a normalized schematic model into SVG markup.
-     * @param {{ fileName?: string, summary: { title?: string }, schematic?: { sheet: { width: number, height: number, sourceWidth?: number, sourceHeight?: number, paperSize?: string, borderOn?: boolean, titleBlockOn?: boolean, marginWidth?: number, xZones?: number, yZones?: number, titleBlock?: { title?: string, revision?: string, documentNumber?: string, sheetNumber?: string, sheetTotal?: string, date?: string, drawnBy?: string } }, lines: { x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle?: number, isBus?: boolean, ownerIndex?: string, renderOrder?: number, recordType?: string }[], polygons?: { points: { x: number, y: number }[], color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], rectangles?: { x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], regions?: { x: number, y: number, width: number, height: number, color: string, fill: string, renderOrder?: number }[], ellipses?: { x: number, y: number, radiusX: number, radiusY: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, color: string, width: number, ownerIndex?: string, renderOrder?: number }[], directives?: { x: number, y: number, color: string, name: string, orientation?: number }[], texts: { x: number, y: number, text: string, textSegments?: { text: string, overline: boolean }[], color: string, recordType?: string, style?: number, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, anchor?: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }[], components: { x: number, y: number, designator: string }[], pins?: { x: number, y: number, length: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color: string, labelColor?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', ownerIndex?: string }[], ports?: { x: number, y: number, width: number, height: number, name: string, fill: string, color: string, direction?: 'left' | 'right' | 'up' | 'down', shape?: 'single' | 'double' | 'plain' }[], crosses?: { x: number, y: number, size: number, color: string }[] } }} documentModel
+     * @param {{ fileName?: string, summary: { title?: string }, schematic?: { sheet: { width: number, height: number, sourceWidth?: number, sourceHeight?: number, paperSize?: string, borderOn?: boolean, titleBlockOn?: boolean, marginWidth?: number, xZones?: number, yZones?: number, titleBlock?: { title?: string, revision?: string, documentNumber?: string, sheetNumber?: string, sheetTotal?: string, date?: string, drawnBy?: string } }, lines: { x1: number, y1: number, x2: number, y2: number, color: string, width: number, lineStyle?: number, isBus?: boolean, ownerIndex?: string, renderOrder?: number, recordType?: string }[], polygons?: { points: { x: number, y: number }[], color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], rectangles?: { x: number, y: number, width: number, height: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], regions?: { x: number, y: number, width: number, height: number, color: string, fill: string, renderOrder?: number }[], ellipses?: { x: number, y: number, radiusX: number, radiusY: number, color: string, fill: string, isSolid: boolean, transparent: boolean, lineWidth: number, ownerIndex?: string, renderOrder?: number }[], arcs?: { x: number, y: number, radius: number, startAngle: number, endAngle: number, color: string, width: number, ownerIndex?: string, renderOrder?: number }[], directives?: { x: number, y: number, color: string, name: string, orientation?: number, style?: number }[], texts: { x: number, y: number, text: string, textSegments?: { text: string, overline: boolean }[], color: string, recordType?: string, style?: number, fontSize?: number, fontFamily?: string, fontWeight?: number, fontStyle?: string, rotation?: number, sourceOrientation?: number, isMirrored?: boolean, anchor?: 'start' | 'middle' | 'end', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] }[], components: { x: number, y: number, designator: string }[], pins?: { x: number, y: number, length: number, name: string, nameSegments?: { text: string, overline: boolean }[], designator: string, orientation: 'left' | 'right' | 'top' | 'bottom', electrical?: number, symbolOuter?: number, color: string, labelColor?: string, labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number', ownerIndex?: string }[], ports?: { x: number, y: number, width: number, height: number, name: string, fill: string, color: string, direction?: 'left' | 'right' | 'up' | 'down', shape?: 'single' | 'double' | 'plain' }[], crosses?: { x: number, y: number, size: number, color: string }[] } }} documentModel
      * @param {{ projectParameters?: Record<string, string | number | boolean | null | undefined>, colorizeImages?: boolean, colorize_images?: boolean }} options Render options.
      * @returns {string}
      */
@@ -634,6 +635,11 @@ export class SchematicSvgRenderer {
                 pins,
                 contentRectangles
             )
+        const explicitOwnerPinNumberLabelKeys =
+            SchematicOwnerPinLabelLayout.collectExplicitOwnerPinNumberLabelKeys(
+                texts,
+                pins
+            )
         const overlappingExternalNumberLabelKeys =
             SchematicOwnerPinLabelLayout.collectOverlappingExternalNumberLabelKeys(
                 pins,
@@ -652,6 +658,7 @@ export class SchematicSvgRenderer {
                         explicitOwnerPinLabelOffsets,
                         compactExternalNumberLabelSides,
                         internalNumberLabelBoxes,
+                        explicitOwnerPinNumberLabelKeys,
                         overlappingExternalNumberLabelKeys
                     ),
                     SchematicSvgRenderer.#semanticAttributes(
@@ -2702,7 +2709,7 @@ export class SchematicSvgRenderer {
 
     /**
      * Resolves final text placement for schematic free-text annotations.
-     * @param {{ x: number, y: number, text: string, ownerIndex?: string, recordType?: string, fontSize?: number, rotation?: number, anchor?: 'start' | 'middle' | 'end', verticalAnchor?: 'top' }} text
+     * @param {{ x: number, y: number, text: string, ownerIndex?: string, recordType?: string, fontSize?: number, rotation?: number, anchor?: 'start' | 'middle' | 'end', verticalAnchor?: 'middle' | 'top' }} text
      * @param {number} sheetHeight
      * @param {{ x1: number, y1: number, x2: number, y2: number, lineStyle?: number }[]} lines
      * @param {{ x: number, y: number, name?: string, ownerIndex?: string, orientation: 'left' | 'right' | 'top' | 'bottom' } | null} matchedOwnerPin
@@ -2822,17 +2829,26 @@ export class SchematicSvgRenderer {
     }
 
     /**
-     * Converts top-anchored text coordinates into SVG baseline coordinates.
-     * @param {{ verticalAnchor?: 'top' }} text Text primitive.
+     * Converts vertically anchored text coordinates into SVG baseline
+     * coordinates.
+     * @param {{ verticalAnchor?: 'middle' | 'top' }} text Text primitive.
      * @param {number} fontSize Viewer font size.
      * @returns {number}
      */
     static #resolveVerticalAnchorBaselineOffset(text, fontSize) {
-        if (text?.verticalAnchor !== 'top') {
+        if (!Number.isFinite(fontSize) || fontSize <= 0) {
             return 0
         }
 
-        return Number.isFinite(fontSize) && fontSize > 0 ? fontSize : 0
+        if (text?.verticalAnchor === 'middle') {
+            return fontSize * TEXT_VERTICAL_MIDDLE_BASELINE_RATIO
+        }
+
+        if (text?.verticalAnchor === 'top') {
+            return fontSize
+        }
+
+        return 0
     }
 
     /**

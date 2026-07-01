@@ -144,6 +144,56 @@ export class SchematicOwnerPinLabelLayout {
     }
 
     /**
+     * Collects pins whose owner already draws a visible text label for the pin
+     * designator, avoiding a second synthetic pin-number label at the contact.
+     * @param {{ ownerIndex?: string, text?: string, x?: number, y?: number, recordType?: string, hidden?: boolean }[]} texts
+     * @param {{ ownerIndex?: string, designator?: string, x: number, y: number, length?: number, orientation: 'left' | 'right' | 'top' | 'bottom', labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number' }[]} pins
+     * @returns {Set<string>}
+     */
+    static collectExplicitOwnerPinNumberLabelKeys(texts, pins) {
+        const ownerTexts = SchematicOwnerPinLabelLayout.#groupByOwnerIndex(
+            (texts || []).filter(
+                (text) => text.recordType === '4' && !text.hidden
+            )
+        )
+        const keys = new Set()
+
+        for (const pin of pins || []) {
+            const ownerIndex = String(pin.ownerIndex || '').trim()
+            const designator = String(pin.designator || '').trim()
+
+            if (
+                !ownerIndex ||
+                !designator ||
+                (pin.labelMode || 'name-and-number') === 'hidden' ||
+                (pin.labelMode || 'name-and-number') === 'name-only'
+            ) {
+                continue
+            }
+
+            const nativeNumberLabels = ownerTexts.get(ownerIndex) || []
+            const hasNativeNumberLabel = nativeNumberLabels.some((text) =>
+                SchematicOwnerPinLabelLayout.#isExplicitOwnerPinNumberLabel(
+                    text,
+                    pin,
+                    designator
+                )
+            )
+
+            if (hasNativeNumberLabel) {
+                keys.add(
+                    SchematicOwnerPinLabelLayout.buildOwnerPinLabelKey(
+                        ownerIndex,
+                        designator
+                    )
+                )
+            }
+        }
+
+        return keys
+    }
+
+    /**
      * Collects compact FET-like owner groups whose numeric contact labels need
      * to stay outside the owner-drawn device body.
      * @param {{ ownerIndex?: string, name?: string, designator?: string, length?: number, orientation: 'left' | 'right' | 'top' | 'bottom', labelMode?: 'hidden' | 'number-only' | 'name-only' | 'name-and-number' }[]} pins
@@ -479,6 +529,53 @@ export class SchematicOwnerPinLabelLayout {
             (!name || /^\d+$/.test(name)) &&
             Math.abs(Number(pin.length || 0)) <= 30
         )
+    }
+
+    /**
+     * Returns true when an owner text is a native pin-number label for a pin.
+     * @param {{ text?: string, x?: number, y?: number }} text
+     * @param {{ x: number, y: number, length?: number, orientation: 'left' | 'right' | 'top' | 'bottom' }} pin
+     * @param {string} designator
+     * @returns {boolean}
+     */
+    static #isExplicitOwnerPinNumberLabel(text, pin, designator) {
+        if (String(text?.text || '').trim() !== designator) {
+            return false
+        }
+
+        const textX = Number(text?.x)
+        const textY = Number(text?.y)
+        const pinX = Number(pin?.x)
+        const pinY = Number(pin?.y)
+
+        if (
+            !Number.isFinite(textX) ||
+            !Number.isFinite(textY) ||
+            !Number.isFinite(pinX) ||
+            !Number.isFinite(pinY)
+        ) {
+            return false
+        }
+
+        const laneTolerance = 6
+        const axisTolerance =
+            Math.max(Math.abs(Number(pin.length || 0)), 10) + 6
+
+        if (pin.orientation === 'left' || pin.orientation === 'right') {
+            return (
+                Math.abs(textY - pinY) <= laneTolerance &&
+                Math.abs(textX - pinX) <= axisTolerance
+            )
+        }
+
+        if (pin.orientation === 'top' || pin.orientation === 'bottom') {
+            return (
+                Math.abs(textX - pinX) <= laneTolerance &&
+                Math.abs(textY - pinY) <= axisTolerance
+            )
+        }
+
+        return false
     }
 
     /**

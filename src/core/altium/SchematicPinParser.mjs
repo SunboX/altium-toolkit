@@ -904,6 +904,15 @@ export class SchematicPinParser {
             )
         ) {
             labelMode = 'number-only'
+        } else if (
+            ownerDrawnInternalPinOwners.has(ownerIndex) &&
+            SchematicPinParser.#isCompactCommonTerminalDiodeGroup(
+                normalizedPins,
+                names,
+                orientationCount
+            )
+        ) {
+            labelMode = 'number-only'
         } else if (!semanticNames.length && orientationCount <= 2) {
             labelMode = 'number-only'
         } else if (
@@ -1060,6 +1069,48 @@ export class SchematicPinParser {
     }
 
     /**
+     * Returns true when a compact owner-drawn diode-like section exposes one
+     * ordinary anode/cathode terminal and one common terminal name internally.
+     * @param {{ designator: string, name: string, length: number, electrical?: number, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
+     * @param {string[]} names
+     * @param {number} orientationCount
+     * @returns {boolean}
+     */
+    static #isCompactCommonTerminalDiodeGroup(pins, names, orientationCount) {
+        if (
+            pins.length !== 2 ||
+            orientationCount !== 2 ||
+            names.length !== pins.length ||
+            !SchematicPinParser.#hasOptionalNumericPinDesignators(pins)
+        ) {
+            return false
+        }
+
+        if (
+            pins.some((pin) => {
+                const length = Math.abs(Number(pin.length || 0))
+                const electrical = Number(pin.electrical)
+                return (
+                    length <= 0 ||
+                    length > 15 ||
+                    (Number.isFinite(electrical) && electrical !== 4)
+                )
+            })
+        ) {
+            return false
+        }
+
+        const hasDiodeTerminal = names.some((name) =>
+            SchematicPinParser.#isDiodeTerminalName(name)
+        )
+        const hasCommonTerminal = names.some((name) =>
+            SchematicPinParser.#isCommonDiodeTerminalName(name)
+        )
+
+        return hasDiodeTerminal && hasCommonTerminal
+    }
+
+    /**
      * Returns true when compact owner-drawn terminal glyph pins have either no
      * external designators or ordinary numeric pin numbers.
      * @param {{ designator: string }[]} pins
@@ -1102,6 +1153,24 @@ export class SchematicPinParser {
         return /^(x|y|gnd|agnd|dgnd|pgnd|vcc|vdd|vee|vss|nc)$/i.test(
             String(name || '').trim()
         )
+    }
+
+    /**
+     * Returns true for one-letter terminals used inside diode-style symbols.
+     * @param {string} name
+     * @returns {boolean}
+     */
+    static #isDiodeTerminalName(name) {
+        return /^[AKC]$/i.test(String(name || '').trim())
+    }
+
+    /**
+     * Returns true for common-terminal names used by multipart diode symbols.
+     * @param {string} name
+     * @returns {boolean}
+     */
+    static #isCommonDiodeTerminalName(name) {
+        return /^COM[AC]$/i.test(String(name || '').trim())
     }
 
     /**

@@ -220,3 +220,33 @@ test('parseAltiumArrayBuffer keeps directive records, port shapes, and electrica
         ]
     )
 })
+
+/**
+ * Verifies parameter-set style metadata survives parsing so the renderer can
+ * distinguish compact directive glyphs from full labeled callouts.
+ */
+test('parseAltiumArrayBuffer preserves parameter-set directive style', () => {
+    const documentModel = AltiumParser.parseArrayBuffer(
+        'compact-directive-style.SchDoc',
+        new TextEncoder().encode(
+            [
+                '|HEADER=Schematic Document',
+                '|RECORD=31|CustomX=200|CustomY=120|VisibleGridSize=10|SnapGridSize=5' +
+                    '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+                    '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+                '|RECORD=43|IndexInSheet=40|Location.X=80|Location.Y=70|Color=255|Orientation=1|Name=RULE_A|Style=1'
+            ].join('')
+        ).buffer
+    )
+
+    assert.deepEqual(documentModel.schematic.directives, [
+        {
+            x: 80,
+            y: 70,
+            color: '#ff0000',
+            name: 'RULE_A',
+            orientation: 1,
+            style: 1
+        }
+    ])
+})

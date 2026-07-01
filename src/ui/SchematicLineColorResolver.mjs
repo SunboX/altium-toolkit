@@ -17,7 +17,8 @@ export class SchematicLineColorResolver {
         if (SchematicLineColorResolver.isElectricalLine(line)) {
             return SchematicColorResolver.resolveNonTextColor(
                 line?.color,
-                '--schematic-default-ink-color'
+                '--schematic-default-ink-color',
+                true
             )
         }
 
@@ -37,7 +38,8 @@ export class SchematicLineColorResolver {
 
         return SchematicColorResolver.resolveNonTextColor(
             line?.color,
-            '--schematic-default-ink-color'
+            '--schematic-default-ink-color',
+            true
         )
     }
 

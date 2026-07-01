@@ -216,6 +216,92 @@ test('parseAltiumArrayBuffer hides compact two-pin internal terminal names', () 
 })
 
 /**
+ * Verifies compact owner-drawn common-terminal diode-style symbols keep their
+ * contact numbers but suppress internal terminal names stored on the pins.
+ */
+test('parseAltiumArrayBuffer hides compact common-terminal diode pin names', () => {
+    const documentModel = parseSchematicRecords([
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=260|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=1|IndexInSheet=720|Location.X=130|Location.Y=90|LibReference=FAKE/DUAL-TERMINAL' +
+            '|PartCount=2|DisplayModeCount=1|CurrentPartId=1|UniqueID=CMP-K|AllPinCount=3',
+        '|RECORD=7|OwnerIndex=720|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=2|LineWidth=1' +
+            '|Color=128|AreaColor=128|IsSolid=T|LocationCount=3|X1=128|Y1=84|X2=122|Y2=90|X3=128|Y3=96',
+        '|RECORD=6|OwnerIndex=720|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=3|LineWidth=1|Color=128' +
+            '|LocationCount=2|X1=122|Y1=96|X2=122|Y2=84',
+        '|RECORD=6|OwnerIndex=720|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=4|LineWidth=1|Color=128' +
+            '|LocationCount=2|X1=120|Y1=90|X2=130|Y2=90',
+        '|RECORD=2|OwnerIndex=720|OwnerPartId=1|FormalType=1|Electrical=4|PinConglomerate=32|PinLength=10' +
+            '|Location.X=130|Location.Y=90|Name=A|Designator=1',
+        '|RECORD=2|OwnerIndex=720|OwnerPartId=1|FormalType=1|Electrical=4|PinConglomerate=34|PinLength=10' +
+            '|Location.X=120|Location.Y=90|Name=COMC|Designator=2',
+        '|RECORD=34|OwnerIndex=720|Location.X=112|Location.Y=105|Color=8388608|FontID=1|Text=QK1|Name=Designator',
+        '|RECORD=41|OwnerIndex=720|Location.X=112|Location.Y=75|Color=8388608|FontID=1|Text=DUAL-TERMINAL|Name=Comment'
+    ])
+    const ownerPins = documentModel.schematic.pins.filter(
+        (pin) => pin.ownerIndex === '720'
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.deepEqual(
+        ownerPins.map((pin) => ({
+            name: pin.name,
+            designator: pin.designator,
+            labelMode: pin.labelMode
+        })),
+        [
+            { name: 'A', designator: '1', labelMode: 'number-only' },
+            { name: 'COMC', designator: '2', labelMode: 'number-only' }
+        ]
+    )
+    assert.equal(
+        (markup.match(/class="schematic-pin-number"/g) || []).length,
+        2
+    )
+    assert.equal((markup.match(/class="schematic-pin-name"/g) || []).length, 0)
+})
+
+/**
+ * Verifies compact owner-drawn symbols with native numeric owner text do not
+ * receive a second synthetic pin-number label for the same contacts.
+ */
+test('renderSchematicSvg avoids duplicate native owner pin numbers', () => {
+    const documentModel = parseSchematicRecords([
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=260|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=1|IndexInSheet=730|Location.X=130|Location.Y=90|LibReference=FAKE/DUAL-TERMINAL' +
+            '|PartCount=2|DisplayModeCount=1|CurrentPartId=1|UniqueID=CMP-L|AllPinCount=3',
+        '|RECORD=7|OwnerIndex=730|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=2|LineWidth=1' +
+            '|Color=128|AreaColor=128|IsSolid=T|LocationCount=3|X1=128|Y1=84|X2=122|Y2=90|X3=128|Y3=96',
+        '|RECORD=6|OwnerIndex=730|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=3|LineWidth=1|Color=128' +
+            '|LocationCount=2|X1=122|Y1=96|X2=122|Y2=84',
+        '|RECORD=6|OwnerIndex=730|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=4|LineWidth=1|Color=128' +
+            '|LocationCount=2|X1=120|Y1=90|X2=130|Y2=90',
+        '|RECORD=4|OwnerIndex=730|OwnerPartId=1|Location.X=140|Location.Y=91|Color=0|FontID=1|Text=1',
+        '|RECORD=4|OwnerIndex=730|OwnerPartId=1|Location.X=113|Location.Y=91|Color=0|FontID=1|Text=2',
+        '|RECORD=2|OwnerIndex=730|OwnerPartId=1|FormalType=1|Electrical=4|PinConglomerate=32|PinLength=10' +
+            '|Location.X=130|Location.Y=90|Name=A|Designator=1',
+        '|RECORD=2|OwnerIndex=730|OwnerPartId=1|FormalType=1|Electrical=4|PinConglomerate=34|PinLength=10' +
+            '|Location.X=120|Location.Y=90|Name=COMC|Designator=2',
+        '|RECORD=34|OwnerIndex=730|Location.X=112|Location.Y=105|Color=8388608|FontID=1|Text=QK2|Name=Designator',
+        '|RECORD=41|OwnerIndex=730|Location.X=112|Location.Y=75|Color=8388608|FontID=1|Text=DUAL-TERMINAL|Name=Comment'
+    ])
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.equal(
+        (markup.match(/class="schematic-pin-number"/g) || []).length,
+        0
+    )
+    assert.match(markup, /class="schematic-label"[^>]*>1<\/text>/)
+    assert.match(markup, /class="schematic-label"[^>]*>2<\/text>/)
+    assert.equal((markup.match(/class="schematic-pin-name"/g) || []).length, 0)
+})
+
+/**
  * Verifies compact single-pin owner marker glyphs keep connectivity without
  * adding a generated contact number over the marker artwork.
  */

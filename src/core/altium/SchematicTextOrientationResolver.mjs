@@ -29,12 +29,19 @@ export class SchematicTextOrientationResolver {
     }
 
     /**
-     * Resolves component text orientation bit 1 to top source anchoring.
+     * Resolves text vertical anchoring from Altium's justification grid and
+     * component text orientation bits.
      * @param {Record<string, string | string[]>} fields Text record fields.
      * @param {string} recordType Native text record type.
-     * @returns {'top' | null}
+     * @returns {'middle' | 'top' | null}
      */
     static resolveVerticalAnchor(fields, recordType) {
+        const justificationAnchor =
+            SchematicTextOrientationResolver.#resolveJustificationVerticalAnchor(
+                fields
+            )
+        if (justificationAnchor) return justificationAnchor
+
         return SchematicTextOrientationResolver.resolveHorizontalAnchor(
             fields,
             recordType
@@ -63,6 +70,28 @@ export class SchematicTextOrientationResolver {
         }
 
         return orientation === 1
+    }
+
+    /**
+     * Resolves the vertical row from Altium's 3x3 justification grid.
+     * @param {Record<string, string | string[]>} fields Text record fields.
+     * @returns {'middle' | 'top' | null}
+     */
+    static #resolveJustificationVerticalAnchor(fields) {
+        const justification =
+            ParserUtils.parseNumericField(fields, 'Justification') ??
+            ParserUtils.parseNumericField(fields, 'Alignment')
+
+        if (!Number.isInteger(justification)) {
+            return null
+        }
+
+        const normalizedJustification = ((justification % 9) + 9) % 9
+        const verticalRow = Math.floor(normalizedJustification / 3)
+
+        if (verticalRow === 1) return 'middle'
+        if (verticalRow === 2) return 'top'
+        return null
     }
 
     /**
