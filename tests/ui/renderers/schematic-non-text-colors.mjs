@@ -124,6 +124,43 @@ test('renderSchematicSvg colors near-black owner artwork as schematic ink', () =
 })
 
 /**
+ * Verifies source colors that are close to Altium's default schematic navy are
+ * treated as semantic schematic ink, even when the source value is not exactly
+ * the canonical `#000080` token.
+ */
+test('renderSchematicSvg colors default-navy free graphic lines as schematic ink', () => {
+    const markup = SchematicSvgRenderer.render({
+        summary: { title: 'Default navy free graphic schematic' },
+        schematic: {
+            sheet: { width: 180, height: 120 },
+            lines: [
+                {
+                    x1: 20,
+                    y1: 80,
+                    x2: 160,
+                    y2: 80,
+                    color: '#11037f',
+                    width: 2,
+                    lineStyle: 3,
+                    recordType: '6'
+                }
+            ],
+            texts: [],
+            components: [],
+            pins: [],
+            ports: [],
+            crosses: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /<line x1="20" y1="40" x2="160" y2="40" stroke="var\(--schematic-default-ink-color\)" stroke-width="2" stroke-dasharray="16 10 3 10" stroke-linecap="round" \/>/
+    )
+    assert.doesNotMatch(markup, /stroke="#11037f"/)
+})
+
+/**
  * Verifies non-electrical free graphics preserve authored dark gray section
  * frame colors instead of collapsing into the default wire color.
  */

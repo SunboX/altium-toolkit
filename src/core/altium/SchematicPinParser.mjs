@@ -873,8 +873,15 @@ export class SchematicPinParser {
             ownerDrawnInternalPinOwners.has(ownerIndex) &&
             SchematicPinParser.#isCompactNumberedFetTerminalGroup(
                 normalizedPins,
-                semanticNames,
                 orientationCount
+            )
+        ) {
+            labelMode = 'number-only'
+        } else if (
+            ownerDrawnInternalPinOwners.has(ownerIndex) &&
+            SchematicPinParser.#isOwnerDrawnAmplifierTerminalGroup(
+                normalizedPins,
+                semanticNames
             )
         ) {
             labelMode = 'number-only'
@@ -957,30 +964,92 @@ export class SchematicPinParser {
     }
 
     /**
-     * Returns true when a compact owner-drawn FET body uses semantic terminal
-     * names internally but still exposes external numeric contact labels.
+     * Returns true when a compact owner-drawn FET body or pin array uses
+     * semantic terminal names internally but still exposes external numeric
+     * contact labels.
      * @param {{ designator: string, name: string, orientation: 'left' | 'right' | 'top' | 'bottom' }[]} pins
-     * @param {string[]} semanticNames
      * @param {number} orientationCount
      * @returns {boolean}
      */
-    static #isCompactNumberedFetTerminalGroup(
-        pins,
-        semanticNames,
-        orientationCount
-    ) {
+    static #isCompactNumberedFetTerminalGroup(pins, orientationCount) {
         if (
-            pins.length !== 4 ||
-            orientationCount < 3 ||
+            pins.length < 4 ||
+            pins.length > 12 ||
+            orientationCount < 2 ||
+            !pins.every((pin) => /^\d+$/.test(String(pin.designator || '')))
+        ) {
+            return false
+        }
+
+        const normalizedNames = pins.map((pin) =>
+            String(pin.name || '')
+                .trim()
+                .toUpperCase()
+        )
+
+        return (
+            new Set(normalizedNames).size >= 2 &&
+            normalizedNames.every((name) =>
+                SchematicPinParser.#isFetTerminalName(name)
+            )
+        )
+    }
+
+    /**
+     * Returns true when an owner-drawn amplifier body already represents its
+     * input, output, and supply terminal names in the drawn symbol artwork.
+     * @param {{ designator: string, name: string }[]} pins
+     * @param {string[]} semanticNames
+     * @returns {boolean}
+     */
+    static #isOwnerDrawnAmplifierTerminalGroup(pins, semanticNames) {
+        if (
+            pins.length < 3 ||
+            pins.length > 8 ||
             semanticNames.length !== pins.length ||
             !pins.every((pin) => /^\d+$/.test(String(pin.designator || '')))
         ) {
             return false
         }
 
-        return semanticNames.every((name) =>
-            SchematicPinParser.#isFetTerminalName(name)
+        const normalizedNames = semanticNames.map((name) =>
+            SchematicPinParser.#normalizeAmplifierTerminalName(name)
         )
+
+        return (
+            normalizedNames.every(Boolean) &&
+            normalizedNames.some((name) => name === 'IN+' || name === 'IN-') &&
+            normalizedNames.includes('OUT')
+        )
+    }
+
+    /**
+     * Normalizes amplifier terminal names that are normally drawn inside the
+     * owner-authored symbol body.
+     * @param {string} name Raw pin name.
+     * @returns {string}
+     */
+    static #normalizeAmplifierTerminalName(name) {
+        const normalized = String(name || '')
+            .trim()
+            .toUpperCase()
+
+        switch (normalized) {
+            case 'IN+':
+            case '+IN':
+            case '+':
+                return 'IN+'
+            case 'IN-':
+            case '-IN':
+            case '-':
+                return 'IN-'
+            case 'OUT':
+            case 'V+':
+            case 'V-':
+                return normalized
+            default:
+                return ''
+        }
     }
 
     /**

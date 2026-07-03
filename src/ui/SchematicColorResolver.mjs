@@ -49,6 +49,12 @@ export class SchematicColorResolver {
             return normalized
         }
 
+        if (SchematicColorResolver.#isDefaultInkSourceColor(normalized)) {
+            return SchematicColorResolver.#toVariable(
+                '--schematic-default-ink-color'
+            )
+        }
+
         const token = COLOR_TOKEN_BY_VALUE.get(normalized)
 
         if (token) {
@@ -314,6 +320,30 @@ export class SchematicColorResolver {
         }
 
         return Math.max(rgb.r, rgb.g, rgb.b) <= 32
+    }
+
+    /**
+     * Returns true for dark saturated blue source colors that represent
+     * Altium's default schematic ink family rather than custom artwork color.
+     * @param {string} color Normalized color.
+     * @returns {boolean}
+     */
+    static #isDefaultInkSourceColor(color) {
+        const rgb = SchematicColorResolver.#parseHexColor(color)
+        if (!rgb) {
+            return false
+        }
+
+        const hsl = SchematicColorResolver.#rgbToHsl(rgb)
+        const hueDegrees = hsl.h * 360
+
+        return (
+            hueDegrees >= 220 &&
+            hueDegrees <= 270 &&
+            hsl.s >= 45 &&
+            hsl.l >= 12 &&
+            hsl.l <= 38
+        )
     }
 
     /**

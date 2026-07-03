@@ -264,6 +264,127 @@ test('parseAltiumArrayBuffer hides compact common-terminal diode pin names', () 
 })
 
 /**
+ * Verifies owner-drawn amplifier symbols keep contact numbers but suppress
+ * semantic terminal names that are already represented by the body artwork.
+ */
+test('parseAltiumArrayBuffer hides owner-drawn amplifier terminal names', () => {
+    const documentModel = parseSchematicRecords([
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=260|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=1|IndexInSheet=740|Location.X=130|Location.Y=90|LibReference=FAKE/ANALOG-CELL|UniqueID=CMP-M',
+        '|RECORD=13|OwnerIndex=740|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=1|LineWidth=1|Color=128' +
+            '|Location.X=110|Location.Y=70|Corner.X=150|Corner.Y=90',
+        '|RECORD=13|OwnerIndex=740|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=2|LineWidth=1|Color=128' +
+            '|Location.X=110|Location.Y=110|Corner.X=150|Corner.Y=90',
+        '|RECORD=13|OwnerIndex=740|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=3|LineWidth=1|Color=128' +
+            '|Location.X=110|Location.Y=70|Corner.X=110|Corner.Y=110',
+        '|RECORD=13|OwnerIndex=740|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=4|LineWidth=1|Color=128' +
+            '|Location.X=114|Location.Y=80|Corner.X=120|Corner.Y=80',
+        '|RECORD=13|OwnerIndex=740|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=5|LineWidth=1|Color=128' +
+            '|Location.X=114|Location.Y=100|Corner.X=120|Corner.Y=100',
+        '|RECORD=13|OwnerIndex=740|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=6|LineWidth=1|Color=128' +
+            '|Location.X=117|Location.Y=97|Corner.X=117|Corner.Y=103',
+        '|RECORD=2|OwnerIndex=740|OwnerPartId=1|FormalType=1|PinConglomerate=48|PinLength=20' +
+            '|Location.X=110|Location.Y=100|Name=IN-|Designator=4',
+        '|RECORD=2|OwnerIndex=740|OwnerPartId=1|FormalType=1|PinConglomerate=48|PinLength=20' +
+            '|Location.X=110|Location.Y=80|Name=IN+|Designator=3',
+        '|RECORD=2|OwnerIndex=740|OwnerPartId=1|Electrical=2|PinConglomerate=50|PinLength=20' +
+            '|Location.X=150|Location.Y=90|Name=OUT|Designator=1',
+        '|RECORD=2|OwnerIndex=740|OwnerPartId=1|Electrical=7|PinConglomerate=49|PinLength=10' +
+            '|Location.X=130|Location.Y=70|Name=V+|Designator=2',
+        '|RECORD=2|OwnerIndex=740|OwnerPartId=1|Electrical=7|PinConglomerate=51|PinLength=10' +
+            '|Location.X=130|Location.Y=110|Name=V-|Designator=5',
+        '|RECORD=34|OwnerIndex=740|Location.X=130|Location.Y=120|Color=8388608|FontID=1|Text=Y14|Name=Designator'
+    ])
+    const ownerPins = documentModel.schematic.pins.filter(
+        (pin) => pin.ownerIndex === '740'
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.deepEqual(
+        ownerPins.map((pin) => ({
+            name: pin.name,
+            designator: pin.designator,
+            labelMode: pin.labelMode
+        })),
+        [
+            { name: 'IN-', designator: '4', labelMode: 'number-only' },
+            { name: 'IN+', designator: '3', labelMode: 'number-only' },
+            { name: 'OUT', designator: '1', labelMode: 'number-only' },
+            { name: 'V+', designator: '2', labelMode: 'number-only' },
+            { name: 'V-', designator: '5', labelMode: 'number-only' }
+        ]
+    )
+    assert.equal(
+        (markup.match(/class="schematic-pin-number"/g) || []).length,
+        5
+    )
+    assert.equal((markup.match(/class="schematic-pin-name"/g) || []).length, 0)
+})
+
+/**
+ * Verifies owner-drawn multi-contact FET bodies keep contact numbers but
+ * suppress repeated terminal letters that belong to the drawn device symbol.
+ */
+test('parseAltiumArrayBuffer hides owner-drawn FET array terminal names', () => {
+    const documentModel = parseSchematicRecords([
+        '|HEADER=Schematic Document',
+        '|RECORD=31|CustomX=300|CustomY=220|VisibleGridSize=10|SnapGridSize=5' +
+            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0',
+        '|RECORD=1|IndexInSheet=750|Location.X=150|Location.Y=110|LibReference=FAKE/SWITCH-CELL|UniqueID=CMP-N',
+        '|RECORD=14|OwnerIndex=750|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=1|LineWidth=1|Color=128' +
+            '|Location.X=130|Location.Y=90|Corner.X=170|Corner.Y=130|AreaColor=16777120|IsSolid=T',
+        '|RECORD=6|OwnerIndex=750|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=2|LineWidth=1|Color=128' +
+            '|LocationCount=2|X1=145|Y1=95|X2=145|Y2=125',
+        '|RECORD=6|OwnerIndex=750|OwnerPartId=1|IsNotAccesible=T|IndexInSheet=3|LineWidth=1|Color=128' +
+            '|LocationCount=2|X1=155|Y1=95|X2=155|Y2=125',
+        '|RECORD=2|OwnerIndex=750|OwnerPartId=1|Electrical=4|PinConglomerate=51|PinLength=5' +
+            '|Location.X=135|Location.Y=130|Name=S|Designator=1',
+        '|RECORD=2|OwnerIndex=750|OwnerPartId=1|Electrical=4|PinConglomerate=51|PinLength=5' +
+            '|Location.X=145|Location.Y=130|Name=S|Designator=2',
+        '|RECORD=2|OwnerIndex=750|OwnerPartId=1|Electrical=4|PinConglomerate=51|PinLength=5' +
+            '|Location.X=155|Location.Y=130|Name=S|Designator=3',
+        '|RECORD=2|OwnerIndex=750|OwnerPartId=1|Electrical=4|PinConglomerate=48|PinLength=5' +
+            '|Location.X=130|Location.Y=110|Name=S|Designator=4',
+        '|RECORD=2|OwnerIndex=750|OwnerPartId=1|Electrical=4|PinConglomerate=49|PinLength=5' +
+            '|Location.X=135|Location.Y=90|Name=D|Designator=5',
+        '|RECORD=2|OwnerIndex=750|OwnerPartId=1|Electrical=4|PinConglomerate=49|PinLength=5' +
+            '|Location.X=145|Location.Y=90|Name=D|Designator=6',
+        '|RECORD=2|OwnerIndex=750|OwnerPartId=1|Electrical=4|PinConglomerate=49|PinLength=5' +
+            '|Location.X=155|Location.Y=90|Name=D|Designator=7',
+        '|RECORD=2|OwnerIndex=750|OwnerPartId=1|Electrical=4|PinConglomerate=49|PinLength=5' +
+            '|Location.X=165|Location.Y=90|Name=D|Designator=8',
+        '|RECORD=34|OwnerIndex=750|Location.X=170|Location.Y=140|Color=8388608|FontID=1|Text=Y15|Name=Designator'
+    ])
+    const ownerPins = documentModel.schematic.pins.filter(
+        (pin) => pin.ownerIndex === '750'
+    )
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.deepEqual(
+        ownerPins.map((pin) => pin.labelMode),
+        [
+            'number-only',
+            'number-only',
+            'number-only',
+            'number-only',
+            'number-only',
+            'number-only',
+            'number-only',
+            'number-only'
+        ]
+    )
+    assert.equal(
+        (markup.match(/class="schematic-pin-number"/g) || []).length,
+        8
+    )
+    assert.equal((markup.match(/class="schematic-pin-name"/g) || []).length, 0)
+})
+
+/**
  * Verifies compact owner-drawn symbols with native numeric owner text do not
  * receive a second synthetic pin-number label for the same contacts.
  */
