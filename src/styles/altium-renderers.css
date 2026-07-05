@@ -142,6 +142,16 @@
     --pcb-via-hole-fill: #0f746c;
     --pcb-footprint-fill: rgba(247, 230, 117, 0.14);
     --pcb-footprint-track-color: rgba(237, 172, 36, 1);
+    --pcb-detail-paste-fill: rgba(146, 146, 146, 0.94);
+    --pcb-detail-paste-stroke: rgba(154, 154, 154, 0.96);
+    --pcb-detail-mask-fill: rgba(137, 34, 132, 0.4);
+    --pcb-detail-mask-stroke: rgba(137, 34, 132, 0.82);
+    --pcb-detail-mechanical-fill: rgba(148, 160, 166, 0.32);
+    --pcb-detail-mechanical-stroke: rgba(96, 110, 118, 0.86);
+    --pcb-detail-drill-fill: rgba(79, 87, 93, 0.46);
+    --pcb-detail-drill-stroke: rgba(42, 50, 56, 0.88);
+    --pcb-detail-fill: rgba(150, 160, 166, 0.38);
+    --pcb-detail-stroke: rgba(80, 92, 100, 0.82);
     --pcb-dimension-color: rgba(39, 88, 111, 0.78);
     --pcb-dimension-text: #22343b;
     --pcb-text-knockout-fill: rgba(248, 246, 239, 0.96);
@@ -200,7 +210,9 @@
 .pcb-track,
 .pcb-arc,
 .pcb-footprint-track,
-.pcb-footprint-arc {
+.pcb-footprint-arc,
+.pcb-detail-track,
+.pcb-detail-arc {
     fill: none;
     stroke-linecap: round;
     stroke-linejoin: round;
@@ -269,6 +281,60 @@
 .pcb-footprint-track,
 .pcb-footprint-arc {
     stroke: var(--pcb-footprint-track-color);
+}
+
+.pcb-detail-fill,
+.pcb-detail-region {
+    fill: var(--pcb-detail-fill);
+}
+
+.pcb-detail-track,
+.pcb-detail-arc {
+    stroke: var(--pcb-detail-stroke);
+}
+
+.pcb-detail-fill--paste,
+.pcb-detail-region--paste {
+    fill: var(--pcb-detail-paste-fill);
+}
+
+.pcb-detail-track--paste,
+.pcb-detail-arc--paste {
+    stroke: var(--pcb-detail-paste-stroke);
+}
+
+.pcb-detail-fill--mask,
+.pcb-detail-region--mask,
+.pcb-detail-fill--solder-mask,
+.pcb-detail-region--solder-mask {
+    fill: var(--pcb-detail-mask-fill);
+}
+
+.pcb-detail-track--mask,
+.pcb-detail-arc--mask,
+.pcb-detail-track--solder-mask,
+.pcb-detail-arc--solder-mask {
+    stroke: var(--pcb-detail-mask-stroke);
+}
+
+.pcb-detail-fill--mechanical,
+.pcb-detail-region--mechanical {
+    fill: var(--pcb-detail-mechanical-fill);
+}
+
+.pcb-detail-track--mechanical,
+.pcb-detail-arc--mechanical {
+    stroke: var(--pcb-detail-mechanical-stroke);
+}
+
+.pcb-detail-fill--drill,
+.pcb-detail-region--drill {
+    fill: var(--pcb-detail-drill-fill);
+}
+
+.pcb-detail-track--drill,
+.pcb-detail-arc--drill {
+    stroke: var(--pcb-detail-drill-stroke);
 }
 
 .pcb-dimensions {

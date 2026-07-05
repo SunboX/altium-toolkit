@@ -8,7 +8,10 @@ import { PcbEdgeFacingGlyphNormalizer } from './PcbEdgeFacingGlyphNormalizer.mjs
 import { PcbEmbeddedFontFaceRenderer } from './PcbEmbeddedFontFaceRenderer.mjs'
 import { PcbFootprintPrimitiveSelector } from './PcbFootprintPrimitiveSelector.mjs'
 import { PcbCopperPrimitiveSplitter } from './PcbCopperPrimitiveSplitter.mjs'
+import { PcbLayerIdCodec } from '../core/altium/PcbLayerIdCodec.mjs'
+import { PcbLayerGroups } from '../core/altium/PcbLayerGroups.mjs'
 import { PcbNativeTextKnockoutDetector } from './PcbNativeTextKnockoutDetector.mjs'
+import { PcbPadMaskApertureRenderer } from './PcbPadMaskApertureRenderer.mjs'
 import { PcbRegionPrimitiveRenderer } from './PcbRegionPrimitiveRenderer.mjs'
 import { PcbScene3dBoardOutlineRefiner } from './PcbScene3dBoardOutlineRefiner.mjs'
 import { PcbTextPrimitiveRenderer } from './PcbTextPrimitiveRenderer.mjs'
@@ -80,7 +83,7 @@ export class PcbSvgRenderer {
             arcs,
             renderedRegions
         )
-        const footprintPrimitives = PcbEdgeFacingGlyphNormalizer.normalize(
+        const selectedFootprintPrimitives =
             PcbFootprintPrimitiveSelector.select(
                 primitiveLayers,
                 fills,
@@ -88,8 +91,20 @@ export class PcbSvgRenderer {
                 arcs,
                 renderedRegions,
                 'top'
-            ),
+            )
+        const footprintPrimitives = PcbEdgeFacingGlyphNormalizer.normalize(
+            selectedFootprintPrimitives,
             outline
+        )
+        const detailPrimitives = PcbSvgRenderer.#detailPrimitiveCollections(
+            {
+                fills,
+                tracks,
+                arcs,
+                regions: renderedRegions
+            },
+            PcbSvgRenderer.#primitiveIdentitySet(selectedFootprintPrimitives),
+            semanticContext
         )
         const texts = PcbTextPrimitiveRenderer.select(
             primitiveLayers,
@@ -115,22 +130,26 @@ export class PcbSvgRenderer {
             [
                 ...copperGroups.surface.fills,
                 ...copperGroups.subsurface.fills,
-                ...footprintPrimitives.fills
+                ...footprintPrimitives.fills,
+                ...detailPrimitives.fills
             ],
             [
                 ...copperGroups.surface.tracks,
                 ...copperGroups.subsurface.tracks,
-                ...footprintPrimitives.tracks
+                ...footprintPrimitives.tracks,
+                ...detailPrimitives.tracks
             ],
             [
                 ...copperGroups.surface.arcs,
                 ...copperGroups.subsurface.arcs,
-                ...footprintPrimitives.arcs
+                ...footprintPrimitives.arcs,
+                ...detailPrimitives.arcs
             ],
             [
                 ...copperGroups.surface.regions,
                 ...copperGroups.subsurface.regions,
-                ...footprintPrimitives.regions
+                ...footprintPrimitives.regions,
+                ...detailPrimitives.regions
             ],
             vias,
             pads,
@@ -263,10 +282,27 @@ export class PcbSvgRenderer {
                 )
                 .join('')
         const regionMarkup = (regionList, visibilityClass) =>
-            PcbRegionPrimitiveRenderer.buildMarkup(
-                regionList,
-                'pcb-region pcb-region--' + visibilityClass
-            )
+            regionList
+                .map((region, index) =>
+                    PcbSvgRenderer.#appendSvgAttributes(
+                        PcbRegionPrimitiveRenderer.buildMarkup(
+                            [region],
+                            'pcb-region pcb-region--' + visibilityClass
+                        ),
+                        PcbSvgRenderer.#semanticAttributes(
+                            'region',
+                            region,
+                            PcbSvgRenderer.#primitiveIndex(
+                                semanticContext,
+                                'regions',
+                                region,
+                                index
+                            ),
+                            semanticContext
+                        )
+                    )
+                )
+                .join('')
         const viaMarkup = vias
             .map((via, index) => {
                 const ringRadius = Math.max((via.diameter || 0) / 2, 1)
@@ -328,8 +364,26 @@ export class PcbSvgRenderer {
                 )
             )
             .join('')
+        const padMaskApertureMarkup = PcbPadMaskApertureRenderer.render(pads, {
+            padIndex: (pad, index) =>
+                PcbSvgRenderer.#primitiveIndex(
+                    semanticContext,
+                    'pads',
+                    pad,
+                    index
+                ),
+            attributes: (aperture) =>
+                PcbSvgRenderer.#padMaskApertureAttributes(
+                    aperture,
+                    semanticContext
+                )
+        })
+        const detailMarkup = PcbSvgRenderer.#renderDetailPrimitives(
+            detailPrimitives,
+            semanticContext
+        )
         const footprintFillMarkup = footprintPrimitives.fills
-            .map((fill) => {
+            .map((fill, index) => {
                 const x = Math.min(fill.x1, fill.x2)
                 const y = Math.min(fill.y1, fill.y2)
                 const width = Math.abs(fill.x2 - fill.x1)
@@ -347,13 +401,25 @@ export class PcbSvgRenderer {
                     SchematicSvgUtils.formatNumber(
                         Math.min(width, height) / 6
                     ) +
-                    '" />'
+                    '"' +
+                    PcbSvgRenderer.#semanticAttributes(
+                        'fill',
+                        fill,
+                        PcbSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'fills',
+                            fill,
+                            index
+                        ),
+                        semanticContext
+                    ) +
+                    ' />'
                 )
             })
             .join('')
         const footprintTrackMarkup = footprintPrimitives.tracks
             .map(
-                (track) =>
+                (track, index) =>
                     '<line class="pcb-footprint-track" x1="' +
                     SchematicSvgUtils.formatNumber(track.x1) +
                     '" y1="' +
@@ -366,16 +432,60 @@ export class PcbSvgRenderer {
                     SchematicSvgUtils.formatNumber(
                         Math.max(track.width || 0, 1)
                     ) +
-                    '" />'
+                    '"' +
+                    PcbSvgRenderer.#semanticAttributes(
+                        'track',
+                        track,
+                        PcbSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'tracks',
+                            track,
+                            index
+                        ),
+                        semanticContext
+                    ) +
+                    ' />'
             )
             .join('')
         const footprintArcMarkup = footprintPrimitives.arcs
-            .map((arc) => PcbArcUtils.buildMarkup(arc, 'pcb-footprint-arc'))
+            .map((arc, index) =>
+                PcbSvgRenderer.#appendSvgAttributes(
+                    PcbArcUtils.buildMarkup(arc, 'pcb-footprint-arc'),
+                    PcbSvgRenderer.#semanticAttributes(
+                        'arc',
+                        arc,
+                        PcbSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'arcs',
+                            arc,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
+            )
             .join('')
-        const footprintRegionMarkup = PcbRegionPrimitiveRenderer.buildMarkup(
-            footprintPrimitives.regions,
-            'pcb-footprint-region'
-        )
+        const footprintRegionMarkup = footprintPrimitives.regions
+            .map((region, index) =>
+                PcbSvgRenderer.#appendSvgAttributes(
+                    PcbRegionPrimitiveRenderer.buildMarkup(
+                        [region],
+                        'pcb-footprint-region'
+                    ),
+                    PcbSvgRenderer.#semanticAttributes(
+                        'region',
+                        region,
+                        PcbSvgRenderer.#primitiveIndex(
+                            semanticContext,
+                            'regions',
+                            region,
+                            index
+                        ),
+                        semanticContext
+                    )
+                )
+            )
+            .join('')
         const textMarkup = PcbTextPrimitiveRenderer.render(texts, {
             semanticContext
         })
@@ -519,6 +629,7 @@ export class PcbSvgRenderer {
             SchematicSvgUtils.escapeHtml(path) +
             '"' +
             ' />' +
+            padMaskApertureMarkup +
             '<g class="pcb-copper-layers" clip-path="url(#' +
             clipPathId +
             ')">' +
@@ -545,6 +656,7 @@ export class PcbSvgRenderer {
             footprintArcMarkup +
             footprintRegionMarkup +
             '</g>' +
+            detailMarkup +
             '<g class="pcb-components">' +
             componentMarkup +
             '</g>' +
@@ -591,6 +703,316 @@ export class PcbSvgRenderer {
                     layerView
                 })
             })
+        )
+    }
+
+    /**
+     * Selects non-copper layer primitives that need explicit SVG artwork.
+     * @param {{ fills?: object[], tracks?: object[], arcs?: object[], regions?: object[] }} primitives Primitive collections.
+     * @param {Set<object>} excludedPrimitives Primitives already rendered elsewhere.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {{ fills: object[], tracks: object[], arcs: object[], regions: object[] }}
+     */
+    static #detailPrimitiveCollections(
+        primitives,
+        excludedPrimitives,
+        semanticContext
+    ) {
+        const includePrimitive = (primitive) =>
+            !excludedPrimitives.has(primitive) &&
+            PcbSvgRenderer.#isDetailPrimitive(primitive, semanticContext)
+
+        return {
+            fills: (primitives.fills || []).filter(includePrimitive),
+            tracks: (primitives.tracks || []).filter(includePrimitive),
+            arcs: (primitives.arcs || []).filter(includePrimitive),
+            regions: (primitives.regions || []).filter(includePrimitive)
+        }
+    }
+
+    /**
+     * Builds an identity set for primitives rendered by a specialized path.
+     * @param {{ fills?: object[], tracks?: object[], arcs?: object[], regions?: object[] }} primitiveCollections Primitive collections.
+     * @returns {Set<object>}
+     */
+    static #primitiveIdentitySet(primitiveCollections) {
+        return new Set([
+            ...(primitiveCollections?.fills || []),
+            ...(primitiveCollections?.tracks || []),
+            ...(primitiveCollections?.arcs || []),
+            ...(primitiveCollections?.regions || [])
+        ])
+    }
+
+    /**
+     * Returns true when a primitive should render as generic layer detail.
+     * @param {object} primitive Primitive record.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {boolean}
+     */
+    static #isDetailPrimitive(primitive, semanticContext) {
+        const layer = PcbSvgRenderer.#knownLayerForPrimitive(
+            primitive,
+            semanticContext
+        )
+        const role = PcbSvgRenderer.#layerRoleForDetail(layer)
+
+        return Boolean(layer) && !['copper', 'multi-layer'].includes(role)
+    }
+
+    /**
+     * Renders non-copper fabrication and documentation primitives.
+     * @param {{ fills: object[], tracks: object[], arcs: object[], regions: object[] }} primitives Primitive collections.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #renderDetailPrimitives(primitives, semanticContext) {
+        const fillMarkup = primitives.fills
+            .map((fill, index) =>
+                PcbSvgRenderer.#renderDetailFill(
+                    fill,
+                    PcbSvgRenderer.#primitiveIndex(
+                        semanticContext,
+                        'fills',
+                        fill,
+                        index
+                    ),
+                    semanticContext
+                )
+            )
+            .join('')
+        const trackMarkup = primitives.tracks
+            .map((track, index) =>
+                PcbSvgRenderer.#renderDetailTrack(
+                    track,
+                    PcbSvgRenderer.#primitiveIndex(
+                        semanticContext,
+                        'tracks',
+                        track,
+                        index
+                    ),
+                    semanticContext
+                )
+            )
+            .join('')
+        const arcMarkup = primitives.arcs
+            .map((arc, index) =>
+                PcbSvgRenderer.#renderDetailArc(
+                    arc,
+                    PcbSvgRenderer.#primitiveIndex(
+                        semanticContext,
+                        'arcs',
+                        arc,
+                        index
+                    ),
+                    semanticContext
+                )
+            )
+            .join('')
+        const regionMarkup = primitives.regions
+            .map((region, index) =>
+                PcbSvgRenderer.#renderDetailRegion(
+                    region,
+                    PcbSvgRenderer.#primitiveIndex(
+                        semanticContext,
+                        'regions',
+                        region,
+                        index
+                    ),
+                    semanticContext
+                )
+            )
+            .join('')
+
+        return fillMarkup || trackMarkup || arcMarkup || regionMarkup
+            ? '<g class="pcb-detail-layers">' +
+                  fillMarkup +
+                  trackMarkup +
+                  arcMarkup +
+                  regionMarkup +
+                  '</g>'
+            : ''
+    }
+
+    /**
+     * Renders one non-copper fill primitive.
+     * @param {{ x1: number, y1: number, x2: number, y2: number }} fill Fill primitive.
+     * @param {number} index Stable primitive index.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #renderDetailFill(fill, index, semanticContext) {
+        const x = Math.min(fill.x1, fill.x2)
+        const y = Math.min(fill.y1, fill.y2)
+        const width = Math.abs(fill.x2 - fill.x1)
+        const height = Math.abs(fill.y2 - fill.y1)
+        const className = PcbSvgRenderer.#detailPrimitiveClass(
+            'fill',
+            fill,
+            semanticContext
+        )
+
+        return (
+            '<rect class="' +
+            className +
+            '" x="' +
+            SchematicSvgUtils.formatNumber(x) +
+            '" y="' +
+            SchematicSvgUtils.formatNumber(y) +
+            '" width="' +
+            SchematicSvgUtils.formatNumber(width) +
+            '" height="' +
+            SchematicSvgUtils.formatNumber(height) +
+            '" rx="' +
+            SchematicSvgUtils.formatNumber(Math.min(width, height) / 6) +
+            '"' +
+            PcbSvgRenderer.#semanticAttributes(
+                'fill',
+                fill,
+                index,
+                semanticContext
+            ) +
+            ' />'
+        )
+    }
+
+    /**
+     * Renders one non-copper track primitive.
+     * @param {{ x1: number, y1: number, x2: number, y2: number, width?: number }} track Track primitive.
+     * @param {number} index Stable primitive index.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #renderDetailTrack(track, index, semanticContext) {
+        const className = PcbSvgRenderer.#detailPrimitiveClass(
+            'track',
+            track,
+            semanticContext
+        )
+
+        return (
+            '<line class="' +
+            className +
+            '" x1="' +
+            SchematicSvgUtils.formatNumber(track.x1) +
+            '" y1="' +
+            SchematicSvgUtils.formatNumber(track.y1) +
+            '" x2="' +
+            SchematicSvgUtils.formatNumber(track.x2) +
+            '" y2="' +
+            SchematicSvgUtils.formatNumber(track.y2) +
+            '" stroke-width="' +
+            SchematicSvgUtils.formatNumber(Math.max(track.width || 0, 1)) +
+            '"' +
+            PcbSvgRenderer.#semanticAttributes(
+                'track',
+                track,
+                index,
+                semanticContext
+            ) +
+            ' />'
+        )
+    }
+
+    /**
+     * Renders one non-copper arc primitive.
+     * @param {object} arc Arc primitive.
+     * @param {number} index Stable primitive index.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #renderDetailArc(arc, index, semanticContext) {
+        return PcbSvgRenderer.#appendSvgAttributes(
+            PcbArcUtils.buildMarkup(
+                arc,
+                PcbSvgRenderer.#detailPrimitiveClass(
+                    'arc',
+                    arc,
+                    semanticContext
+                )
+            ),
+            PcbSvgRenderer.#semanticAttributes(
+                'arc',
+                arc,
+                index,
+                semanticContext
+            )
+        )
+    }
+
+    /**
+     * Renders one non-copper region primitive.
+     * @param {object} region Region primitive.
+     * @param {number} index Stable primitive index.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #renderDetailRegion(region, index, semanticContext) {
+        return PcbSvgRenderer.#appendSvgAttributes(
+            PcbRegionPrimitiveRenderer.buildMarkup(
+                [region],
+                PcbSvgRenderer.#detailPrimitiveClass(
+                    'region',
+                    region,
+                    semanticContext
+                )
+            ),
+            PcbSvgRenderer.#semanticAttributes(
+                'region',
+                region,
+                index,
+                semanticContext
+            )
+        )
+    }
+
+    /**
+     * Builds one detail primitive CSS class string.
+     * @param {string} primitiveKind Primitive kind.
+     * @param {object} primitive Primitive record.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #detailPrimitiveClass(primitiveKind, primitive, semanticContext) {
+        const layer = PcbSvgRenderer.#layerForPrimitive(
+            primitive,
+            semanticContext
+        )
+        const role = PcbSvgRenderer.#cssToken(
+            PcbSvgRenderer.#layerRoleForDetail(layer)
+        )
+
+        return (
+            'pcb-detail-' +
+            primitiveKind +
+            ' pcb-detail-' +
+            primitiveKind +
+            '--' +
+            role
+        )
+    }
+
+    /**
+     * Resolves a layer role suitable for generic detail styling.
+     * @param {object | null} layer Layer descriptor.
+     * @returns {string}
+     */
+    static #layerRoleForDetail(layer) {
+        return String(layer?.role || 'other')
+    }
+
+    /**
+     * Converts arbitrary text to a safe CSS class token.
+     * @param {unknown} value Raw token value.
+     * @returns {string}
+     */
+    static #cssToken(value) {
+        return (
+            String(value || 'other')
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/gu, '-')
+                .replace(/^-+|-+$/gu, '') || 'other'
         )
     }
 
@@ -721,17 +1143,31 @@ export class PcbSvgRenderer {
             primitive?.layerId,
             primitive?.layerCode
         ])
-        if (Number.isInteger(layerId) && Number.isInteger(layerView?.layerId)) {
-            return layerId === layerView.layerId
+        const layerIds = PcbSvgRenderer.#layerDescriptorIds(layerView)
+        if (Number.isInteger(layerId) && layerIds.length) {
+            return layerIds.includes(layerId)
         }
 
         const primitiveName =
             primitive?.layerName || primitive?.layer || primitive?.side || ''
         if (primitiveName && layerView?.displayName) {
-            return (
+            if (
                 PcbSvgRenderer.#normalizeSemanticLookup(primitiveName) ===
                 PcbSvgRenderer.#normalizeSemanticLookup(layerView.displayName)
-            )
+            ) {
+                return true
+            }
+
+            const primitiveLayerId =
+                PcbSvgRenderer.#legacyLayerIdForPrimitiveLayerName(
+                    primitiveName
+                )
+            if (
+                Number.isInteger(primitiveLayerId) &&
+                layerIds.includes(primitiveLayerId)
+            ) {
+                return true
+            }
         }
 
         return (
@@ -767,6 +1203,12 @@ export class PcbSvgRenderer {
                 !layersById.has(descriptor.layerId)
             ) {
                 layersById.set(descriptor.layerId, descriptor)
+            }
+            if (
+                Number.isInteger(descriptor.legacyLayerId) &&
+                !layersById.has(descriptor.legacyLayerId)
+            ) {
+                layersById.set(descriptor.legacyLayerId, descriptor)
             }
             const normalizedName = PcbSvgRenderer.#normalizeSemanticLookup(
                 descriptor.displayName
@@ -830,6 +1272,7 @@ export class PcbSvgRenderer {
                 fills: PcbSvgRenderer.#objectIndexMap(pcb?.fills || []),
                 tracks: PcbSvgRenderer.#objectIndexMap(pcb?.tracks || []),
                 arcs: PcbSvgRenderer.#objectIndexMap(pcb?.arcs || []),
+                regions: PcbSvgRenderer.#objectIndexMap(pcb?.regions || []),
                 vias: PcbSvgRenderer.#objectIndexMap(pcb?.vias || []),
                 pads: PcbSvgRenderer.#objectIndexMap(pcb?.pads || []),
                 texts: PcbSvgRenderer.#objectIndexMap(pcb?.texts || []),
@@ -882,6 +1325,12 @@ export class PcbSvgRenderer {
                     'arc',
                     'arcs',
                     pcb?.arcs || [],
+                    semanticContext
+                ),
+                ...PcbSvgRenderer.#semanticMetadataEntries(
+                    'region',
+                    'regions',
+                    pcb?.regions || [],
                     semanticContext
                 ),
                 ...PcbSvgRenderer.#semanticMetadataEntries(
@@ -1370,6 +1819,7 @@ export class PcbSvgRenderer {
             layer.id,
             layer.index
         ])
+        const legacyLayerId = PcbSvgRenderer.#legacyLayerId(layer, layerId)
         const displayName =
             layer.displayName || layer.name || layer.layerName || ''
         const layerKey = Number.isInteger(layerId)
@@ -1382,12 +1832,16 @@ export class PcbSvgRenderer {
 
         return PcbSvgRenderer.#stripEmptySemanticObject({
             layerId,
+            legacyLayerId,
             layerKey,
             displayName: displayName || layerKey,
             role:
                 layer.role ||
                 layer.layerRole ||
-                PcbSvgRenderer.#inferLayerRole(displayName)
+                PcbSvgRenderer.#inferLayerRole(
+                    displayName,
+                    legacyLayerId ?? layerId
+                )
         })
     }
 
@@ -1398,8 +1852,48 @@ export class PcbSvgRenderer {
      */
     static #includedLayerIds(semanticContext) {
         return (semanticContext?.layerDescriptors || [])
-            .map((layer) => layer.layerId)
+            .flatMap((layer) => PcbSvgRenderer.#layerDescriptorIds(layer))
             .filter((layerId) => Number.isInteger(layerId))
+    }
+
+    /**
+     * Returns all numeric identifiers that can address one layer descriptor.
+     * @param {object | null} layer Layer descriptor.
+     * @returns {number[]}
+     */
+    static #layerDescriptorIds(layer) {
+        return [
+            PcbSvgRenderer.#firstFiniteNumber([layer?.layerId]),
+            PcbSvgRenderer.#firstFiniteNumber([layer?.legacyLayerId])
+        ].filter(
+            (layerId, index, layerIds) =>
+                Number.isInteger(layerId) && layerIds.indexOf(layerId) === index
+        )
+    }
+
+    /**
+     * Resolves a legacy primitive-layer alias for a layer descriptor.
+     * @param {object} layer Layer record.
+     * @param {number | undefined} layerId Primary layer id.
+     * @returns {number | undefined}
+     */
+    static #legacyLayerId(layer, layerId) {
+        const explicitLegacyLayerId = PcbSvgRenderer.#firstFiniteNumber([
+            layer.legacyLayerId,
+            layer.legacyId
+        ])
+        const legacyLayerId = Number.isInteger(explicitLegacyLayerId)
+            ? explicitLegacyLayerId
+            : PcbLayerIdCodec.legacyLayerIdFromV7SaveId(layerId)
+
+        if (
+            !Number.isInteger(legacyLayerId) ||
+            (Number.isInteger(layerId) && legacyLayerId === layerId)
+        ) {
+            return undefined
+        }
+
+        return legacyLayerId
     }
 
     /**
@@ -1426,9 +1920,15 @@ export class PcbSvgRenderer {
     /**
      * Infers one broad rendering role from a layer name.
      * @param {string} displayName Layer display name.
+     * @param {number | undefined} layerId Legacy layer id.
      * @returns {string}
      */
-    static #inferLayerRole(displayName) {
+    static #inferLayerRole(displayName, layerId) {
+        const groupedRole = PcbSvgRenderer.#inferLayerRoleFromId(layerId)
+        if (groupedRole) {
+            return groupedRole
+        }
+
         const normalized = String(displayName || '').toLowerCase()
         if (/overlay|silk/u.test(normalized)) return 'overlay'
         if (/paste/u.test(normalized)) return 'paste'
@@ -1437,8 +1937,40 @@ export class PcbSvgRenderer {
             return 'mechanical'
         }
         if (/drill/u.test(normalized)) return 'drill'
-        if (/layer|copper|plane/u.test(normalized)) return 'copper'
+        if (
+            /layer|copper|plane/u.test(normalized) ||
+            /\binternal[-_\s]*\d+\b/u.test(normalized) ||
+            /\binner[-_\s]*\d+\b/u.test(normalized)
+        ) {
+            return 'copper'
+        }
         return 'other'
+    }
+
+    /**
+     * Infers one layer role from a legacy Altium layer id.
+     * @param {unknown} layerId Legacy layer id.
+     * @returns {string}
+     */
+    static #inferLayerRoleFromId(layerId) {
+        const legacyLayerId = Number(layerId)
+        if (!Number.isInteger(legacyLayerId)) {
+            return ''
+        }
+        if (
+            PcbLayerGroups.isCopper(legacyLayerId) ||
+            PcbLayerGroups.isInternalPlane(legacyLayerId)
+        ) {
+            return 'copper'
+        }
+        if (PcbLayerGroups.isOverlay(legacyLayerId)) return 'overlay'
+        if (PcbLayerGroups.isPaste(legacyLayerId)) return 'paste'
+        if (PcbLayerGroups.isSolderMask(legacyLayerId)) return 'mask'
+        if (PcbLayerGroups.isDrill(legacyLayerId)) return 'drill'
+        if (PcbLayerGroups.isKeepout(legacyLayerId)) return 'keepout'
+        if (PcbLayerGroups.isMechanical(legacyLayerId)) return 'mechanical'
+        if (PcbLayerGroups.isMultiLayer(legacyLayerId)) return 'multi-layer'
+        return ''
     }
 
     /**
@@ -1504,21 +2036,46 @@ export class PcbSvgRenderer {
      * @returns {{ layerId?: number, layerKey: string, displayName: string } | null}
      */
     static #layerForPrimitive(primitive, semanticContext) {
+        const knownLayer = PcbSvgRenderer.#knownLayerForPrimitive(
+            primitive,
+            semanticContext
+        )
+        if (knownLayer) {
+            return knownLayer
+        }
+
         const layerId = PcbSvgRenderer.#firstFiniteNumber([
             primitive?.layerId,
             primitive?.layerCode
         ])
         if (Number.isInteger(layerId)) {
-            return (
-                semanticContext.layersById.get(layerId) || {
-                    layerId,
-                    layerKey: 'L' + layerId,
-                    displayName:
-                        primitive?.layerName ||
-                        primitive?.layer ||
-                        'Layer ' + layerId
-                }
-            )
+            return {
+                layerId,
+                layerKey: 'L' + layerId,
+                displayName:
+                    primitive?.layerName ||
+                    primitive?.layer ||
+                    'Layer ' + layerId,
+                role: PcbSvgRenderer.#inferLayerRole('', layerId)
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Resolves a layer descriptor only when the layer is in recovered metadata.
+     * @param {object} primitive Primitive record.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {{ layerId?: number, layerKey: string, displayName: string } | null}
+     */
+    static #knownLayerForPrimitive(primitive, semanticContext) {
+        const layerId = PcbSvgRenderer.#firstFiniteNumber([
+            primitive?.layerId,
+            primitive?.layerCode
+        ])
+        if (Number.isInteger(layerId)) {
+            return semanticContext.layersById.get(layerId) || null
         }
 
         const layerName =
@@ -1527,7 +2084,63 @@ export class PcbSvgRenderer {
             PcbSvgRenderer.#normalizeSemanticLookup(layerName)
         )
 
-        return byName || null
+        return (
+            byName ||
+            PcbSvgRenderer.#layerForPrimitiveLayerAlias(
+                layerName,
+                semanticContext
+            )
+        )
+    }
+
+    /**
+     * Resolves legacy Altium primitive layer names such as MID2 to a layer.
+     * @param {string} layerName Primitive layer name.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {{ layerId?: number, layerKey: string, displayName: string } | null}
+     */
+    static #layerForPrimitiveLayerAlias(layerName, semanticContext) {
+        const legacyLayerId =
+            PcbSvgRenderer.#legacyLayerIdForPrimitiveLayerName(layerName)
+
+        return Number.isInteger(legacyLayerId)
+            ? semanticContext.layersById.get(legacyLayerId) || null
+            : null
+    }
+
+    /**
+     * Converts common primitive layer aliases into legacy layer ids.
+     * @param {string} layerName Primitive layer name.
+     * @returns {number | undefined}
+     */
+    static #legacyLayerIdForPrimitiveLayerName(layerName) {
+        const compact = PcbSvgRenderer.#normalizeSemanticLookup(
+            layerName
+        ).replace(/[\s_-]+/gu, '')
+
+        if (compact === 'TOP' || compact === 'TOPLAYER') {
+            return 1
+        }
+        if (
+            compact === 'BOTTOM' ||
+            compact === 'BOTTOMLAYER' ||
+            compact === 'BOT' ||
+            compact === 'BOTLAYER'
+        ) {
+            return 32
+        }
+
+        const midLayerMatch = compact.match(/^MID(?:DLE)?(?:LAYER)?(\d+)$/u)
+        if (midLayerMatch) {
+            return Number(midLayerMatch[1]) + 1
+        }
+
+        const internalLayerMatch = compact.match(/^(?:INTERNAL|INNER)(\d+)$/u)
+        if (internalLayerMatch) {
+            return Number(internalLayerMatch[1]) + 1
+        }
+
+        return undefined
     }
 
     /**
@@ -1993,6 +2606,29 @@ export class PcbSvgRenderer {
             ringMarkup +
             holeMarkup +
             '</g>'
+        )
+    }
+
+    /**
+     * Renders semantic attributes for a generated pad mask aperture.
+     * @param {object} aperture Pad mask aperture descriptor.
+     * @param {object} semanticContext Semantic lookup context.
+     * @returns {string}
+     */
+    static #padMaskApertureAttributes(aperture, semanticContext) {
+        return (
+            PcbSvgRenderer.#semanticAttributes(
+                aperture.spec.primitiveKind,
+                aperture.primitive,
+                aperture.index,
+                semanticContext
+            ) +
+            PcbSvgRenderer.#renderDataAttributes({
+                'data-pad-number': PcbSvgRenderer.#padNumber(aperture.pad),
+                'data-mask-kind': aperture.spec.kind,
+                'data-mask-side': aperture.spec.side,
+                'data-source-pad-element-key': 'pcb-pad-' + aperture.padIndex
+            })
         )
     }
 

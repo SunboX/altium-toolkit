@@ -940,11 +940,11 @@ test('renderPcbSvg normalizes wrapped footprint arcs and start-equals-end circle
 
     assert.match(
         markup,
-        /<path class="pcb-footprint-arc" d="M 3989\.21 2576\.58 A 25 25 0 0 0 3975\.17 2554\.11" stroke-width="5" fill="none" \/>/
+        /<path class="pcb-footprint-arc" d="M 3989\.21 2576\.58 A 25 25 0 0 0 3975\.17 2554\.11" stroke-width="5" fill="none"[^>]* \/>/
     )
     assert.match(
         markup,
-        /<circle class="pcb-footprint-arc" cx="3899\.21" cy="2572\.90" r="25" stroke-width="5" fill="none" \/>/
+        /<circle class="pcb-footprint-arc" cx="3899\.21" cy="2572\.90" r="25" stroke-width="5" fill="none"[^>]* \/>/
     )
 })
 

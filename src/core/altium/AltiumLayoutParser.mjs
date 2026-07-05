@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { ParserUtils } from './ParserUtils.mjs'
+import { PcbLayerIdCodec } from './PcbLayerIdCodec.mjs'
 import { SchematicTextParser } from './SchematicTextParser.mjs'
 
 const { getField, parseNumericField } = ParserUtils
@@ -114,14 +115,18 @@ export class AltiumLayoutParser {
             if (!match) continue
 
             const index = Number.parseInt(match[1], 10)
+            const layerId = parseNumericField(
+                fields,
+                'V9_STACK_LAYER' + index + '_LAYERID'
+            )
+            const legacyLayerId =
+                PcbLayerIdCodec.legacyLayerIdFromV7SaveId(layerId) ?? undefined
             layers.push(
                 AltiumLayoutParser.#stripUndefined({
                     index,
                     name: getField(fields, key),
-                    layerId: parseNumericField(
-                        fields,
-                        'V9_STACK_LAYER' + index + '_LAYERID'
-                    ),
+                    layerId,
+                    legacyLayerId,
                     kind: AltiumLayoutParser.#firstLayerStackTextField(
                         fields,
                         index,

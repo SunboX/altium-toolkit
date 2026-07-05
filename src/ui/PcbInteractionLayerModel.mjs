@@ -56,13 +56,17 @@ export class PcbInteractionLayerModel {
             const key = String(layer?.name || layer?.layer || '').trim()
             if (!key || seen.has(key)) continue
             seen.add(key)
-            layers.push({
+            const row = {
                 key,
                 label: key,
                 layerId: Number.isFinite(Number(layer?.layerId))
                     ? Number(layer.layerId)
                     : null
-            })
+            }
+            if (Number.isFinite(Number(layer?.legacyLayerId))) {
+                row.legacyLayerId = Number(layer.legacyLayerId)
+            }
+            layers.push(row)
         }
 
         return layers

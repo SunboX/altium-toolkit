@@ -180,6 +180,7 @@ export class PcbLayerStackReadModelBuilder {
                 PcbLayerStackReadModelBuilder.#stripUndefined({
                     index: layer.index,
                     layerId: layer.layerId,
+                    legacyLayerId: layer.legacyLayerId,
                     layerKey: Number.isFinite(layer.layerId)
                         ? 'L' + layer.layerId
                         : undefined,

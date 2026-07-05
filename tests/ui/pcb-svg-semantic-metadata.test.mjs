@@ -493,3 +493,391 @@ test('PcbSvgRenderer renders deterministic per-layer SVG exports', () => {
     assert.match(layerSvgs[1].svg, /REF_A/)
     assert.doesNotMatch(layerSvgs[1].svg, /data-primitive="track"/)
 })
+
+/**
+ * Verifies layer views use decoded legacy aliases when stack rows keep native
+ * saved-layer IDs but primitive geometry is still keyed by legacy layer IDs.
+ */
+test('PcbSvgRenderer maps native internal layer views to legacy primitives', () => {
+    const layerSvgs = PcbSvgRenderer.renderLayerSvgs({
+        summary: { title: 'Internal layer export board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 400,
+                heightMil: 300,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 400, y2: 0 },
+                    { type: 'line', x1: 400, y1: 0, x2: 400, y2: 300 },
+                    { type: 'line', x1: 400, y1: 300, x2: 0, y2: 300 },
+                    { type: 'line', x1: 0, y1: 300, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [
+                {
+                    layerId: 0x01000001,
+                    legacyLayerId: 1,
+                    name: 'Top Layer',
+                    role: 'copper'
+                },
+                {
+                    layerId: 0x01000002,
+                    legacyLayerId: 2,
+                    name: 'Internal1',
+                    role: 'copper'
+                },
+                {
+                    layerId: 0x01000003,
+                    legacyLayerId: 3,
+                    name: 'Internal2',
+                    role: 'copper'
+                },
+                {
+                    layerId: 0x0100ffff,
+                    legacyLayerId: 32,
+                    name: 'Bottom Layer',
+                    role: 'copper'
+                }
+            ],
+            primitiveLayers: [
+                { layerId: 1, name: 'Top Layer' },
+                { layerId: 2, name: 'Mid-Layer 1' },
+                { layerId: 3, name: 'Mid-Layer 2' },
+                { layerId: 32, name: 'Bottom Layer' }
+            ],
+            nets: [],
+            classes: [],
+            polygons: [],
+            fills: [],
+            tracks: [
+                {
+                    x1: 40,
+                    y1: 60,
+                    x2: 200,
+                    y2: 60,
+                    width: 8,
+                    layerId: 2
+                },
+                {
+                    x1: 40,
+                    y1: 90,
+                    x2: 200,
+                    y2: 90,
+                    width: 8,
+                    layerId: 3
+                }
+            ],
+            arcs: [],
+            vias: [],
+            pads: [],
+            texts: [],
+            components: []
+        }
+    })
+
+    assert.deepEqual(
+        layerSvgs.map((entry) => ({
+            layerId: entry.layerId,
+            legacyLayerId: entry.legacyLayerId,
+            displayName: entry.displayName
+        })),
+        [
+            {
+                layerId: 0x01000001,
+                legacyLayerId: 1,
+                displayName: 'Top Layer'
+            },
+            {
+                layerId: 0x01000002,
+                legacyLayerId: 2,
+                displayName: 'Internal1'
+            },
+            {
+                layerId: 0x01000003,
+                legacyLayerId: 3,
+                displayName: 'Internal2'
+            },
+            {
+                layerId: 0x0100ffff,
+                legacyLayerId: 32,
+                displayName: 'Bottom Layer'
+            }
+        ]
+    )
+    assert.match(layerSvgs[1].svg, /data-layer-view-display-name="Internal1"/)
+    assert.match(layerSvgs[1].svg, /data-included-layer-ids="16777218,2"/)
+    assert.match(layerSvgs[1].svg, /data-layer-key="L16777218"/)
+    assert.match(
+        layerSvgs[1].svg,
+        /data-primitive="track"[^>]*data-layer-display-name="Internal1"/
+    )
+    assert.doesNotMatch(layerSvgs[1].svg, /data-layer-display-name="Internal2"/)
+    assert.match(layerSvgs[2].svg, /data-layer-view-display-name="Internal2"/)
+    assert.match(
+        layerSvgs[2].svg,
+        /data-primitive="track"[^>]*data-layer-display-name="Internal2"/
+    )
+})
+
+/**
+ * Verifies layer-only consumers can identify polygon pours and region copper by
+ * the same semantic layer attributes as tracks, fills, arcs, pads, and vias.
+ */
+test('PcbSvgRenderer emits layer metadata for polygon aliases and regions', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Layered region metadata board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 400,
+                heightMil: 300,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 400, y2: 0 },
+                    { type: 'line', x1: 400, y1: 0, x2: 400, y2: 300 },
+                    { type: 'line', x1: 400, y1: 300, x2: 0, y2: 300 },
+                    { type: 'line', x1: 0, y1: 300, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [
+                {
+                    layerId: 0x01000001,
+                    legacyLayerId: 1,
+                    name: 'Top Layer',
+                    role: 'copper'
+                },
+                {
+                    layerId: 0x01000002,
+                    legacyLayerId: 2,
+                    name: 'Internal1',
+                    role: 'copper'
+                },
+                {
+                    layerId: 0x01000003,
+                    legacyLayerId: 3,
+                    name: 'Internal2',
+                    role: 'copper'
+                }
+            ],
+            primitiveLayers: [
+                { layerId: 1, name: 'Top Layer' },
+                { layerId: 2, name: 'Mid-Layer 1' },
+                { layerId: 3, name: 'Mid-Layer 2' }
+            ],
+            nets: [],
+            classes: [],
+            polygons: [
+                {
+                    layer: 'MID2',
+                    segments: [
+                        { type: 'line', x1: 40, y1: 40, x2: 120, y2: 40 },
+                        { type: 'line', x1: 120, y1: 40, x2: 120, y2: 120 },
+                        { type: 'line', x1: 120, y1: 120, x2: 40, y2: 120 },
+                        { type: 'line', x1: 40, y1: 120, x2: 40, y2: 40 }
+                    ]
+                }
+            ],
+            fills: [],
+            tracks: [],
+            arcs: [],
+            regions: [
+                {
+                    layerId: 3,
+                    points: [
+                        { x: 180, y: 40 },
+                        { x: 260, y: 40 },
+                        { x: 260, y: 120 },
+                        { x: 180, y: 120 }
+                    ]
+                }
+            ],
+            vias: [],
+            pads: [],
+            texts: [],
+            components: []
+        }
+    })
+
+    assert.match(
+        markup,
+        /class="pcb-polygon pcb-polygon--subsurface"[^>]*data-primitive="polygon"[^>]*data-layer-display-name="Internal2"/
+    )
+    assert.match(
+        markup,
+        /class="pcb-region pcb-region--subsurface"[^>]*data-primitive="region"[^>]*data-layer-display-name="Internal2"/
+    )
+})
+
+/**
+ * Verifies fabrication primitives are emitted as addressable layer artwork
+ * instead of being dropped when they are not chosen as footprint outlines.
+ */
+test('PcbSvgRenderer emits semantic artwork for paste mask layers', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Paste mask metadata board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 400,
+                heightMil: 300,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 400, y2: 0 },
+                    { type: 'line', x1: 400, y1: 0, x2: 400, y2: 300 },
+                    { type: 'line', x1: 400, y1: 300, x2: 0, y2: 300 },
+                    { type: 'line', x1: 0, y1: 300, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [
+                { layerId: 1, name: 'Top Layer', role: 'copper' },
+                { layerId: 35, name: 'Top Paste', role: 'paste' }
+            ],
+            primitiveLayers: [
+                { layerId: 1, name: 'Top Layer' },
+                { layerId: 35, name: 'Top Paste' }
+            ],
+            polygons: [],
+            fills: [
+                {
+                    x1: 60,
+                    y1: 80,
+                    x2: 110,
+                    y2: 130,
+                    layerId: 35
+                }
+            ],
+            tracks: [
+                {
+                    x1: 150,
+                    y1: 90,
+                    x2: 240,
+                    y2: 90,
+                    width: 10,
+                    layerId: 35
+                }
+            ],
+            arcs: [
+                {
+                    x: 280,
+                    y: 100,
+                    radius: 24,
+                    startAngle: 0,
+                    endAngle: 90,
+                    width: 8,
+                    layerId: 35
+                }
+            ],
+            regions: [
+                {
+                    layerId: 35,
+                    points: [
+                        { x: 80, y: 180 },
+                        { x: 130, y: 180 },
+                        { x: 130, y: 230 },
+                        { x: 80, y: 230 }
+                    ]
+                }
+            ],
+            vias: [],
+            pads: [],
+            texts: [],
+            components: []
+        }
+    })
+
+    assert.match(markup, /<g class="pcb-detail-layers"/)
+    assert.match(
+        markup,
+        /class="pcb-detail-fill pcb-detail-fill--paste"[^>]*data-primitive="fill"[^>]*data-layer-display-name="Top Paste"/
+    )
+    assert.match(
+        markup,
+        /class="pcb-detail-track pcb-detail-track--paste"[^>]*data-primitive="track"[^>]*data-layer-display-name="Top Paste"/
+    )
+    assert.match(
+        markup,
+        /class="pcb-detail-arc pcb-detail-arc--paste"[^>]*data-primitive="arc"[^>]*data-layer-display-name="Top Paste"/
+    )
+    assert.match(
+        markup,
+        /class="pcb-detail-region pcb-detail-region--paste"[^>]*data-primitive="region"[^>]*data-layer-display-name="Top Paste"/
+    )
+    assert.doesNotMatch(markup, /class="pcb-fill pcb-fill--surface"/)
+    assert.doesNotMatch(markup, /class="pcb-track pcb-track--surface"/)
+})
+
+/**
+ * Verifies SMT pad paste openings become addressable paste-layer artwork even
+ * when the file stores them as pad mask metadata, not free paste primitives.
+ */
+test('PcbSvgRenderer emits pad-derived paste apertures as layer artwork', () => {
+    const markup = PcbSvgRenderer.render({
+        summary: { title: 'Pad paste aperture board' },
+        pcb: {
+            boardOutline: {
+                minX: 0,
+                minY: 0,
+                widthMil: 300,
+                heightMil: 180,
+                segments: [
+                    { type: 'line', x1: 0, y1: 0, x2: 300, y2: 0 },
+                    { type: 'line', x1: 300, y1: 0, x2: 300, y2: 180 },
+                    { type: 'line', x1: 300, y1: 180, x2: 0, y2: 180 },
+                    { type: 'line', x1: 0, y1: 180, x2: 0, y2: 0 }
+                ]
+            },
+            layers: [
+                { layerId: 1, name: 'Top Layer', role: 'copper' },
+                { layerId: 35, name: 'Top Paste', role: 'paste' },
+                { layerId: 36, name: 'Bottom Paste', role: 'paste' }
+            ],
+            primitiveLayers: [
+                { layerId: 1, name: 'Top Layer' },
+                { layerId: 35, name: 'Top Paste' },
+                { layerId: 36, name: 'Bottom Paste' }
+            ],
+            nets: [{ netIndex: 2, name: 'SIG_A' }],
+            polygons: [],
+            fills: [],
+            tracks: [],
+            arcs: [],
+            regions: [],
+            vias: [],
+            pads: [
+                {
+                    x: 120,
+                    y: 90,
+                    sizeTopX: 44,
+                    sizeTopY: 28,
+                    sizeMidX: 44,
+                    sizeMidY: 28,
+                    sizeBottomX: 44,
+                    sizeBottomY: 28,
+                    shapeTop: 2,
+                    shapeBottom: 2,
+                    rotation: 15,
+                    layerId: 1,
+                    padNumber: '1',
+                    netIndex: 2,
+                    hasTopPasteMaskOpening: true,
+                    hasBottomPasteMaskOpening: false,
+                    effectivePasteMaskExpansion: -2
+                }
+            ],
+            texts: [],
+            components: []
+        }
+    })
+
+    assert.match(markup, /<g class="pcb-pad-mask-layers">/)
+    assert.match(
+        markup,
+        /class="pcb-detail-fill pcb-detail-fill--paste pcb-pad-mask-aperture pcb-pad-mask-aperture--paste"[^>]*width="40"[^>]*height="24"[^>]*data-primitive="pad-paste"[^>]*data-layer-display-name="Top Paste"/
+    )
+    assert.match(markup, /data-mask-side="top"/)
+    assert.match(markup, /data-source-pad-element-key="pcb-pad-0"/)
+    assert.match(markup, /data-pad-number="1"/)
+    assert.match(markup, /data-net="SIG_A"/)
+    assert.doesNotMatch(markup, /data-layer-display-name="Bottom Paste"/)
+})

@@ -325,7 +325,7 @@ test('renderPcbSvg keeps authored screw shafts while correcting tip-facing heads
 
     assert.match(
         markup,
-        /<path class="pcb-footprint-arc" d="M 180 228 A 28 28 0 0 0 180 172" stroke-width="8" fill="none" \/>/
+        /<path class="pcb-footprint-arc" d="M 180 228 A 28 28 0 0 0 180 172" stroke-width="8" fill="none"[^>]* \/>/
     )
     assert.match(
         markup,
@@ -333,7 +333,7 @@ test('renderPcbSvg keeps authored screw shafts while correcting tip-facing heads
     )
     assert.match(
         markup,
-        /<path class="pcb-footprint-arc" d="M 100 372 A 28 28 0 0 0 100 428" stroke-width="8" fill="none" \/>/
+        /<path class="pcb-footprint-arc" d="M 100 372 A 28 28 0 0 0 100 428" stroke-width="8" fill="none"[^>]* \/>/
     )
     assert.match(
         markup,
@@ -341,7 +341,7 @@ test('renderPcbSvg keeps authored screw shafts while correcting tip-facing heads
     )
     assert.match(
         markup,
-        /<path class="pcb-footprint-arc" d="M 372 120 A 28 28 0 0 0 428 120" stroke-width="8" fill="none" \/>/
+        /<path class="pcb-footprint-arc" d="M 372 120 A 28 28 0 0 0 428 120" stroke-width="8" fill="none"[^>]* \/>/
     )
     assert.match(
         markup,
@@ -349,15 +349,15 @@ test('renderPcbSvg keeps authored screw shafts while correcting tip-facing heads
     )
     assert.doesNotMatch(
         markup,
-        /<path class="pcb-footprint-arc" d="M 180 228 A 28 28 0 0 1 180 172" stroke-width="8" fill="none" \/>/
+        /<path class="pcb-footprint-arc" d="M 180 228 A 28 28 0 0 1 180 172" stroke-width="8" fill="none"[^>]* \/>/
     )
     assert.doesNotMatch(
         markup,
-        /<path class="pcb-footprint-arc" d="M 100 372 A 28 28 0 0 1 100 428" stroke-width="8" fill="none" \/>/
+        /<path class="pcb-footprint-arc" d="M 100 372 A 28 28 0 0 1 100 428" stroke-width="8" fill="none"[^>]* \/>/
     )
     assert.doesNotMatch(
         markup,
-        /<path class="pcb-footprint-arc" d="M 372 120 A 28 28 0 0 1 428 120" stroke-width="8" fill="none" \/>/
+        /<path class="pcb-footprint-arc" d="M 372 120 A 28 28 0 0 1 428 120" stroke-width="8" fill="none"[^>]* \/>/
     )
 })
 
