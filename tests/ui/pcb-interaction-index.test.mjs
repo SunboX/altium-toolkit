@@ -7,7 +7,7 @@ import test from 'node:test'
 import {
     PcbInteractionIndex,
     PcbInteractionLayerModel
-} from '../../src/renderers.mjs'
+} from '../../src/legacy-renderers.mjs'
 
 test('PcbInteractionIndex returns overlapping Altium PCB items by selection priority', () => {
     const documentModel = createDocument()

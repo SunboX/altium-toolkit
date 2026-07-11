@@ -11,7 +11,7 @@ import test from 'node:test'
  */
 test('ParameterRecordInventoryBuilder scans parameter record structure', async () => {
     const { ParameterRecordInventoryBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const report = ParameterRecordInventoryBuilder.build({
         records: [
@@ -133,7 +133,7 @@ test('ParameterRecordInventoryBuilder scans parameter record structure', async (
  */
 test('ParameterRecordInventoryBuilder scans records without a leading separator', async () => {
     const { ParameterRecordInventoryBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const record = ParameterRecordInventoryBuilder.scanRecord(
         'Alpha=1|Beta=TRUE',

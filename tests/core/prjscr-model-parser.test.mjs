@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { AltiumParser, PrjScrModelParser } from '../../src/parser.mjs'
+import { AltiumParser, PrjScrModelParser } from '../../src/legacy-parser.mjs'
 
 /**
  * Encodes one script-project text payload.

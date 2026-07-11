@@ -6,7 +6,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { basename, extname, join, relative, sep } from 'node:path'
 
-import { AltiumParser } from '../src/index.mjs'
+import { AltiumParser } from '../src/extensions.mjs'
 import {
     hasHelpFlag,
     inputPathFromArgs,

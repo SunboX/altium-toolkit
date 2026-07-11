@@ -9,7 +9,7 @@ import {
     ProjectDesignBundleBuilder,
     ProjectNetlistExporter,
     ProjectVariantViewBuilder
-} from '../../src/parser.mjs'
+} from '../../src/legacy-parser.mjs'
 import { PrjPcbModelParser } from '../../src/core/altium/PrjPcbModelParser.mjs'
 
 /**

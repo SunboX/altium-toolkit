@@ -5,7 +5,7 @@
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 
-import { AltiumParser } from '../src/index.mjs'
+import { AltiumParser } from '../src/extensions.mjs'
 
 /**
  * Returns true when help was requested.

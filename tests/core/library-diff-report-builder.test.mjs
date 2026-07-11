@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { LibraryDiffReportBuilder } from '../../src/parser.mjs'
+import { LibraryDiffReportBuilder } from '../../src/legacy-parser.mjs'
 
 /**
  * Verifies schematic and PCB library read models can be compared with stable

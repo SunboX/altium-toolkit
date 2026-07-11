@@ -4,7 +4,7 @@ SPDX-PackageSupplier = "André Fiedler / SunboX"
 SPDX-PackageDownloadLocation = "https://github.com/SunboX/altium-toolkit"
 
 [[annotations]]
-path = [".gitignore", ".prettierrc.json", "package.json", "package-lock.json"]
+path = [".gitignore", ".prettierignore", ".prettierrc.json", "package.json", "package-lock.json"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 André Fiedler"
 SPDX-License-Identifier = "GPL-3.0-or-later"
@@ -14,3 +14,15 @@ path = ["AGENTS.md"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 André Fiedler"
 SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+[[annotations]]
+path = ["spec/api-baseline-v1.1.41.json", "spec/asset-baseline-v1.1.41.json", "spec/native-source-manifest-v1.1.41.json"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 André Fiedler"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = ["spec/feature-preservation.json"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 André Fiedler"
+SPDX-License-Identifier = "GPL-3.0-or-later"

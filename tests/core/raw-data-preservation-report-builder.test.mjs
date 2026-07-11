@@ -11,7 +11,7 @@ import test from 'node:test'
  */
 test('RawDataPreservationReportBuilder summarizes preserved raw records', async () => {
     const { RawDataPreservationReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     assert.equal(typeof RawDataPreservationReportBuilder, 'function')
 
@@ -97,7 +97,7 @@ test('RawDataPreservationReportBuilder summarizes preserved raw records', async 
  */
 test('RawDataPreservationReportBuilder summarizes opaque schematic records', async () => {
     const { RawDataPreservationReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const report = RawDataPreservationReportBuilder.build({
         opaqueRecords: [
@@ -179,7 +179,7 @@ test('RawDataPreservationReportBuilder summarizes opaque schematic records', asy
  */
 test('RawDataPreservationReportBuilder reads parser root PCB raw records', async () => {
     const { RawDataPreservationReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const report = RawDataPreservationReportBuilder.build({
         models: [
@@ -245,7 +245,7 @@ test('RawDataPreservationReportBuilder reads parser root PCB raw records', async
  */
 test('RawDataPreservationReportBuilder counts base64 payload bytes without Buffer', async () => {
     const { RawDataPreservationReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
     const originalBuffer = globalThis.Buffer
 
     try {

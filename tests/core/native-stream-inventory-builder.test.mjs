@@ -7,7 +7,7 @@ import test from 'node:test'
 import {
     NativeStreamInventoryBuilder,
     RawDataPreservationReportBuilder
-} from '../../src/parser.mjs'
+} from '../../src/legacy-parser.mjs'
 
 /**
  * Encodes a short stream payload.

@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { CircuitJsonModelAdapter } from '../../src/parser.mjs'
+import { CircuitJsonModelAdapter } from '../../src/legacy-parser.mjs'
 
 /**
  * Returns the first Circuit JSON element of a type.

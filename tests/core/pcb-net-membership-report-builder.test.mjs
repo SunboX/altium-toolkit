@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbNetMembershipReportBuilder } from '../../src/parser.mjs'
+import { PcbNetMembershipReportBuilder } from '../../src/legacy-parser.mjs'
 
 test('PcbNetMembershipReportBuilder summarizes declared and observed copper nets', () => {
     const report = PcbNetMembershipReportBuilder.build({

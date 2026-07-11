@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbModelParser } from '../../src/parser.mjs'
+import { PcbModelParser } from '../../src/legacy-parser.mjs'
 
 /**
  * Builds one synthetic PCB component record.

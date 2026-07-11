@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { LibraryCatalogArtifactBuilder } from '../../src/parser.mjs'
+import { LibraryCatalogArtifactBuilder } from '../../src/legacy-parser.mjs'
 
 test('LibraryCatalogArtifactBuilder emits deterministic static catalog artifacts', () => {
     const artifact = LibraryCatalogArtifactBuilder.build({

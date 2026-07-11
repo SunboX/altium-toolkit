@@ -9,7 +9,7 @@ import { PcbReviewRouteHighlightProfileBuilder } from '../../src/core/altium/Pcb
 import {
     PcbModelParser,
     PcbReviewPolygonRealizationBuilder
-} from '../../src/parser.mjs'
+} from '../../src/legacy-parser.mjs'
 
 /**
  * Creates a minimal printable PCB record.

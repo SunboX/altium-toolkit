@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { LibraryQaReportBuilder } from '../src/index.mjs'
+import { LibraryQaReportBuilder } from '../src/extensions.mjs'
 
 import {
     modelIdentity,

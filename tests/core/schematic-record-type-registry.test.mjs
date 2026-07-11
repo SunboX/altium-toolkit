@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { SchematicRecordTypeRegistry as ExportedSchematicRecordTypeRegistry } from '../../src/parser.mjs'
+import { SchematicRecordTypeRegistry as ExportedSchematicRecordTypeRegistry } from '../../src/legacy-parser.mjs'
 import { SchematicRecordTypeRegistry } from '../../src/core/altium/SchematicRecordTypeRegistry.mjs'
 
 test('SchematicRecordTypeRegistry describes deferred record families', () => {

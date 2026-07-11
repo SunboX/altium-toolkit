@@ -6,7 +6,7 @@ import {
     LoadedDesignNetlistService,
     QueryNetlistBuilder,
     RegexPattern
-} from 'altium-toolkit/netlist-query'
+} from 'altium-toolkit/extensions'
 
 /**
  * Builds one fake schematic document.

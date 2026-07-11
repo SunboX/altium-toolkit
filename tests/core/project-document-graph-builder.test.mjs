@@ -7,7 +7,7 @@ import test from 'node:test'
 import {
     PrjPcbModelParser,
     ProjectDocumentGraphBuilder
-} from '../../src/parser.mjs'
+} from '../../src/legacy-parser.mjs'
 
 /**
  * Encodes project text into an ArrayBuffer.

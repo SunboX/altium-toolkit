@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ParserCompatibilityFuzzer } from '../../src/parser.mjs'
+import { ParserCompatibilityFuzzer } from '../../src/legacy-parser.mjs'
 
 test('ParserCompatibilityFuzzer runs deterministic synthetic parser cases', () => {
     const report = ParserCompatibilityFuzzer.run()

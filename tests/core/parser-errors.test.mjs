@@ -10,7 +10,7 @@ import test from 'node:test'
  */
 test('typed parser errors normalize with kind and source metadata', async () => {
     const { AltiumUnsupportedFeatureError, ParserDiagnosticNormalizer } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const error = new AltiumUnsupportedFeatureError('Unsupported record', {
         fileName: 'sample.SchDoc',
@@ -43,7 +43,7 @@ test('typed parser errors normalize with kind and source metadata', async () => 
  * parse errors while preserving the source file name.
  */
 test('AltiumParser safe parse diagnostics include error kind', async () => {
-    const { AltiumParser } = await import('../../src/parser.mjs')
+    const { AltiumParser } = await import('../../src/legacy-parser.mjs')
     const result = AltiumParser.tryParseArrayBufferToRendererModel(
         'broken.IntLib',
         new Uint8Array([1, 2, 3, 4, 5, 6]).buffer
@@ -64,7 +64,7 @@ test('AltiumParser safe parse diagnostics include error kind', async () => {
  */
 test('AltiumCorruptFileError records corrupt file diagnostics', async () => {
     const { AltiumCorruptFileError, ParserDiagnosticNormalizer } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const diagnostic = ParserDiagnosticNormalizer.normalize(
         new AltiumCorruptFileError('Container header is incomplete', {

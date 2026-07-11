@@ -11,7 +11,7 @@ import test from 'node:test'
  */
 test('ParserValueVerificationReportBuilder reports path-level value mismatches', async () => {
     const { ParserValueVerificationReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const report = ParserValueVerificationReportBuilder.build({
         cases: [
@@ -103,7 +103,7 @@ test('ParserValueVerificationReportBuilder reports path-level value mismatches',
  */
 test('ParserValueVerificationReportBuilder accepts labelled expected assertions', async () => {
     const { ParserValueVerificationReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const report = ParserValueVerificationReportBuilder.build({
         cases: [

@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbRouteAnalysisBuilder } from '../../src/parser.mjs'
+import { PcbRouteAnalysisBuilder } from '../../src/legacy-parser.mjs'
 
 test('PcbRouteAnalysisBuilder avoids per-net primitive scans for empty nets', () => {
     const originalFilter = Array.prototype.filter

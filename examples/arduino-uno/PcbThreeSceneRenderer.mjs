@@ -4,7 +4,7 @@
 
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { PcbScene3dBuilder } from '../../src/index.mjs'
+import { PcbScene3dBuilder } from '../../src/extensions.mjs'
 
 const MAX_COPPER_MESHES = 420
 

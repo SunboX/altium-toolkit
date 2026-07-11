@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { SchematicRecordStreamParser } from '../../src/parser.mjs'
+import { SchematicRecordStreamParser } from '../../src/legacy-parser.mjs'
 
 /**
  * Verifies framed schematic streams preserve non-property frames as opaque

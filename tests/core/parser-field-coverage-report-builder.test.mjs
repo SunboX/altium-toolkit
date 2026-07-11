@@ -11,7 +11,7 @@ import test from 'node:test'
  */
 test('ParserFieldCoverageReportBuilder reports mapped and missing fields', async () => {
     const { ParserFieldCoverageReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     assert.equal(typeof ParserFieldCoverageReportBuilder, 'function')
 
@@ -164,7 +164,7 @@ test('ParserFieldCoverageReportBuilder reports mapped and missing fields', async
  */
 test('ParserFieldCoverageReportBuilder reads parser root source records', async () => {
     const { ParserFieldCoverageReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const report = ParserFieldCoverageReportBuilder.build({
         models: [
@@ -212,7 +212,7 @@ test('ParserFieldCoverageReportBuilder reads parser root source records', async 
  */
 test('ParserFieldCoverageReportBuilder ignores structural field casing', async () => {
     const { ParserFieldCoverageReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const report = ParserFieldCoverageReportBuilder.build({
         schematicRecords: [

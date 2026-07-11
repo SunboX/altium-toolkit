@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbScene3dSummaryRenderer } from '../src/scene3d.mjs'
+import { PcbScene3dSummaryRenderer } from '../src/legacy-scene3d.mjs'
 
 test('PcbScene3dSummaryRenderer renders static board summary markup', () => {
     const markup = PcbScene3dSummaryRenderer.render({

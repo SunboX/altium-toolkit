@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { SchematicImplementationParser } from '../../src/parser.mjs'
+import { SchematicImplementationParser } from '../../src/legacy-parser.mjs'
 
 /**
  * Creates an unrelated record that tracks record-type reads.

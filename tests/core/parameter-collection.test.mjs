@@ -10,7 +10,7 @@ import test from 'node:test'
  * exposing case-insensitive typed reads.
  */
 test('ParameterCollection preserves duplicate values with typed accessors', async () => {
-    const { ParameterCollection } = await import('../../src/parser.mjs')
+    const { ParameterCollection } = await import('../../src/legacy-parser.mjs')
 
     assert.equal(typeof ParameterCollection, 'function')
 
@@ -59,7 +59,7 @@ test('ParameterCollection preserves duplicate values with typed accessors', asyn
  * Verifies missing and malformed parameter values degrade to caller defaults.
  */
 test('ParameterCollection typed accessors return defaults for missing values', async () => {
-    const { ParameterCollection } = await import('../../src/parser.mjs')
+    const { ParameterCollection } = await import('../../src/legacy-parser.mjs')
     const collection = ParameterCollection.parse('|Enabled=F|Size=abc')
 
     assert.equal(collection.get('missing').asString('fallback'), 'fallback')

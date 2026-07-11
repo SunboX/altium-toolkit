@@ -10,7 +10,8 @@ import test from 'node:test'
  * stable codes, severities, source metadata, and rollups.
  */
 test('ParserDiagnosticNormalizer builds structured diagnostic reports', async () => {
-    const { ParserDiagnosticNormalizer } = await import('../../src/parser.mjs')
+    const { ParserDiagnosticNormalizer } =
+        await import('../../src/legacy-parser.mjs')
 
     const report = ParserDiagnosticNormalizer.buildReport({
         defaults: { source: 'parser-unit' },
@@ -64,7 +65,8 @@ test('ParserDiagnosticNormalizer builds structured diagnostic reports', async ()
  * normalization while unknown severities fall back to info.
  */
 test('ParserDiagnosticNormalizer preserves explicit codes and context keys', async () => {
-    const { ParserDiagnosticNormalizer } = await import('../../src/parser.mjs')
+    const { ParserDiagnosticNormalizer } =
+        await import('../../src/legacy-parser.mjs')
 
     const normalized = ParserDiagnosticNormalizer.normalize(
         {

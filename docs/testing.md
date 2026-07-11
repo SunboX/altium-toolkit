@@ -17,11 +17,53 @@ Run the complete suite:
 npm test
 ```
 
+Run all convergence and release gates:
+
+```bash
+npm run check:features
+npm run check:features -- --strict
+npm run check:performance
+npm run check:format
+npm pack --dry-run
+```
+
+The strict feature check creates an isolated packed install, installs the
+approved CircuitJSON 1.1.0 release candidate, verifies all historical native
+source and extension contracts, checks the exact package/subpath layout, and
+runs the shared observable toolkit contract against the packed package.
+
+The performance check is bound to the immutable 1.1.41 commit, source tree,
+and native-source manifest. It measures legacy and canonical projections of
+the same synthetic inputs. Default canonical parsing must stay inside both a
+relative budget and a small envelope-construction allowance scaled by actual
+project document count. Direct async execution, metadata/full asset modes, and
+the shared worker-protocol round trip have independent gates. Full and large
+native extension materialization have separate absolute gates. The native
+schematic facade also has a checksum-parity and relative-overhead gate against
+the manifest-pinned historical renderer. `npm test` validates the complete
+benchmark contract and equivalent projections without treating concurrent-suite
+wall-clock noise as a release result; `npm run check:performance` is the
+isolated timing gate used for release acceptance.
+
 The tests cover:
 
+- Exact 17-class root, common subpath contracts, and collision-free 167-native
+  plus 37-shared extension union with `AltiumExtensionResolver`
+- Canonical parser/project envelopes, option modes, errors, progress,
+  cancellation, archive limits, companion assets, and direct/worker parity
+- Nonempty `tryLoad()` failure diagnostics while preserving supplied rows
+- Explicit native-model resolution without legacy fields on canonical results
+- Canonical/native project-string parity, hidden-designator rendering without
+  input mutation, renderer parity, and the exact historical renderer hash
+- Worker auto-fallback authorization and visible parser/protocol failures
+- CircuitJSON conversion with exactly one native parse per request
+- Large native-extension ownership, worker round trips, and bounded rejection
+- Immutable 1.1.41 API, asset, and native-source baselines plus all 1,302
+  generated feature mappings
 - Binary and OLE helpers
 - Printable and binary Altium parser recovery for `.SchDoc`, `.PcbDoc`,
-  `.PcbLib`, `.PrjPcb`, and `.IntLib` entrypoints
+  `.PCBDwf`, `.SchLib`, `.PcbLib`, `.PrjPcb`, `.PrjScr`, and `.IntLib`
+  entrypoints
 - PCB primitive stream slicing and focused decoders for tracks, fills, arcs,
   vias, pads, text, regions, rules, raw records, board regions, ownership
   indexes, sidecar PrimitiveParameters/Text tables, extended primitive

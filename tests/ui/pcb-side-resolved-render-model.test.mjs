@@ -8,7 +8,7 @@ import {
     PcbSideResolvedRenderModel,
     isCopperPrimitive,
     preparePcbSideResolvedRenderModel
-} from '../../src/renderers.mjs'
+} from '../../src/legacy-renderers.mjs'
 
 /**
  * Verifies the toolkit owns Altium front-view filtering without mutating input.

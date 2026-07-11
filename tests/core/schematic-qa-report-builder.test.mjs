@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { SchematicQaReportBuilder } from '../../src/parser.mjs'
+import { SchematicQaReportBuilder } from '../../src/legacy-parser.mjs'
 
 test('SchematicQaReportBuilder reuses title-block residue for findings', () => {
     const originalToLowerCase = String.prototype.toLowerCase

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
 
-import { NormalizedModelSchema as ExportedNormalizedModelSchema } from '../../src/parser.mjs'
+import { NormalizedModelSchema as ExportedNormalizedModelSchema } from '../../src/legacy-parser.mjs'
 import { AltiumParser } from '../../src/core/altium/AltiumParser.mjs'
 import { IntLibModelParser } from '../../src/core/altium/IntLibModelParser.mjs'
 import { NormalizedModelSchema } from '../../src/core/altium/NormalizedModelSchema.mjs'

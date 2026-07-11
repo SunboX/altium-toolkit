@@ -6,20 +6,87 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 # Altium Toolkit
 
-Altium Toolkit is an ESM JavaScript library for parsing native Altium
-schematic and PCB documents and rendering deterministic, non-interactive
-outputs from the recovered model.
+Altium Toolkit is the native Altium decoder in the common ECAD toolkit family.
+It parses Altium files into immutable CircuitJSON document envelopes and common
+project envelopes, and exposes the same parser, renderer, interaction, query,
+simulation, 3D scene, capability, error, and worker contracts as
+`circuitjson-toolkit`, `gerber-toolkit`, and `kicad-toolkit`.
 
 The package was extracted from [ECAD Forge](https://ecadforge.app/), where it
 is used for browser-based Altium document parsing and deterministic render
 output. It is also used in [PCB Styler](https://pcb-styler.app/). Its parser
 behavior, normalized model shape, and renderer output can be reused by other
-browser or Node-based tools.
+browser or Node-based tools. Parsing and all default services are local-only.
+
+## Breaking API convergence
+
+Version 1.2.0 intentionally changes root names, parameters, return shapes, and
+package subpaths. The root now contains the exact 17-class shared toolkit
+surface, and `Parser.parse()` returns an `ecad-toolkit.document.v1` envelope whose `model`
+is CircuitJSON. No Altium feature was deleted: all 1.1.41 exports and public
+members remain under `altium-toolkit/extensions`, alongside the 37 shared
+source-neutral extension helpers, with the exhaustive native mapping in the
+[migration guide](docs/migration.md).
+
+Default `extensions: 'canonical'` keeps compact Altium summary metadata.
+Request the complete native read model with `extensions: 'full'`,
+`preserveRaw: true`, or `extensions: ['altium.native-model']`. Project batches
+resolve referenced schematic project strings consistently in canonical
+CircuitJSON and an explicitly retained native model; select
+`altium.project-context` only when the compact native parameter/document facts
+are also needed.
+`extensions: 'none'` and an empty selection return the exact common
+`extensions: {}` shape on documents and projects.
+
+Hosts that need an Altium-only renderer for details not represented by
+CircuitJSON can resolve the explicit extension without changing the canonical
+document shape:
+
+```js
+import { Parser } from 'altium-toolkit'
+import { AltiumExtensionResolver } from 'altium-toolkit/extensions'
+
+const document = Parser.parse(input, {
+    extensions: ['altium.native-model']
+})
+const nativeModel = AltiumExtensionResolver.nativeModel(document)
+```
+
+`document` remains an immutable `ecad-toolkit.document.v1` result; native
+`schematic` and `pcb` fields are never copied onto it.
+
+`SchematicSvgRenderer` from `altium-toolkit/extensions` is the native
+convergence renderer. It honors recovered component-designator visibility and
+delegates to the provenance-pinned historical renderer without requiring a
+host to clone or rewrite the native model.
+
+The common parser now projects native schematic rectangles, rounded
+rectangles, circles and ellipses, arcs, Beziers, polygons, text frames, tables
+when present, hierarchical child-sheet symbols, and ordinary text into the
+same CircuitJSON rows used by KiCad. Component ownership, stroke/fill style,
+geometry, and stable render order are retained. Embedded schematic image bytes
+are owned once as `ToolkitAsset` records with `kind: 'schematic-image'`; their
+`schematic_image` rows reference `asset_id` and retain source path, bounds,
+aspect policy, and order without duplicating base64 data in the model.
+Only native wire records become canonical electrical traces; graphical lines
+remain artwork even when they carry net-like metadata, and PCB source-trace
+relations are preserved unchanged in mixed documents.
 
 ## Features
 
-- Parse standalone native `.SchDoc`, `.PcbDoc`, `.SchLib`, `.PcbLib`,
-  `.PrjPcb`, and `.IntLib` files from `ArrayBuffer`
+- Exact common `Parser` and `ProjectLoader` contracts with immutable
+  CircuitJSON document envelopes, common project envelopes, progress,
+  cancellation, archive limits, ZIP preflight inspection, and workers
+- Shared CircuitJSON context, rendering, interaction, query, manufacturing,
+  injected simulation, and right-handed Z-up 3D scene services
+- One native Altium parse per canonical request; compact default extensions
+  avoid cloning the complete native tree unless explicitly requested
+- Explicit large native extensions are captured once as bounded immutable
+  CircuitJSON document data and survive the shared worker protocol
+- Machine-readable capability inventory, packed conformance harness,
+  provenance-bound performance gates, and explicit `/extensions` compatibility
+- Parse standalone native `.SchDoc`, `.PcbDoc`, `.PCBDwf`, `.SchLib`,
+  `.PcbLib`, `.PrjPcb`, `.PrjScr`, and `.IntLib` files from `ArrayBuffer`
 - Recover schematic records, PCB outlines, placements, schematic library
   symbols, PCB library footprints,
   project document references, variants, parameters, primitives, embedded
@@ -37,6 +104,9 @@ browser or Node-based tools.
   schematic-library section keys, pin side streams, compressed storage assets,
   schematic project-parameter text resolution, PCB QA statistics, structured
   diagnostics, and embedded PCB/PcbLib font payloads with basic text metrics
+- Project rich native schematic graphics and asset-backed images directly into
+  the shared CircuitJSON renderer contract, including distinct hierarchical
+  `schematic_sheet_symbol` rows whose child file names do not become page rows
 - Preserve raw PCB primitive records through a read-only record registry so
   unsupported or partially decoded stream data remains inspectable; native OLE
   stream inventories summarize known, unknown, consumed, and opaque streams
@@ -77,34 +147,55 @@ npm install @sunbox/altium-toolkit
 
 ```js
 import {
-    AltiumParser,
-    SchematicSvgRenderer,
+    CircuitJsonDocumentContext,
+    Parser,
+    PcbInteractionIndex,
+    PcbScene3dBuilder,
     PcbSvgRenderer,
-    preparePcbSideResolvedRenderModel,
-    BomTableRenderer,
-    PcbScene3dBuilder
+    QueryService
 } from 'altium-toolkit'
 
-const documentModel = AltiumParser.parseArrayBuffer(file.name, arrayBuffer)
-const backRenderModel = preparePcbSideResolvedRenderModel(documentModel, {
-    side: 'back'
+const document = await Parser.parseAsync(
+    { fileName: file.name, data: arrayBuffer },
+    {
+        worker: 'auto',
+        onProgress: ({ stage }) => console.log(stage)
+    }
+)
+const context = CircuitJsonDocumentContext.prepare(document, {
+    indexes: ['elements', 'relations', 'connectivity', 'spatial']
 })
 
-const schematicMarkup = SchematicSvgRenderer.render(documentModel)
-const pcbMarkup = PcbSvgRenderer.render(backRenderModel)
-const bomMarkup = BomTableRenderer.render(documentModel.bom || [])
-const sceneDescription = PcbScene3dBuilder.build(documentModel)
+const pcbMarkup = PcbSvgRenderer.render(context, { side: 'bottom' })
+const hits = PcbInteractionIndex.create(context).hitTest({ x: 10, y: 5 })
+const components = QueryService.create(context).query({
+    select: 'components'
+})
+const sceneDescription = PcbScene3dBuilder.build(context)
+
+console.log(document.model, pcbMarkup, hits, components.items, sceneDescription)
 ```
 
 Optional renderer CSS is available through:
 
 ```js
-import 'altium-toolkit/styles/altium-renderers.css'
+import 'altium-toolkit/styles/renderers.css'
+```
+
+Use the retained native API deliberately when needed:
+
+```js
+import { AltiumParser, AltiumSchLibExporter } from 'altium-toolkit/extensions'
+
+const legacyCircuitJson = AltiumParser.parseArrayBuffer(file.name, arrayBuffer)
 ```
 
 ## Documentation
 
 - [API](docs/api.md)
+- [Capabilities](docs/capabilities.md)
+- [Migration from 1.1.41](docs/migration.md)
+- [1.2.0 release notes](docs/release-notes-v1.2.0.md)
 - [Model Format](docs/model-format.md)
 - [Normalized Model Schema](docs/schemas/altium_toolkit/normalized_model_a1.schema.json)
 - [Project Bundle Schema](docs/schemas/altium_toolkit/project_bundle_a1.schema.json)
@@ -142,6 +233,9 @@ npm start
 
 ```bash
 npm test
+npm run check:features -- --strict
+npm run check:performance
+npm run check:format
 ```
 
 The test suite uses repo-owned, obfuscated fixture shards only. Do not add

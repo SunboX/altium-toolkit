@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbClassReportBuilder } from '../../src/parser.mjs'
+import { PcbClassReportBuilder } from '../../src/legacy-parser.mjs'
 
 test('PcbClassReportBuilder resolves class members and flags unresolved rows', () => {
     const report = PcbClassReportBuilder.build({

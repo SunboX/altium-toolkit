@@ -66,8 +66,8 @@ the object form can call
   `urn:altium-toolkit:normalized-model:a1`
 - `kind`: `schematic`, `pcb`, `schematic-library`, `pcb-library`, `project`,
   `integrated-library`, or `design-bundle`
-- `fileType`: `SchDoc`, `PcbDoc`, `SchLib`, `PcbLib`, `PrjPcb`, `IntLib`, or
-  `ProjectDesignBundle`
+- `fileType`: `SchDoc`, `PcbDoc`, `PCBDwf`, `SchLib`, `PcbLib`, `PrjPcb`,
+  `PrjScr`, `IntLib`, or `ProjectDesignBundle`
 - `fileName`: original file name passed to the parser
 - `diagnostics`: parser warnings and recovery notes. Each diagnostic carries a
   machine-readable `code`, `severity`, and `message`; entries may also carry
@@ -255,7 +255,14 @@ mutating source parser models through `SchematicProjectParameterResolver`.
 The resolver supports dot-prefixed project parameters, equals-prefixed template
 fields, and simple quoted-literal concatenation expressions. Schematic SVG
 rendering accepts `projectParameters` and uses the resolver for visible sheet
-text and title-block fields.
+text and title-block fields. `ProjectLoader` applies the same resolution to the
+canonical CircuitJSON model and to an explicitly retained `altium.native-model`
+extension before either is returned.
+
+Native component records retain `schematicDesignatorVisible`. The
+`SchematicSvgRenderer` convergence facade uses that structural field to
+suppress only hidden fallback labels while preserving the caller-owned native
+model and delegating all SVG generation to the pinned historical renderer.
 
 `schematic.renderDiagnostics` is an optional structured sidecar for rendering
 fallback decisions. Font-family fallbacks are emitted with code
@@ -291,6 +298,24 @@ Alpha-bearing 32-bit BMP previews are converted to PNG and marked with
 references, missing embedded payloads, unsupported MIME states, converted
 preview/native payloads, and alpha-bearing images without attempting any file
 system lookups.
+
+The canonical `document.model` projects native rectangles, rounded rectangles,
+circles/ellipses, arcs, Beziers, polygons, text frames, optional tables, and
+hierarchical sheet symbols onto the shared `schematic_*` element contract.
+Bezier curves use 24 segments and unequal ellipses use 48 points, matching the
+KiCad projection. Child references are `schematic_sheet_symbol` elements with
+`source_file_name`, not `schematic_sheet` page selectors. Embedded image bytes
+are decoded once into document assets with `kind: 'schematic-image'`; each
+`schematic_image` carries only its `asset_id`, center/size, source name/path,
+aspect policy, opacity/rotation when authored, and integer render order.
+External or missing image payloads retain their source description and produce
+a canonical diagnostic without a placeholder or network lookup.
+Native record-27 wire segments are explicitly classified with
+`sourceType: 'wire'` before common projection. Other lines remain graphical
+artwork even if they contain net-like metadata. Replacing the historical
+schematic trace projection does not remove `source_trace` rows referenced by
+PCB traces in mixed models.
+
 When a schematic OLE container exposes preview metadata, `schematic.thumbnails`
 contains PNG thumbnail sidecars with `kind`, dimensions, `sourceStream`,
 `pixelFormat`, `mimeType`, and `dataBase64` fields.

@@ -4,7 +4,10 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { AltiumParser, DraftsmanDigestParser } from '../../src/parser.mjs'
+import {
+    AltiumParser,
+    DraftsmanDigestParser
+} from '../../src/legacy-parser.mjs'
 
 /**
  * Encodes text into an ArrayBuffer.

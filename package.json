@@ -1,6 +1,6 @@
 {
     "name": "altium-toolkit",
-    "version": "1.1.41",
+    "version": "1.2.0",
     "description": "Altium document parsing and non-interactive rendering utilities",
     "keywords": [
         "altium",
@@ -23,11 +23,20 @@
     "exports": {
         ".": "./src/index.mjs",
         "./parser": "./src/parser.mjs",
-        "./netlist-query": "./src/netlist-query.mjs",
+        "./project": "./src/project.mjs",
         "./renderers": "./src/renderers.mjs",
+        "./interaction": "./src/interaction.mjs",
+        "./query": "./src/query.mjs",
+        "./manufacturing": "./src/manufacturing.mjs",
+        "./simulation": "./src/simulation.mjs",
         "./scene3d": "./src/scene3d.mjs",
-        "./workers/altium-parser.worker.mjs": "./src/workers/altium-parser.worker.mjs",
-        "./styles/altium-renderers.css": "./src/styles/altium-renderers.css"
+        "./capabilities": "./src/capabilities.mjs",
+        "./extensions": "./src/extensions.mjs",
+        "./testing": "./src/testing.mjs",
+        "./workers/parser.worker.mjs": "./src/workers/parser.worker.mjs",
+        "./styles/renderers.css": "./src/styles/renderers.css",
+        "./extensions/workers/altium-parser.worker.mjs": "./src/workers/altium-parser.worker.mjs",
+        "./extensions/styles/altium-renderers.css": "./src/styles/altium-renderers.css"
     },
     "files": [
         "src",
@@ -50,9 +59,15 @@
         "start": "node examples/server.mjs",
         "test": "node --test tests/*.test.mjs tests/**/*.test.mjs",
         "format": "prettier --write .",
-        "check:format": "prettier --check ."
+        "check:format": "prettier --check .",
+        "benchmark": "node scripts/run-benchmarks.mjs",
+        "check:performance": "node scripts/run-benchmarks.mjs",
+        "capture:api": "node scripts/capture-api-baseline.mjs",
+        "sync:migration": "node scripts/generate-feature-preservation.mjs",
+        "check:features": "node scripts/check-feature-preservation.mjs"
     },
     "dependencies": {
+        "circuitjson-toolkit": "^1.1.0",
         "fflate": "^0.8.2",
         "three": "^0.184.0"
     },

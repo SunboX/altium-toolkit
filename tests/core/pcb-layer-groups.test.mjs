@@ -10,7 +10,7 @@ import test from 'node:test'
  * identifiers for parser and renderer consumers.
  */
 test('PcbLayerGroups classifies common PCB layer IDs', async () => {
-    const { PcbLayerGroups } = await import('../../src/parser.mjs')
+    const { PcbLayerGroups } = await import('../../src/legacy-parser.mjs')
 
     assert.equal(typeof PcbLayerGroups, 'function')
     assert.equal(PcbLayerGroups.isTopCopper(1), true)
@@ -31,7 +31,7 @@ test('PcbLayerGroups classifies common PCB layer IDs', async () => {
  * Verifies higher-level grouping is deterministic and useful for reports.
  */
 test('PcbLayerGroups resolves stable group names and signal-or-silk visibility', async () => {
-    const { PcbLayerGroups } = await import('../../src/parser.mjs')
+    const { PcbLayerGroups } = await import('../../src/legacy-parser.mjs')
 
     assert.deepEqual(
         [1, 2, 32, 33, 35, 37, 39, 55, 56, 57, 73, 74, 81, 82, 999].map(
@@ -74,7 +74,7 @@ test('PcbLayerGroups resolves stable group names and signal-or-silk visibility',
  * presentation metadata without duplicating palette or draw-order tables.
  */
 test('PcbLayerGroups resolves deterministic presentation metadata', async () => {
-    const { PcbLayerGroups } = await import('../../src/parser.mjs')
+    const { PcbLayerGroups } = await import('../../src/legacy-parser.mjs')
 
     assert.equal(PcbLayerGroups.colorForLayerId(1), '#c05032')
     assert.equal(PcbLayerGroups.colorForLayerId(32), '#2f6f9f')

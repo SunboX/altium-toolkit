@@ -1,0 +1,5 @@
+spec/api-baseline-v1.1.41.json
+spec/asset-baseline-v1.1.41.json
+spec/native-source-manifest-v1.1.41.json
+spec/feature-preservation.json
+docs/migration/legacy-*.md

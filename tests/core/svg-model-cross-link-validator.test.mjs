@@ -8,7 +8,7 @@ import {
     PcbSvgRenderer,
     SchematicSvgRenderer,
     SvgModelCrossLinkValidator
-} from '../../src/index.mjs'
+} from '../../src/extensions.mjs'
 
 /**
  * Creates a schematic model with addressable visible primitives.

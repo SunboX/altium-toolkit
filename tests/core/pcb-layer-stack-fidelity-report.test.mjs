@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbLayerStackFidelityReportBuilder } from '../../src/parser.mjs'
+import { PcbLayerStackFidelityReportBuilder } from '../../src/legacy-parser.mjs'
 
 test('PcbLayerStackFidelityReportBuilder classifies source fidelity capabilities', () => {
     const report = PcbLayerStackFidelityReportBuilder.build({

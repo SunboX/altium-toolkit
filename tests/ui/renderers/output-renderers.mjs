@@ -8,7 +8,7 @@ import test from 'node:test'
 import { AltiumFixtureLoader } from '../../fixtures/AltiumFixtureLoader.mjs'
 import { BomTableRenderer } from '../../../src/ui/BomTableRenderer.mjs'
 import { PcbSvgRenderer } from '../../../src/ui/PcbSvgRenderer.mjs'
-import { PcbScene3dSummaryRenderer } from '../../../src/scene3d.mjs'
+import { PcbScene3dSummaryRenderer } from '../../../src/legacy-scene3d.mjs'
 import { SchematicSvgRenderer } from '../../../src/ui/SchematicSvgRenderer.mjs'
 
 /**

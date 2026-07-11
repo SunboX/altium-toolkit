@@ -60,7 +60,7 @@ function createTrackData(count) {
  * Verifies the parser entrypoint exposes the read-only raw-record registry.
  */
 test('parser entrypoint exports PcbRawRecordRegistry', async () => {
-    const parserEntrypoint = await import('../../src/parser.mjs')
+    const parserEntrypoint = await import('../../src/legacy-parser.mjs')
 
     assert.equal(
         typeof parserEntrypoint.PcbComponentPrimitiveIndexer,

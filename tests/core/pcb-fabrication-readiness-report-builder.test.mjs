@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbFabricationReadinessReportBuilder } from '../../src/parser.mjs'
+import { PcbFabricationReadinessReportBuilder } from '../../src/legacy-parser.mjs'
 
 test('PcbFabricationReadinessReportBuilder summarizes pad and via fabrication review items', () => {
     const report = PcbFabricationReadinessReportBuilder.build({

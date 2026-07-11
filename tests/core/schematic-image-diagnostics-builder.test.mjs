@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { SchematicImageDiagnosticsBuilder } from '../../src/parser.mjs'
+import { SchematicImageDiagnosticsBuilder } from '../../src/legacy-parser.mjs'
 
 test('SchematicImageDiagnosticsBuilder classifies embedded, external, missing, and unsupported images', () => {
     const report = SchematicImageDiagnosticsBuilder.build({

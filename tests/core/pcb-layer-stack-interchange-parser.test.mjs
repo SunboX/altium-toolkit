@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbLayerStackInterchangeParser } from '../../src/parser.mjs'
+import { PcbLayerStackInterchangeParser } from '../../src/legacy-parser.mjs'
 
 test('PcbLayerStackInterchangeParser reads synthetic stackup text', () => {
     const model = PcbLayerStackInterchangeParser.parseText(

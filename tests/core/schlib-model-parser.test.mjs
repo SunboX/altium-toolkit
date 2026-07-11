@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { deflateSync } from 'node:zlib'
 import test from 'node:test'
-import { AltiumParser, LibrarySearchIndex } from '../../src/parser.mjs'
+import { AltiumParser, LibrarySearchIndex } from '../../src/legacy-parser.mjs'
 import { OleCompoundDocumentWriter } from '../../src/core/ole/OleCompoundDocumentWriter.mjs'
 
 /**

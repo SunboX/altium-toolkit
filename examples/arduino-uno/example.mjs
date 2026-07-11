@@ -8,7 +8,7 @@ import {
     PcbScene3dSummaryRenderer,
     PcbSvgRenderer,
     SchematicSvgRenderer
-} from '../../src/index.mjs'
+} from '../../src/extensions.mjs'
 import { PcbThreeSceneRenderer } from './PcbThreeSceneRenderer.mjs'
 import { SvgViewportController } from './SvgViewportController.mjs'
 

@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbOwnershipGraphBuilder } from '../../src/parser.mjs'
+import { PcbOwnershipGraphBuilder } from '../../src/legacy-parser.mjs'
 
 test('PcbOwnershipGraphBuilder appends primitive keys without duplicate scans', () => {
     const originalIncludes = Array.prototype.includes

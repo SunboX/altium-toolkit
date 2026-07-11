@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { EmbeddedAssetReportBuilder } from '../../src/parser.mjs'
+import { EmbeddedAssetReportBuilder } from '../../src/legacy-parser.mjs'
 
 /**
  * Verifies embedded payloads from multiple parser roots are summarized in one

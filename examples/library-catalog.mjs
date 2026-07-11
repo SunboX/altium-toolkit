@@ -10,7 +10,7 @@ import {
     runReadOnlyScript,
     wantsJson
 } from './cli-utils.mjs'
-import { LibraryCatalogArtifactBuilder } from '../src/index.mjs'
+import { LibraryCatalogArtifactBuilder } from '../src/extensions.mjs'
 
 /**
  * Builds library catalog rows from parsed library models.

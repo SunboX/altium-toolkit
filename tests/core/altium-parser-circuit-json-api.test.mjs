@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { AltiumParser } from '../../src/parser.mjs'
+import { AltiumParser } from '../../src/legacy-parser.mjs'
 
 /**
  * Encodes fixture text as an ArrayBuffer.

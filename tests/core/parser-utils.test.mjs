@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ParserUtils } from '../../src/parser.mjs'
+import { ParserUtils } from '../../src/legacy-parser.mjs'
 
 test('ParserUtils picks repeated field values without map allocation', () => {
     const originalMap = Array.prototype.map

@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbLayerStackQueryHelper } from '../../src/parser.mjs'
+import { PcbLayerStackQueryHelper } from '../../src/legacy-parser.mjs'
 
 test('PcbLayerStackQueryHelper resolves source refs, region joins, and branch refs', () => {
     const readModel = {

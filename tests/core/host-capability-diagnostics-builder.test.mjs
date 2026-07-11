@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { HostCapabilityDiagnosticsBuilder } from '../../src/parser.mjs'
+import { HostCapabilityDiagnosticsBuilder } from '../../src/legacy-parser.mjs'
 
 test('HostCapabilityDiagnosticsBuilder emits structured fallback diagnostics', () => {
     const diagnostics = HostCapabilityDiagnosticsBuilder.build({

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbScene3dBuilder } from '../../src/scene3d.mjs'
+import { PcbScene3dBuilder } from '../../src/legacy-scene3d.mjs'
 
 /**
  * Builds a compact fake PCB with a top-side timing carrier near an unrelated

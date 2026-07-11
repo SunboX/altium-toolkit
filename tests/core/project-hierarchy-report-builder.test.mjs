@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ProjectHierarchyReportBuilder } from '../../src/parser.mjs'
+import { ProjectHierarchyReportBuilder } from '../../src/legacy-parser.mjs'
 
 test('ProjectHierarchyReportBuilder walks child sheets and reports gaps', () => {
     const report = ProjectHierarchyReportBuilder.build({

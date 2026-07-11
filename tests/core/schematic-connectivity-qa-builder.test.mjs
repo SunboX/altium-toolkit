@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { SchematicConnectivityQaBuilder } from '../../src/parser.mjs'
+import { SchematicConnectivityQaBuilder } from '../../src/legacy-parser.mjs'
 
 test('SchematicConnectivityQaBuilder reports pin label and electrical ambiguity findings', () => {
     const pins = [

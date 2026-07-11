@@ -4,35 +4,238 @@ SPDX-FileCopyrightText: 2026 André Fiedler
 SPDX-License-Identifier: CC-BY-SA-4.0
 -->
 
-# API
+# Canonical API
+
+Version 1.2.0 exposes the same API contract as the other ECAD toolkits.
+CircuitJSON is the shared immutable model. Common services accept a canonical
+`DocumentResult`, its `model`, or a prepared `CircuitJsonDocumentContext` unless
+the method documents a narrower input.
 
 ## Entrypoints
 
-`altium-toolkit` exports the supported parser, renderer, and 3D
-scene-description classes from one entrypoint.
+The root exports exactly these 17 shared classes:
+
+- `Parser`, `ProjectLoader`, `CircuitJsonDocument`,
+  `CircuitJsonDocumentContext`, `CircuitJsonIndexer`, and `CircuitJsonUnits`
+- `PcbSvgRenderer`, `SchematicSvgRenderer`, and `BomTableRenderer`
+- `PcbInteractionIndex` and `QueryService`
+- `ManufacturingService` and `SimulationService`
+- `PcbScene3dBuilder` and `PcbScene3dPreparator`
+- `ToolkitCapabilities` and `ToolkitError`
 
 Specialized entrypoints are also available:
 
 - `altium-toolkit/parser`
-- `altium-toolkit/netlist-query`
+- `altium-toolkit/project`
 - `altium-toolkit/renderers`
+- `altium-toolkit/interaction`
+- `altium-toolkit/query`
+- `altium-toolkit/manufacturing`
+- `altium-toolkit/simulation`
 - `altium-toolkit/scene3d`
-- `altium-toolkit/workers/altium-parser.worker.mjs`
-- `altium-toolkit/styles/altium-renderers.css`
+- `altium-toolkit/capabilities`
+- `altium-toolkit/testing`
+- `altium-toolkit/workers/parser.worker.mjs`
+- `altium-toolkit/styles/renderers.css`
+- `altium-toolkit/extensions`
+
+Altium-only worker and style assets are retained under
+`altium-toolkit/extensions/workers/altium-parser.worker.mjs` and
+`altium-toolkit/extensions/styles/altium-renderers.css`.
+
+`altium-toolkit/parser` exposes the exact shared parser key set, including
+`CircuitJsonDocumentContext`, while its `Parser` implementation remains
+Altium-owned.
 
 ## Parser
 
 ```js
-import { AltiumParser } from 'altium-toolkit/parser'
+import { Parser } from 'altium-toolkit/parser'
+
+const document = Parser.parse({
+    fileName: 'design.PcbDoc',
+    data: arrayBuffer,
+    assets: []
+})
+```
+
+`Parser.parse(input, options?)` parses synchronously. `Parser.parseAsync()` adds
+progress, cancellation, and worker execution. `Parser.tryParse()` returns
+`{ ok: true, value }` or `{ ok: false, error, diagnostics }`, and
+`Parser.supports()` performs bounded extension/data detection.
+
+Common options are:
+
+- `decodeAssets`: `'none'`, `'metadata'`, or `'full'`
+- `extensions`: `'none'`, `'metadata'`, `'canonical'`, `'full'`, or a feature-id
+  array such as `['altium.native-model']` or
+  `['altium.project-context']`
+- `preserveRaw`: include the complete native model without changing the common
+  document fields
+- `reports`: explicit report ids; unavailable eager reports fail visibly
+- `retainSource`: `'none'` or `'reference'`
+- `worker`: `false`, `true`, or `'auto'`
+- `transferInput`: permission to transfer worker input buffers
+- `signal` and `onProgress`: cancellation and ordered progress
+
+Asset inputs are validated through the shared descriptor-safe CircuitJSON
+boundary. Metadata mode measures payloads without copying them and returns
+`data: null`; full mode creates one defensive snapshot that downstream envelope
+construction reuses. Project archive byte limits include every attached asset
+before any payload snapshot is allocated.
+
+Every successful call returns the exact common envelope:
+
+```js
+{
+    schema: 'ecad-toolkit.document.v1',
+    id: 'document-...',
+    modelSchema: { name: 'circuit-json', version: '0.0.446' },
+    model: [],
+    source: {
+        format: 'altium',
+        fileName: 'design.PcbDoc',
+        fileType: 'pcbdoc'
+    },
+    extensions: { altium: { $meta: {}, summary: {} } },
+    assets: [],
+    diagnostics: [],
+    statistics: {}
+}
+```
+
+Default canonical mode keeps compact Altium `kind`, `fileType`, and `summary`
+metadata. The complete recovered native read model remains available through
+`extensions: 'full'`, `preserveRaw: true`, or the explicit
+`altium.native-model` feature id. Common render/query/scene services operate on
+`document.model` and do not require the full native extension.
+`extensions: 'none'` or `extensions: []` returns exactly `extensions: {}`.
+
+Canonical `.SchDoc` models preserve native drawing order, ownership, geometry,
+and style as shared `schematic_rect`, `schematic_circle`, `schematic_arc`,
+`schematic_path`, `schematic_text`, `schematic_table`, and
+`schematic_sheet_symbol` elements. Cubic Beziers use 24 segments, unequal
+ellipses use 48 points, and elliptical arcs use 7.5-degree sampling. Embedded
+schematic images are `schematic_image` elements linked by `asset_id` to
+document `ToolkitAsset` payloads, so image bytes are decoded according to the
+same `decodeAssets` policy as every other asset and are never copied into the
+CircuitJSON row. Missing external image references retain their source metadata
+and produce a diagnostic instead of a placeholder or network request.
+At the Altium convergence boundary, native record-27 segments receive
+`sourceType: 'wire'`. The common graphic builder emits electrical
+`schematic_trace`/`source_trace` rows only for that explicit classification;
+net-like fields on artwork do not reclassify it. Existing PCB source-trace
+relations remain unchanged when schematic graphics are rebuilt.
+
+Public failures are `ToolkitError` instances with stable `code`, `category`,
+`format`, `source`, `details`, and `cause` fields. Worker and direct execution
+return the same serialized result. `worker: 'auto'` falls back only when worker
+construction is unavailable; validation, parser, protocol, cancellation, post,
+and runtime failures remain visible.
+
+## Projects
+
+```js
+import { ProjectLoader } from 'altium-toolkit/project'
+
+const project = await ProjectLoader.loadAsync(entries, {
+    worker: 'auto',
+    archiveLimits: { maxEntries: 512 },
+    onProgress: ({ stage, completed, total }) =>
+        console.log(stage, completed, total)
+})
+```
+
+The `/project` subpath also forwards the common `ArchiveEntryPath`,
+`ArchiveLimits`, `ProjectResult`, and `ZipArchiveInspector` utilities. ZIP
+preflight can therefore use the same central-directory limits and path policy
+as other toolkit project loaders before any inflation step.
+
+`load()`, `loadAsync()`, `tryLoad()`, and `supports()` use the same names and
+shapes across the toolkit family. Entry paths are normalized and deduplicated;
+entry count, source and attached-asset byte size, compression ratio, and archive
+depth use shared hard ceilings that callers may tighten but cannot disable.
+Supported documents may load partially, with per-entry errors returned as
+project diagnostics. Non-Altium entries become companion assets according to
+`decodeAssets`.
+
+`tryLoad()` always returns at least one canonical error diagnostic on failure.
+If a parser/project error already provides diagnostics they are preserved;
+otherwise the public `ToolkitError` is projected into one diagnostic row.
+
+When a project includes a `.PrjPcb` and referenced schematics, the loader
+resolves visible schematic project strings such as `=ProjectName`,
+`=DocumentName`, and declared project parameters before returning the canonical
+documents. When `altium.native-model` is selected, the retained native
+schematic and title-block fields contain the same resolved values. Compact
+project facts live in the `altium.project-context` extension when selected,
+but canonical text resolution is identical with `extensions: 'none'`;
+consumers do not need an app-side project-context or native-model rewrite pass.
+
+## Reuse and common services
+
+```js
+import {
+    CircuitJsonDocumentContext,
+    PcbInteractionIndex,
+    PcbSvgRenderer,
+    QueryService
+} from 'altium-toolkit'
+
+const context = CircuitJsonDocumentContext.prepare(document, {
+    indexes: ['elements', 'relations', 'connectivity', 'spatial']
+})
+const svg = PcbSvgRenderer.render(context, { side: 'top' })
+const interaction = PcbInteractionIndex.create(context)
+const query = QueryService.create(context)
+```
+
+The context validates once and caches requested indexes and derived values.
+The renderers, interaction service, query service, manufacturing service,
+simulation service, and 3D scene builders are the CircuitJSON implementations
+shared by all four packages. No service performs implicit network or filesystem
+I/O; asset and simulation runtimes are injected explicitly.
+
+## Native extension API
+
+The complete 1.1.41 namespace remains available from the explicit extension
+entrypoint. Its 167 native exports are combined, without collisions, with the
+37 source-neutral CircuitJSON extension helpers and
+`AltiumExtensionResolver` for 205 total extension exports. The generated
+[migration guide](migration.md) maps every historical native export, member,
+worker, stylesheet, and implementation contract.
+
+```js
+import { AltiumParser } from 'altium-toolkit/extensions'
 
 const circuitJson = AltiumParser.parseArrayBuffer(fileName, arrayBuffer)
 ```
 
+Canonical hosts retain source fidelity explicitly:
+
+```js
+import { Parser } from 'altium-toolkit'
+import { AltiumExtensionResolver } from 'altium-toolkit/extensions'
+
+const document = Parser.parse(input, {
+    extensions: ['altium.native-model']
+})
+const nativeModel = AltiumExtensionResolver.nativeModel(document)
+```
+
+The resolver returns `null` when the extension was not selected and never
+attaches native fields to the canonical document.
+
+Validated canonical documents own selected native extensions as a separate,
+bounded immutable snapshot. Large native renderer graphs are captured once at
+the document boundary, reused by the worker response path, and rejected with a
+visible size error only when the shared extension ceiling is exceeded.
+
 `fileName` is used to infer schematic, PCB document, schematic symbol-library,
 PCB footprint-library, PCB project, or integrated-library parsing from the
-extension. The parser accepts native `.SchDoc`, `.PcbDoc`, `.SchLib`,
-`.PcbLib`, `.PrjPcb`, and `.IntLib` bytes as an `ArrayBuffer` and returns a
-Circuit JSON element array. The returned array carries non-serialized
+extension. The parser accepts native `.SchDoc`, `.PcbDoc`, `.PCBDwf`, `.SchLib`,
+`.PcbLib`, `.PrjPcb`, `.PrjScr`, and `.IntLib` bytes as an `ArrayBuffer` and
+returns a Circuit JSON element array. The returned array carries non-serialized
 renderer-compatibility fields such as `kind`, `fileType`, `schematic`, `pcb`,
 `schematicLibrary`, `pcbLibrary`, `project`, `integratedLibrary`, `summary`,
 `diagnostics`, and `bom` so existing renderers can consume parser output
@@ -50,7 +253,7 @@ promoted to read-only `pcb.embeddedBoards` and `pcb.rooms` collections when
 present.
 
 ```js
-import { CircuitJsonModelSchema } from 'altium-toolkit/parser'
+import { CircuitJsonModelSchema } from 'altium-toolkit/extensions'
 
 if (!CircuitJsonModelSchema.isModel(circuitJson)) {
     throw new Error('Unsupported Circuit JSON model')
@@ -231,7 +434,7 @@ import {
     AltiumSchLibExporter,
     AltiumPcbLibExporter,
     AltiumLibraryBatchExporter
-} from 'altium-toolkit/parser'
+} from 'altium-toolkit/extensions'
 ```
 
 The exporter surface is local-first and host-controlled:
@@ -261,7 +464,7 @@ source. Tests use repo-owned fake responses only.
 ## Netlist Query
 
 ```js
-import { LoadedDesignNetlistService } from 'altium-toolkit/netlist-query'
+import { LoadedDesignNetlistService } from 'altium-toolkit/extensions'
 
 const service = new LoadedDesignNetlistService({
     getDocuments: () => [
@@ -276,7 +479,7 @@ const service = new LoadedDesignNetlistService({
 const nets = service.searchNets({ pattern: 'i2c' })
 ```
 
-The `netlist-query` entrypoint exposes browser-safe helpers for loaded document
+The extension entrypoint retains browser-safe helpers for loaded document
 inspection: `LoadedDesignNetlistService`, `QueryNetlistBuilder`,
 `CircuitTraversal`, `ComponentGrouping`, `MPN_MISSING_NOTE`, and
 `RegexPattern`.
@@ -297,12 +500,15 @@ import {
     preparePcbSideResolvedRenderModel,
     BomTableRenderer,
     PcbLayerGroups
-} from 'altium-toolkit/renderers'
+} from 'altium-toolkit/extensions'
 ```
 
 - `SchematicSvgRenderer.render(documentModel, options)` returns schematic SVG
-  markup. Pass `options.projectParameters` to resolve schematic special strings
-  in visible text and title-block fields during rendering.
+  markup. The extension entrypoint exports a convergence facade that applies
+  recovered `schematicDesignatorVisible` semantics without mutating the input,
+  then delegates to the byte-identical historical renderer. Pass
+  `options.projectParameters` to resolve schematic special strings in visible
+  text and title-block fields during rendering.
 - `PcbSvgRenderer.render(documentModel)` returns PCB SVG markup.
 - `PcbSvgRenderer.renderLayerSvgs(documentModel)` returns deterministic
   per-layer PCB SVG entries with layer descriptors and layer-filtered SVG
@@ -346,7 +552,7 @@ import {
     PcbScene3dModelRegistry,
     PcbScene3dScenePreparator,
     PcbScene3dSummaryRenderer
-} from 'altium-toolkit/scene3d'
+} from 'altium-toolkit/extensions'
 ```
 
 - `PcbScene3dBuilder.build(documentModel, options)` returns procedural board,

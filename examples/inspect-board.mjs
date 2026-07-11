@@ -6,7 +6,7 @@
 import {
     ParserFieldCoverageReportBuilder,
     RawDataPreservationReportBuilder
-} from '../src/index.mjs'
+} from '../src/extensions.mjs'
 
 import {
     modelIdentity,

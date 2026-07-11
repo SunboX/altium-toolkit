@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { LibraryInspectionReportBuilder } from '../../src/parser.mjs'
+import { LibraryInspectionReportBuilder } from '../../src/legacy-parser.mjs'
 
 test('LibraryInspectionReportBuilder composes library inventory and QA findings', () => {
     const report = LibraryInspectionReportBuilder.build({

@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbInspectionReportBuilder } from '../../src/parser.mjs'
+import { PcbInspectionReportBuilder } from '../../src/legacy-parser.mjs'
 
 test('PcbInspectionReportBuilder composes board, net, class, rule, and diagnostic summaries', () => {
     const report = PcbInspectionReportBuilder.build({

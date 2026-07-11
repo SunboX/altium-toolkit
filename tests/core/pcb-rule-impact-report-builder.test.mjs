@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbRuleImpactReportBuilder } from '../../src/parser.mjs'
+import { PcbRuleImpactReportBuilder } from '../../src/legacy-parser.mjs'
 
 /**
  * Verifies parsed PCB rules can be summarized by practical primitive and

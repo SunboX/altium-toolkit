@@ -11,7 +11,7 @@ import test from 'node:test'
  */
 test('UnsupportedFeatureReportBuilder summarizes unsupported parser features', async () => {
     const { UnsupportedFeatureReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     assert.equal(typeof UnsupportedFeatureReportBuilder, 'function')
 
@@ -131,7 +131,7 @@ test('UnsupportedFeatureReportBuilder summarizes unsupported parser features', a
  */
 test('UnsupportedFeatureReportBuilder returns supported status when clear', async () => {
     const { UnsupportedFeatureReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const report = UnsupportedFeatureReportBuilder.build({
         models: [
@@ -171,7 +171,7 @@ test('UnsupportedFeatureReportBuilder returns supported status when clear', asyn
 
 test('UnsupportedFeatureReportBuilder summarizes parser edge-case coverage', async () => {
     const { UnsupportedFeatureReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const report = UnsupportedFeatureReportBuilder.build({
         edgeCases: [
@@ -306,7 +306,7 @@ test('UnsupportedFeatureReportBuilder summarizes parser edge-case coverage', asy
 
 test('UnsupportedFeatureReportBuilder derives PCB compatibility risks from parsed models', async () => {
     const { UnsupportedFeatureReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const report = UnsupportedFeatureReportBuilder.build({
         models: [

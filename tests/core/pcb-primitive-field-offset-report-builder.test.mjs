@@ -11,7 +11,7 @@ import test from 'node:test'
  */
 test('PcbPrimitiveFieldOffsetReportBuilder reports default primitive field offsets', async () => {
     const { PcbPrimitiveFieldOffsetReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const report = PcbPrimitiveFieldOffsetReportBuilder.build({
         fileName: 'offset-map.PcbDoc',
@@ -119,7 +119,7 @@ test('PcbPrimitiveFieldOffsetReportBuilder reports default primitive field offse
  */
 test('PcbPrimitiveFieldOffsetReportBuilder accepts custom field maps', async () => {
     const { PcbPrimitiveFieldOffsetReportBuilder } =
-        await import('../../src/parser.mjs')
+        await import('../../src/legacy-parser.mjs')
 
     const report = PcbPrimitiveFieldOffsetReportBuilder.build({
         rawRecords: [

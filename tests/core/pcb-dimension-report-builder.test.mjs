@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbDimensionReportBuilder } from '../../src/parser.mjs'
+import { PcbDimensionReportBuilder } from '../../src/legacy-parser.mjs'
 
 /**
  * Verifies PCB dimension reports classify renderable dimensions and unresolved

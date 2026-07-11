@@ -6,13 +6,21 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 # Library Scope
 
-Altium Toolkit provides reusable native Altium parsing and non-interactive
-rendering primitives.
+Altium Toolkit provides reusable native Altium parsing behind the common ECAD
+toolkit API. Canonical results use CircuitJSON; source-only facts and all
+historical 1.1.41 contracts remain explicit Altium extensions.
 
 ## In Scope
 
-- `.SchDoc`, `.PcbDoc`, `.PcbLib`, `.PrjPcb`, and `.IntLib` parsing from
-  `ArrayBuffer`
+- Canonical `Parser`, `ProjectLoader`, error, progress, cancellation, and worker
+  contracts shared with CircuitJSON, Gerber, and KiCad
+- Immutable CircuitJSON document envelopes, common project envelopes, and
+  reusable document contexts
+- Shared CircuitJSON render, interaction, query, manufacturing, simulation,
+  and data-only 3D scene services
+- Exact `/extensions` preservation of audited Altium 1.1.41 behavior
+- `.SchDoc`, `.PcbDoc`, `.PCBDwf`, `.SchLib`, `.PcbLib`, `.PrjPcb`, `.PrjScr`,
+  and `.IntLib` parsing from `ArrayBuffer`
 - OLE and binary stream helpers needed by parser recovery
 - Schematic SVG rendering
 - PCB SVG rendering
@@ -48,3 +56,5 @@ rendering primitives.
 - Server, deployment, and app metadata endpoints
 - Native document authoring, round-trip writing, GUI automation, and compiled
   multi-sheet project netlist generation
+- Pretending an Altium-only feature exists in another source toolkit when no
+  truthful CircuitJSON or native implementation is possible

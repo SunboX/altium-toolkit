@@ -10,7 +10,8 @@ import test from 'node:test'
  * overline runs independent of pin parsing.
  */
 test('SchematicTextRunParser parses overline text runs', async () => {
-    const { SchematicTextRunParser } = await import('../../src/parser.mjs')
+    const { SchematicTextRunParser } =
+        await import('../../src/legacy-parser.mjs')
 
     assert.deepEqual(SchematicTextRunParser.parseOverlineRuns('L\\D\\A\\C\\'), {
         text: 'LDAC',
@@ -37,8 +38,9 @@ test('SchematicTextRunParser parses overline text runs', async () => {
  * active-low labels and render those segments into SVG tspans.
  */
 test('schematic text records expose and render overline segments', async () => {
-    const { AltiumParser } = await import('../../src/parser.mjs')
-    const { SchematicSvgRenderer } = await import('../../src/renderers.mjs')
+    const { AltiumParser } = await import('../../src/legacy-parser.mjs')
+    const { SchematicSvgRenderer } =
+        await import('../../src/legacy-renderers.mjs')
     const arrayBuffer = new TextEncoder().encode(
         '|HEADER=Schematic Document' +
             '|RECORD=31|CustomX=160|CustomY=100|VisibleGridSize=10|SnapGridSize=5' +

@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbComponentPrimitiveIndexer } from '../../src/parser.mjs'
+import { PcbComponentPrimitiveIndexer } from '../../src/legacy-parser.mjs'
 
 test('PcbComponentPrimitiveIndexer groups primitives without repeated filters', () => {
     const originalFilter = Array.prototype.filter

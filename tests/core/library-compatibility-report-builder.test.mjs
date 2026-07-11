@@ -7,7 +7,7 @@ import test from 'node:test'
 import {
     LibraryCompatibilityReportBuilder,
     LibraryQaReportBuilder
-} from '../../src/parser.mjs'
+} from '../../src/legacy-parser.mjs'
 
 test('LibraryCompatibilityReportBuilder classifies schematic pin compatibility', () => {
     const report = LibraryCompatibilityReportBuilder.build({

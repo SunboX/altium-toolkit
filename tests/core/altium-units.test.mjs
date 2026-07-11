@@ -10,7 +10,7 @@ import test from 'node:test'
  * entrypoint without forcing callers to duplicate unit math.
  */
 test('AltiumUnits converts between mil, millimeter, inch, and raw units', async () => {
-    const { AltiumUnits } = await import('../../src/parser.mjs')
+    const { AltiumUnits } = await import('../../src/legacy-parser.mjs')
 
     assert.equal(typeof AltiumUnits, 'function')
     assert.equal(AltiumUnits.mmToMil(2.54), 100)
@@ -25,7 +25,7 @@ test('AltiumUnits converts between mil, millimeter, inch, and raw units', async 
  * Altium textual fields.
  */
 test('AltiumUnits parses length strings with explicit and default units', async () => {
-    const { AltiumUnits } = await import('../../src/parser.mjs')
+    const { AltiumUnits } = await import('../../src/legacy-parser.mjs')
 
     assert.deepEqual(AltiumUnits.parseLength('2.54mm'), {
         value: 2.54,
@@ -58,7 +58,7 @@ test('AltiumUnits parses length strings with explicit and default units', async 
  * Verifies formatted lengths are stable enough for report and example output.
  */
 test('AltiumUnits formats lengths deterministically', async () => {
-    const { AltiumUnits } = await import('../../src/parser.mjs')
+    const { AltiumUnits } = await import('../../src/legacy-parser.mjs')
 
     assert.equal(AltiumUnits.formatMil(100, 'mm'), '2.54mm')
     assert.equal(AltiumUnits.formatMil(100, 'mil'), '100mil')

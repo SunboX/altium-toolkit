@@ -1,0 +1,27 @@
+/* SPDX-FileCopyrightText: 2026 André Fiedler */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+.pcb-svg,
+.schematic-svg {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+}
+
+.pcb-svg text,
+.schematic-svg text {
+    font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.bom-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.bom-table th,
+.bom-table td {
+    padding: 0.35rem 0.5rem;
+    border: 1px solid currentColor;
+    text-align: left;
+}
