@@ -28,6 +28,10 @@ members remain under `altium-toolkit/extensions`, alongside the 37 shared
 source-neutral extension helpers, with the exhaustive native mapping in the
 [migration guide](docs/migration.md).
 
+Version 1.2.1 keeps Three.js as an example-only development dependency. The
+published parser and CircuitJSON services do not install a second, unused
+Three.js runtime into host applications.
+
 Default `extensions: 'canonical'` keeps compact Altium summary metadata.
 Request the complete native read model with `extensions: 'full'`,
 `preserveRaw: true`, or `extensions: ['altium.native-model']`. Project batches
@@ -195,6 +199,7 @@ const legacyCircuitJson = AltiumParser.parseArrayBuffer(file.name, arrayBuffer)
 - [API](docs/api.md)
 - [Capabilities](docs/capabilities.md)
 - [Migration from 1.1.41](docs/migration.md)
+- [1.2.1 release notes](docs/release-notes-v1.2.1.md)
 - [1.2.0 release notes](docs/release-notes-v1.2.0.md)
 - [Model Format](docs/model-format.md)
 - [Normalized Model Schema](docs/schemas/altium_toolkit/normalized_model_a1.schema.json)

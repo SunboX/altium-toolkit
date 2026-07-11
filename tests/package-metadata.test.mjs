@@ -23,6 +23,8 @@ test('package metadata keeps npm identity and GitHub Packages publishing target'
     )
 
     assert.equal(packageJson.name, 'altium-toolkit')
+    assert.equal(packageJson.dependencies.three, undefined)
+    assert.equal(packageJson.devDependencies.three, '^0.183.2')
     assert.deepEqual(packageJson.repository, {
         type: 'git',
         url: 'git+https://github.com/SunboX/altium-toolkit.git'

@@ -1,6 +1,6 @@
 {
     "name": "altium-toolkit",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "description": "Altium document parsing and non-interactive rendering utilities",
     "keywords": [
         "altium",
@@ -68,11 +68,11 @@
     },
     "dependencies": {
         "circuitjson-toolkit": "^1.1.0",
-        "fflate": "^0.8.2",
-        "three": "^0.184.0"
+        "fflate": "^0.8.2"
     },
     "devDependencies": {
-        "prettier": "^3.4.2"
+        "prettier": "^3.4.2",
+        "three": "^0.183.2"
     },
     "engines": {
         "node": ">=20"
