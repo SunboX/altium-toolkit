@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { deflateSync } from 'node:zlib'
 import { AltiumParser } from '../../../src/core/altium/AltiumParser.mjs'
+import { SchematicSvgRenderer } from '../../../src/ui/SchematicSvgRenderer.mjs'
 
 /**
  * Builds tiny OLE-backed schematic files with an embedded image stream.
@@ -474,6 +475,44 @@ test('parseAltiumArrayBuffer converts alpha BMP schematic images to PNG', () => 
     assert.match(documentModel.schematic.images[0].dataBase64, /^iVBORw0KGgo/u)
 })
 
+test('parseAltiumArrayBuffer renders effectively invisible BMP previews as missing-image placeholders', () => {
+    const imageFileName = 'C:\\Forge\\Obfuscated\\Artwork\\ghost-badge.bmp'
+    const fileHeaderText =
+        '|HEADER=Schematic Document' +
+        '|RECORD=31|CustomX=160|CustomY=120|VisibleGridSize=10|SnapGridSize=5' +
+        '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+        '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+        '|RECORD=30|IndexInSheet=2|Location.X=20|Location.Y=30|Corner.X=80|Corner.Y=70' +
+        '|EmbedImage=T|KeepAspect=T|FileName=' +
+        imageFileName
+    const arrayBuffer = SchematicImageOleFactory.createStorageDocumentBuffer({
+        fileHeaderText,
+        imageFileName,
+        imageBytes: createSparseAlphaBmpBytes()
+    })
+    const documentModel = AltiumParser.parseArrayBufferToRendererModel(
+        'ghost-image.SchDoc',
+        arrayBuffer
+    )
+    const image = documentModel.schematic.images[0]
+    const markup = SchematicSvgRenderer.render(documentModel)
+
+    assert.equal(image.diagnosticState, 'unusable-embedded-payload')
+    assert.equal(image.mimeType, '')
+    assert.equal(image.dataBase64, '')
+    assert.match(
+        documentModel.diagnostics
+            .map((diagnostic) => diagnostic.message)
+            .join('\n'),
+        /effectively invisible/i
+    )
+    assert.match(markup, /Cannot open file/)
+    assert.match(markup, /C:\\Forge\\Obfuscated/)
+    assert.match(markup, /ghost-badge\.bmp/)
+    assert.match(markup, /\. File does not exist\./)
+    assert.doesNotMatch(markup, /class="schematic-embedded-image/)
+})
+
 /**
  * Builds a native-image wrapper with a valid BMP preview.
  * @param {string} nativeClass
@@ -520,13 +559,26 @@ function createAlphaBmpBytes() {
 }
 
 /**
+ * Builds a 32-bit BMP whose visible alpha coverage is below one percent.
+ * @returns {Uint8Array}
+ */
+function createSparseAlphaBmpBytes() {
+    const width = 20
+    const height = 20
+    const pixels = new Array(width * height * 4).fill(0)
+    pixels.splice(0, 4, 0xff, 0xff, 0xff, 0xff)
+
+    return createBmpBytes({ bitsPerPixel: 32, width, height, pixels })
+}
+
+/**
  * Builds a tiny uncompressed BMP payload.
- * @param {{ bitsPerPixel: 24 | 32, width?: number, pixels: number[] }} options
+ * @param {{ bitsPerPixel: 24 | 32, width?: number, height?: number, pixels: number[] }} options
  * @returns {Uint8Array}
  */
 function createBmpBytes(options) {
     const width = options.width || 1
-    const height = 1
+    const height = options.height || 1
     const bytesPerPixel = options.bitsPerPixel / 8
     const rowStride = Math.ceil((width * bytesPerPixel) / 4) * 4
     const pixelOffset = 54
