@@ -163,7 +163,12 @@ export class AltiumSchematicImageNormalizer {
         } catch {
             return null
         }
-        if (raw.length !== expectedLength) return null
+        if (
+            raw.length !== expectedLength ||
+            !AltiumSchematicImageNormalizer.#hasValidAdler32(parsed.idat, raw)
+        ) {
+            return null
+        }
 
         let alphaTotal = 0
         for (let y = 0; y < parsed.height; y += 1) {
@@ -288,6 +293,47 @@ export class AltiumSchematicImageNormalizer {
             offset === payloadEnd &&
             decodedLength === expectedLength
         )
+    }
+
+    /**
+     * Validates decompressed bytes against the zlib stream's big-endian
+     * Adler-32 trailer.
+     * @param {Uint8Array} zlib Complete zlib stream.
+     * @param {Uint8Array} raw Decompressed bytes.
+     * @returns {boolean} Whether the checksum is valid.
+     */
+    static #hasValidAdler32(zlib, raw) {
+        if (!(zlib instanceof Uint8Array) || zlib.length < 4) return false
+        const trailerOffset = zlib.length - 4
+        const expected = new DataView(
+            zlib.buffer,
+            zlib.byteOffset + trailerOffset,
+            4
+        ).getUint32(0, false)
+        return AltiumSchematicImageNormalizer.#adler32(raw) === expected
+    }
+
+    /**
+     * Computes an Adler-32 checksum without external runtime dependencies.
+     * @param {Uint8Array} bytes Bytes to checksum.
+     * @returns {number} Unsigned Adler-32 value.
+     */
+    static #adler32(bytes) {
+        let a = 1
+        let b = 0
+        let offset = 0
+
+        while (offset < bytes.length) {
+            const end = Math.min(offset + 5552, bytes.length)
+            for (; offset < end; offset += 1) {
+                a += bytes[offset]
+                b += a
+            }
+            a %= 65521
+            b %= 65521
+        }
+
+        return ((b << 16) | a) >>> 0
     }
 
     /**

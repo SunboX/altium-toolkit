@@ -644,6 +644,33 @@ test('convergence image adaptation is strict, immutable, and structurally shared
     )
 })
 
+test('convergence image adaptation leaves stored PNGs with invalid Adler-32 unchanged', () => {
+    const source = parseAlphaBmpPreview({
+        imageFileName: 'checksum-preview.bmp',
+        imageBytes: createSparseAlphaBmpBytes()
+    })
+    const sourceImage = source.schematic.images[0]
+    const corruptedImage = {
+        ...sourceImage,
+        dataBase64: corruptHistoricalPngAdler32(sourceImage.dataBase64)
+    }
+    const documentModel = {
+        ...source,
+        schematic: {
+            ...source.schematic,
+            images: [corruptedImage]
+        }
+    }
+
+    assert.strictEqual(
+        AltiumSchematicImageNormalizer.normalize(documentModel),
+        documentModel
+    )
+    assert.equal(corruptedImage.diagnosticState, 'embedded')
+    assert.equal(corruptedImage.mimeType, 'image/png')
+    assert.notEqual(corruptedImage.dataBase64, '')
+})
+
 /**
  * Builds a native-image wrapper with a valid BMP preview.
  * @param {string} nativeClass
@@ -700,6 +727,65 @@ function createSparseAlphaBmpBytes(width = 20, height = 20) {
     pixels.splice(0, 4, 0xff, 0xff, 0xff, 0xff)
 
     return createBmpBytes({ bitsPerPixel: 32, width, height, pixels })
+}
+
+/**
+ * Corrupts only the big-endian Adler-32 trailer of a historical PNG's stored
+ * zlib stream, then restores the enclosing IDAT CRC.
+ * @param {string} dataBase64 Historical PNG payload.
+ * @returns {string} PNG payload with a structurally valid IDAT chunk.
+ */
+function corruptHistoricalPngAdler32(dataBase64) {
+    const bytes = Uint8Array.from(Buffer.from(dataBase64, 'base64'))
+    let offset = 8
+
+    while (offset + 12 <= bytes.length) {
+        const view = new DataView(
+            bytes.buffer,
+            bytes.byteOffset + offset,
+            bytes.length - offset
+        )
+        const length = view.getUint32(0, false)
+        const dataStart = offset + 8
+        const dataEnd = dataStart + length
+        if (dataEnd + 4 > bytes.length) break
+
+        const type = String.fromCharCode(
+            bytes[offset + 4],
+            bytes[offset + 5],
+            bytes[offset + 6],
+            bytes[offset + 7]
+        )
+        if (type === 'IDAT' && length >= 4) {
+            bytes[dataEnd - 1] ^= 0x01
+            view.setUint32(
+                8 + length,
+                crc32(bytes.subarray(offset + 4, dataEnd)),
+                false
+            )
+            return Buffer.from(bytes).toString('base64')
+        }
+
+        offset += 12 + length
+    }
+
+    throw new Error('Historical PNG does not contain a valid IDAT chunk.')
+}
+
+/**
+ * Computes one unsigned PNG CRC-32 value.
+ * @param {Uint8Array} bytes Bytes to checksum.
+ * @returns {number}
+ */
+function crc32(bytes) {
+    let crc = 0xffffffff
+    for (const byte of bytes) {
+        crc ^= byte
+        for (let bit = 0; bit < 8; bit += 1) {
+            crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
+        }
+    }
+    return (crc ^ 0xffffffff) >>> 0
 }
 
 /**
