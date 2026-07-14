@@ -60,6 +60,16 @@ the object form can call
 `AltiumParser.parseArrayBufferToRendererModel(fileName, arrayBuffer)` or
 `CircuitJsonModelAdapter.toRendererModel(circuitJson)`.
 
+The common parser and schematic renderer expose a convergence-only view of
+historical embedded image rows. A parser-generated RGBA PNG recovered from a
+32-bit BMP is marked `diagnosticState: 'unusable-embedded-payload'` only when
+its decoded alpha coverage is strictly below one percent. Its placement,
+source MIME type, file name, and aspect metadata remain intact while drawable
+payload fields are cleared so the established missing-image placeholder is
+rendered. Native PNG, JPEG, GIF, SVG, and WebP payloads, malformed or unknown
+PNG encodings, and images at or above the threshold are not rewritten. The
+retained historical parser model itself remains unchanged.
+
 ## Common Fields
 
 - `schema`: normalized model schema id, currently

@@ -1,6 +1,6 @@
 {
     "name": "altium-toolkit",
-    "version": "1.2.1",
+    "version": "1.3.0",
     "description": "Altium document parsing and non-interactive rendering utilities",
     "keywords": [
         "altium",
@@ -67,7 +67,7 @@
         "check:features": "node scripts/check-feature-preservation.mjs"
     },
     "dependencies": {
-        "circuitjson-toolkit": "^1.1.0",
+        "circuitjson-toolkit": "^1.2.0",
         "fflate": "^0.8.2"
     },
     "devDependencies": {

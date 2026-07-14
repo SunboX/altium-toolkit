@@ -32,6 +32,13 @@ Version 1.2.1 keeps Three.js as an example-only development dependency. The
 published parser and CircuitJSON services do not install a second, unused
 Three.js runtime into host applications.
 
+Version 1.3.0 updates the common runtime baseline to CircuitJSON Toolkit 1.2
+and adapts effectively invisible historical 32-bit BMP previews at the common
+convergence boundary. The public parser and renderer now show the existing
+missing-image placeholder for those unusable payloads without changing the
+frozen native parser or healthy embedded images. See the
+[1.3.0 release notes](docs/release-notes-v1.3.0.md).
+
 Default `extensions: 'canonical'` keeps compact Altium summary metadata.
 Request the complete native read model with `extensions: 'full'`,
 `preserveRaw: true`, or `extensions: ['altium.native-model']`. Project batches
@@ -199,6 +206,7 @@ const legacyCircuitJson = AltiumParser.parseArrayBuffer(file.name, arrayBuffer)
 - [API](docs/api.md)
 - [Capabilities](docs/capabilities.md)
 - [Migration from 1.1.41](docs/migration.md)
+- [1.3.0 release notes](docs/release-notes-v1.3.0.md)
 - [1.2.1 release notes](docs/release-notes-v1.2.1.md)
 - [1.2.0 release notes](docs/release-notes-v1.2.0.md)
 - [Model Format](docs/model-format.md)

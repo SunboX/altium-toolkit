@@ -27,10 +27,13 @@ npm run check:format
 npm pack --dry-run
 ```
 
-The strict feature check creates an isolated packed install, installs the
-approved CircuitJSON 1.1.0 release candidate, verifies all historical native
-source and extension contracts, checks the exact package/subpath layout, and
-runs the shared observable toolkit contract against the packed package.
+The strict feature check creates an isolated packed install and packs the
+currently installed CircuitJSON dependency beside the Altium candidate. This
+keeps the isolated contract gate aligned with the dependency declared by the
+active release instead of a stale version-specific fixture. It verifies all
+historical native source and extension contracts, checks the exact
+package/subpath layout, and runs the shared observable toolkit contract against
+the packed package.
 
 The performance check is bound to the immutable 1.1.41 commit, source tree,
 and native-source manifest. It measures legacy and canonical projections of

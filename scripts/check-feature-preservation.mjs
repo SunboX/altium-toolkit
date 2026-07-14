@@ -150,11 +150,10 @@ async function validatePackedCandidate(artifacts) {
             resolve(fixture, 'package.json'),
             `${JSON.stringify({ private: true, type: 'module' })}\n`
         )
-        const coreTarball = resolve(
-            repositoryRoot,
-            '..',
-            'release-candidates',
-            'circuitjson-toolkit-1.1.0.tgz'
+        const coreTarball = await packPackage(
+            resolve(repositoryRoot, 'node_modules', 'circuitjson-toolkit'),
+            temporaryRoot,
+            'CircuitJSON dependency'
         )
         for (const dependency of [coreTarball, tarball]) {
             await execFileAsync(
@@ -221,15 +220,26 @@ async function validatePackedCandidate(artifacts) {
  * @returns {Promise<string>} Absolute tarball path.
  */
 async function packCandidate(destination) {
+    return packPackage(repositoryRoot, destination, 'Altium candidate')
+}
+
+/**
+ * Packs one package root and returns its absolute tarball path.
+ * @param {string} packageRoot Package directory to pack.
+ * @param {string} destination Tarball output directory.
+ * @param {string} label Package label for diagnostics.
+ * @returns {Promise<string>} Absolute tarball path.
+ */
+async function packPackage(packageRoot, destination, label) {
     const { stdout } = await execFileAsync(
         process.env.npm_execpath || 'npm',
-        ['pack', '--json', '--pack-destination', destination],
+        ['pack', '--json', '--pack-destination', destination, packageRoot],
         { cwd: repositoryRoot, env: process.env, maxBuffer: 10 * 1024 * 1024 }
     )
     const result = JSON.parse(stdout)
     const filename = result?.[0]?.filename
     if (typeof filename !== 'string') {
-        throw new Error('npm pack did not return an Altium candidate filename.')
+        throw new Error(`npm pack did not return a ${label} filename.`)
     }
     return resolve(destination, filename)
 }
@@ -459,8 +469,10 @@ async function validatePackedAssets(packageRoot, baseline) {
  * @returns {Promise<void>}
  */
 async function validatePackedManifest(packageRoot) {
-    const pkg = JSON.parse(
-        await readFile(resolve(packageRoot, 'package.json'), 'utf8')
+    const [pkg, sourcePkg] = await Promise.all(
+        [packageRoot, repositoryRoot].map(async (root) =>
+            JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'))
+        )
     )
     const required = [
         '.',
@@ -481,7 +493,8 @@ async function validatePackedManifest(packageRoot) {
         './extensions/styles/altium-renderers.css'
     ]
     if (
-        pkg.dependencies?.['circuitjson-toolkit'] !== '^1.1.0' ||
+        pkg.dependencies?.['circuitjson-toolkit'] !==
+            sourcePkg.dependencies?.['circuitjson-toolkit'] ||
         !isDeepStrictEqual(Object.keys(pkg.exports), required) ||
         required.some(
             (entrypoint) => typeof pkg.exports?.[entrypoint] !== 'string'
