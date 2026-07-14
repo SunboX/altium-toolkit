@@ -6,7 +6,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { deflateSync } from 'node:zlib'
 import { AltiumParser } from '../../../src/core/altium/AltiumParser.mjs'
-import { SchematicSvgRenderer } from '../../../src/ui/SchematicSvgRenderer.mjs'
+import { AltiumSchematicImageNormalizer } from '../../../src/convergence/AltiumSchematicImageNormalizer.mjs'
+import { Parser } from '../../../src/convergence/Parser.mjs'
+import { SchematicSvgRenderer as ConvergenceSchematicSvgRenderer } from '../../../src/convergence/SchematicSvgRenderer.mjs'
 
 /**
  * Builds tiny OLE-backed schematic files with an embedded image stream.
@@ -475,7 +477,7 @@ test('parseAltiumArrayBuffer converts alpha BMP schematic images to PNG', () => 
     assert.match(documentModel.schematic.images[0].dataBase64, /^iVBORw0KGgo/u)
 })
 
-test('parseAltiumArrayBuffer renders effectively invisible BMP previews as missing-image placeholders', () => {
+test('common APIs adapt effectively invisible historical BMP previews without mutating legacy models', () => {
     const imageFileName = 'C:\\Forge\\Obfuscated\\Artwork\\ghost-badge.bmp'
     const fileHeaderText =
         '|HEADER=Schematic Document' +
@@ -490,27 +492,156 @@ test('parseAltiumArrayBuffer renders effectively invisible BMP previews as missi
         imageFileName,
         imageBytes: createSparseAlphaBmpBytes()
     })
-    const documentModel = AltiumParser.parseArrayBufferToRendererModel(
+    const legacy = AltiumParser.parseArrayBufferToRendererModel(
         'ghost-image.SchDoc',
         arrayBuffer
     )
-    const image = documentModel.schematic.images[0]
-    const markup = SchematicSvgRenderer.render(documentModel)
+    const legacyImage = legacy.schematic.images[0]
+    const legacyImageBefore = { ...legacyImage }
+    const legacyDiagnosticsBefore = [...legacy.diagnostics]
 
+    assert.equal(legacyImage.diagnosticState, 'embedded')
+    assert.equal(legacyImage.mimeType, 'image/png')
+    assert.equal(legacyImage.sourceMimeType, 'image/bmp')
+    assert.equal(legacyImage.hasAlpha, true)
+    assert.match(legacyImage.dataBase64, /^iVBORw0KGgo/u)
+
+    const document = Parser.parse(
+        {
+            fileName: 'ghost-image.SchDoc',
+            data: arrayBuffer
+        },
+        {
+            decodeAssets: 'full',
+            extensions: 'full',
+            worker: false
+        }
+    )
+    const image = document.extensions.altium.native.schematic.images[0]
+    const asset = document.assets.find(
+        (candidate) => candidate.kind === 'schematic-image'
+    )
+    const markup = ConvergenceSchematicSvgRenderer.render(legacy)
+
+    assert.deepEqual(
+        {
+            x: image.x,
+            y: image.y,
+            cornerX: image.cornerX,
+            cornerY: image.cornerY,
+            fileName: image.fileName,
+            embedded: image.embedded,
+            keepAspect: image.keepAspect,
+            renderOrder: image.renderOrder
+        },
+        {
+            x: 20,
+            y: 30,
+            cornerX: 80,
+            cornerY: 70,
+            fileName: imageFileName,
+            embedded: true,
+            keepAspect: true,
+            renderOrder: 2
+        }
+    )
     assert.equal(image.diagnosticState, 'unusable-embedded-payload')
     assert.equal(image.mimeType, '')
     assert.equal(image.dataBase64, '')
-    assert.match(
-        documentModel.diagnostics
-            .map((diagnostic) => diagnostic.message)
-            .join('\n'),
-        /effectively invisible/i
+    assert.equal(image.sourceMimeType, 'image/bmp')
+    assert.equal(image.hasAlpha, true)
+    assert.ok(asset)
+    assert.equal(asset.data, null)
+    assert.equal(asset.source.state, 'unusable-embedded-payload')
+    assert.equal(
+        document.diagnostics.filter((diagnostic) =>
+            /effectively invisible/i.test(diagnostic.message)
+        ).length,
+        1
     )
     assert.match(markup, /Cannot open file/)
     assert.match(markup, /C:\\Forge\\Obfuscated/)
     assert.match(markup, /ghost-badge\.bmp/)
     assert.match(markup, /\. File does not exist\./)
     assert.doesNotMatch(markup, /class="schematic-embedded-image/)
+    assert.deepEqual(legacyImage, legacyImageBefore)
+    assert.deepEqual(legacy.diagnostics, legacyDiagnosticsBefore)
+})
+
+test('convergence image adaptation is strict, immutable, and structurally shared', () => {
+    const imageFileName = 'C:\\Forge\\Obfuscated\\Artwork\\faint-mark.bmp'
+    const legacy = parseAlphaBmpPreview({
+        imageFileName,
+        imageBytes: createSparseAlphaBmpBytes()
+    })
+    const legacyImage = legacy.schematic.images[0]
+    const unaffectedImage = {
+        ...legacyImage,
+        fileName: 'ordinary-preview.png',
+        sourceMimeType: 'image/png',
+        hasAlpha: false
+    }
+    const existingDiagnostic = {
+        severity: 'info',
+        message: 'Existing parser diagnostic.'
+    }
+    const source = {
+        ...legacy,
+        schematic: {
+            ...legacy.schematic,
+            images: [legacyImage, unaffectedImage]
+        },
+        diagnostics: [existingDiagnostic]
+    }
+    const normalized = AltiumSchematicImageNormalizer.normalize(source)
+
+    assert.notStrictEqual(normalized, source)
+    assert.notStrictEqual(normalized.schematic, source.schematic)
+    assert.notStrictEqual(normalized.schematic.images, source.schematic.images)
+    assert.notStrictEqual(normalized.schematic.images[0], legacyImage)
+    assert.strictEqual(normalized.schematic.images[1], unaffectedImage)
+    assert.strictEqual(normalized.diagnostics[0], existingDiagnostic)
+    assert.equal(normalized.diagnostics.length, 2)
+    assert.equal(normalized.schematic.images[0].mimeType, '')
+    assert.equal(normalized.schematic.images[0].dataBase64, '')
+    assert.equal(
+        normalized.schematic.images[0].diagnosticState,
+        'unusable-embedded-payload'
+    )
+    assert.strictEqual(
+        AltiumSchematicImageNormalizer.normalize(normalized),
+        normalized
+    )
+    assert.equal(legacyImage.mimeType, 'image/png')
+    assert.match(legacyImage.dataBase64, /^iVBORw0KGgo/u)
+
+    const unchangedRows = [
+        { ...legacyImage, dataBase64: 'not valid base64' },
+        { ...legacyImage, dataBase64: legacyImage.dataBase64.slice(0, -8) },
+        { ...legacyImage, nativeClass: 'TdxPNGImage' },
+        { ...legacyImage, sourceMimeType: 'image/gif' },
+        { ...legacyImage, mimeType: 'image/jpeg' },
+        { ...legacyImage, hasAlpha: false }
+    ]
+    for (const image of unchangedRows) {
+        const documentModel = {
+            ...legacy,
+            schematic: { ...legacy.schematic, images: [image] }
+        }
+        assert.strictEqual(
+            AltiumSchematicImageNormalizer.normalize(documentModel),
+            documentModel
+        )
+    }
+
+    const exactThreshold = parseAlphaBmpPreview({
+        imageFileName: 'threshold.bmp',
+        imageBytes: createSparseAlphaBmpBytes(10, 10)
+    })
+    assert.strictEqual(
+        AltiumSchematicImageNormalizer.normalize(exactThreshold),
+        exactThreshold
+    )
 })
 
 /**
@@ -560,15 +691,40 @@ function createAlphaBmpBytes() {
 
 /**
  * Builds a 32-bit BMP whose visible alpha coverage is below one percent.
+ * @param {number} [width] Pixel width.
+ * @param {number} [height] Pixel height.
  * @returns {Uint8Array}
  */
-function createSparseAlphaBmpBytes() {
-    const width = 20
-    const height = 20
+function createSparseAlphaBmpBytes(width = 20, height = 20) {
     const pixels = new Array(width * height * 4).fill(0)
     pixels.splice(0, 4, 0xff, 0xff, 0xff, 0xff)
 
     return createBmpBytes({ bitsPerPixel: 32, width, height, pixels })
+}
+
+/**
+ * Parses a synthetic embedded alpha-BMP preview through the historical parser.
+ * @param {{ imageFileName: string, imageBytes: Uint8Array }} options Preview facts.
+ * @returns {Record<string, any>} Historical native renderer model.
+ */
+function parseAlphaBmpPreview(options) {
+    const fileHeaderText =
+        '|HEADER=Schematic Document' +
+        '|RECORD=31|CustomX=160|CustomY=120|VisibleGridSize=10|SnapGridSize=5' +
+        '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
+        '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
+        '|RECORD=30|IndexInSheet=2|Location.X=20|Location.Y=30|Corner.X=80|Corner.Y=70' +
+        '|EmbedImage=T|KeepAspect=T|FileName=' +
+        options.imageFileName
+    const arrayBuffer = SchematicImageOleFactory.createStorageDocumentBuffer({
+        fileHeaderText,
+        imageFileName: options.imageFileName,
+        imageBytes: options.imageBytes
+    })
+    return AltiumParser.parseArrayBufferToRendererModel(
+        'alpha-preview.SchDoc',
+        arrayBuffer
+    )
 }
 
 /**

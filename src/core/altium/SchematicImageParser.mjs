@@ -8,7 +8,6 @@ import { ParserUtils } from './ParserUtils.mjs'
 
 const { getField, parseBoolean, parseNumericField } = ParserUtils
 const BMP_HEADER_LENGTH = 54
-const MINIMUM_VISIBLE_ALPHA_COVERAGE = 0.01
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 const PNG_SCHEMA_MIME_TYPE = 'image/png'
 const NATIVE_IMAGE_CLASS_MIME_TYPES = new Map([
@@ -134,26 +133,12 @@ export class SchematicImageParser {
                         streamBytes,
                         fileName
                     )
+                mimeType = decoded.mimeType
                 sourceMimeType = decoded.sourceMimeType
                 nativeClass = decoded.nativeClass
                 hasAlpha = decoded.hasAlpha
-
-                if (decoded.effectivelyInvisible) {
-                    diagnosticState = 'unusable-embedded-payload'
-                    diagnostics.push({
-                        severity: 'warning',
-                        message:
-                            'Embedded schematic image payload is effectively invisible for ' +
-                            fileName +
-                            '.'
-                    })
-                } else {
-                    mimeType = decoded.mimeType
-                    dataBase64 = SchematicImageParser.#encodeBase64(
-                        decoded.bytes
-                    )
-                    diagnosticState = 'embedded'
-                }
+                dataBase64 = SchematicImageParser.#encodeBase64(decoded.bytes)
+                diagnosticState = 'embedded'
             } else {
                 diagnostics.push({
                     severity: 'warning',
@@ -473,7 +458,7 @@ export class SchematicImageParser {
      * Chooses the browser-facing image payload from one embedded stream.
      * @param {Uint8Array} bytes Embedded image stream bytes.
      * @param {string} fileName Image file name from the schematic record.
-     * @returns {{ bytes: Uint8Array, mimeType: string, sourceMimeType: string, nativeClass: string, hasAlpha: boolean, effectivelyInvisible: boolean }}
+     * @returns {{ bytes: Uint8Array, mimeType: string, sourceMimeType: string, nativeClass: string, hasAlpha: boolean }}
      */
     static #decodeEmbeddedImagePayload(bytes, fileName) {
         const sourceMimeType =
@@ -491,31 +476,14 @@ export class SchematicImageParser {
                 mimeType: nativePayload.mimeType,
                 sourceMimeType,
                 nativeClass: nativePayload.nativeClass,
-                hasAlpha: false,
-                effectivelyInvisible: false
+                hasAlpha: false
             }
         }
-
-        const alphaCoverage = SchematicImageParser.#bmpAlphaCoverage(
-            bytes,
-            bmpInfo
-        )
 
         if (
-            alphaCoverage !== null &&
-            alphaCoverage < MINIMUM_VISIBLE_ALPHA_COVERAGE
+            bmpInfo &&
+            SchematicImageParser.#bmpHasMeaningfulAlpha(bytes, bmpInfo)
         ) {
-            return {
-                bytes: new Uint8Array(),
-                mimeType: '',
-                sourceMimeType: sourceMimeType || 'image/bmp',
-                nativeClass: '',
-                hasAlpha: true,
-                effectivelyInvisible: true
-            }
-        }
-
-        if (alphaCoverage !== null && alphaCoverage < 1) {
             const rgba = SchematicImageParser.#decodeBmpRgba(bytes, bmpInfo)
 
             return {
@@ -527,8 +495,7 @@ export class SchematicImageParser {
                 mimeType: PNG_SCHEMA_MIME_TYPE,
                 sourceMimeType: sourceMimeType || 'image/bmp',
                 nativeClass: '',
-                hasAlpha: true,
-                effectivelyInvisible: false
+                hasAlpha: true
             }
         }
 
@@ -537,8 +504,7 @@ export class SchematicImageParser {
             mimeType: sourceMimeType,
             sourceMimeType: '',
             nativeClass: '',
-            hasAlpha: false,
-            effectivelyInvisible: false
+            hasAlpha: false
         }
     }
 
@@ -637,23 +603,33 @@ export class SchematicImageParser {
     }
 
     /**
-     * Measures the normalized alpha coverage of an uncompressed 32-bit BMP.
+     * Checks whether a 32-bit BMP contains usable alpha-channel data.
      * @param {Uint8Array} bytes BMP bytes.
-     * @param {{ width: number, height: number, bitsPerPixel: number, pixelOffset: number, rowStride: number } | null} bmpInfo Parsed BMP info.
-     * @returns {number | null} Alpha coverage from zero through one, or null when no 32-bit BMP alpha channel is available.
+     * @param {{ width: number, height: number, bitsPerPixel: number, pixelOffset: number, rowStride: number }} bmpInfo Parsed BMP info.
+     * @returns {boolean}
      */
-    static #bmpAlphaCoverage(bytes, bmpInfo) {
-        if (bmpInfo?.bitsPerPixel !== 32) return null
+    static #bmpHasMeaningfulAlpha(bytes, bmpInfo) {
+        if (bmpInfo.bitsPerPixel !== 32) {
+            return false
+        }
 
-        let alphaTotal = 0
+        let hasTransparentPixel = false
+        let hasVisiblePixel = false
+
         for (let y = 0; y < bmpInfo.height; y += 1) {
             const rowOffset = bmpInfo.pixelOffset + y * bmpInfo.rowStride
             for (let x = 0; x < bmpInfo.width; x += 1) {
-                alphaTotal += bytes[rowOffset + x * 4 + 3]
+                const alpha = bytes[rowOffset + x * 4 + 3]
+                if (alpha < 255) {
+                    hasTransparentPixel = true
+                }
+                if (alpha > 0) {
+                    hasVisiblePixel = true
+                }
             }
         }
 
-        return alphaTotal / (bmpInfo.width * bmpInfo.height * 255)
+        return hasTransparentPixel && hasVisiblePixel
     }
 
     /**

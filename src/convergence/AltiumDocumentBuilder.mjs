@@ -7,6 +7,7 @@ import { AltiumParser } from '../core/altium/AltiumParser.mjs'
 import { CircuitJsonModelAdapter } from '../core/circuit-json/CircuitJsonModelAdapter.mjs'
 import { CircuitJsonSchematicImageProjection } from '../core/circuit-json/CircuitJsonSchematicImageProjection.mjs'
 import { AltiumCircuitJsonProjection } from './AltiumCircuitJsonProjection.mjs'
+import { AltiumSchematicImageNormalizer } from './AltiumSchematicImageNormalizer.mjs'
 import { ParserInput } from './ParserInput.mjs'
 
 /**
@@ -20,9 +21,11 @@ export class AltiumDocumentBuilder {
      */
     static decode(normalized) {
         const buffer = ParserInput.arrayBuffer(normalized.input.data)
-        const native = AltiumParser.parseArrayBufferToRendererModel(
-            normalized.input.fileName,
-            buffer
+        const native = AltiumSchematicImageNormalizer.normalize(
+            AltiumParser.parseArrayBufferToRendererModel(
+                normalized.input.fileName,
+                buffer
+            )
         )
         const adapted = CircuitJsonModelAdapter.fromRendererModel(native)
         const projected = AltiumCircuitJsonProjection.project(adapted, native)

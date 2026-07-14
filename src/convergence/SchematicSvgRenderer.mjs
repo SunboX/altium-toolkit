@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { SchematicSvgRenderer as LegacySchematicSvgRenderer } from '../ui/SchematicSvgRenderer.mjs'
+import { AltiumSchematicImageNormalizer } from './AltiumSchematicImageNormalizer.mjs'
 
 /**
  * Renders native Altium schematic models through the preserved historical
@@ -17,8 +18,10 @@ export class SchematicSvgRenderer {
      * @returns {string} Rendered SVG panel markup.
      */
     static render(documentModel, options = {}) {
+        const normalized =
+            AltiumSchematicImageNormalizer.normalize(documentModel)
         return LegacySchematicSvgRenderer.render(
-            SchematicSvgRenderer.#visibilityAwareDocument(documentModel),
+            SchematicSvgRenderer.#visibilityAwareDocument(normalized),
             options
         )
     }

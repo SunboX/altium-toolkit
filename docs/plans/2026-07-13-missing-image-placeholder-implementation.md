@@ -22,9 +22,11 @@
 ### Task 1: Add the failing parser-to-renderer regression
 
 **Files:**
+
 - Modify: `tests/core/altium-parser/schematic-images.mjs`
 
 **Interfaces:**
+
 - Consumes: `AltiumParser.parseArrayBufferToRendererModel(fileName, arrayBuffer)` and `SchematicSvgRenderer.render(documentModel)`.
 - Produces: `createSparseAlphaBmpBytes()` and height support in `createBmpBytes(options)` for generated test payloads.
 
@@ -38,8 +40,7 @@ import { SchematicSvgRenderer } from '../../../src/ui/SchematicSvgRenderer.mjs'
 
 ```js
 test('parseAltiumArrayBuffer renders effectively invisible BMP previews as missing-image placeholders', () => {
-    const imageFileName =
-        'C:\\Forge\\Obfuscated\\Artwork\\ghost-badge.bmp'
+    const imageFileName = 'C:\\Forge\\Obfuscated\\Artwork\\ghost-badge.bmp'
     const fileHeaderText =
         '|HEADER=Schematic Document' +
         '|RECORD=31|CustomX=160|CustomY=120|VisibleGridSize=10|SnapGridSize=5' +
@@ -116,10 +117,12 @@ Expected: FAIL because the image currently has diagnostic state `embedded` and n
 ### Task 2: Classify effectively invisible previews in the parser
 
 **Files:**
+
 - Modify: `src/core/altium/SchematicImageParser.mjs`
 - Test: `tests/core/altium-parser/schematic-images.mjs`
 
 **Interfaces:**
+
 - Consumes: parsed BMP metadata `{ width, height, bitsPerPixel, pixelOffset, rowStride }`.
 - Produces: decoded payload field `effectivelyInvisible: boolean`, normalized diagnostic state `unusable-embedded-payload`, and a recoverable warning.
 
@@ -138,10 +141,7 @@ encoding:
 ```js
 const alphaCoverage = SchematicImageParser.#bmpAlphaCoverage(bytes, bmpInfo)
 
-if (
-    alphaCoverage !== null &&
-    alphaCoverage < MINIMUM_VISIBLE_ALPHA_COVERAGE
-) {
+if (alphaCoverage !== null && alphaCoverage < MINIMUM_VISIBLE_ALPHA_COVERAGE) {
     return {
         bytes: new Uint8Array(),
         mimeType: '',
@@ -251,9 +251,11 @@ git commit -m "fix: render unusable schematic images as placeholders"
 ### Task 3: Verify the ECAD Forge integration
 
 **Files:**
+
 - Verify only: `/Users/afiedler/Documents/privat/Andrés_Werkstatt/ecadforge_app`
 
 **Interfaces:**
+
 - Consumes: local `altium-toolkit` package source and the ECAD Forge Altium demo URL.
 - Produces: library/app test evidence plus live DOM and screenshot evidence.
 
