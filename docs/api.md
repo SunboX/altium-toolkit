@@ -111,6 +111,13 @@ metadata. The complete recovered native read model remains available through
 `document.model` and do not require the full native extension.
 `extensions: 'none'` or `extensions: []` returns exactly `extensions: {}`.
 
+The convergence builder transfers its newly decoded ordinary CircuitJSON and
+native extension graphs into the shared owned-document validator. Eligible
+graph nodes retain identity and are deeply frozen in place, avoiding a second
+full defensive copy. This is an internal ownership optimization after source
+decoding: raw caller data remains untrusted, and every public parser parameter,
+validation rule, document field, and return shape is unchanged.
+
 Canonical `.SchDoc` models preserve native drawing order, ownership, geometry,
 and style as shared `schematic_rect`, `schematic_circle`, `schematic_arc`,
 `schematic_path`, `schematic_text`, `schematic_table`, and

@@ -136,7 +136,7 @@ test('explicit native extension owns more than fifteen thousand PCB pads', () =>
     )
 
     assert.equal(document.extensions.altium.native.pcb.pads.length, padCount)
-    assert.notEqual(document.extensions.altium.native, native)
+    assert.strictEqual(document.extensions.altium.native, native)
     assert.equal(Object.isFrozen(document.extensions.altium.native), true)
 })
 
