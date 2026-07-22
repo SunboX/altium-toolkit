@@ -13,7 +13,7 @@ the method documents a narrower input.
 
 ## Entrypoints
 
-The root exports exactly these 17 shared classes:
+The root exports exactly these 18 shared classes:
 
 - `Parser`, `ProjectLoader`, `CircuitJsonDocument`,
   `CircuitJsonDocumentContext`, `CircuitJsonIndexer`, and `CircuitJsonUnits`
@@ -22,6 +22,7 @@ The root exports exactly these 17 shared classes:
 - `ManufacturingService` and `SimulationService`
 - `PcbScene3dBuilder` and `PcbScene3dPreparator`
 - `ToolkitCapabilities` and `ToolkitError`
+- `SelfAdjustingComputation`
 
 Specialized entrypoints are also available:
 

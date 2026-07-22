@@ -37,6 +37,7 @@ const CANONICAL_EXPORTS = Object.freeze([
     'ProjectLoader',
     'QueryService',
     'SchematicSvgRenderer',
+    'SelfAdjustingComputation',
     'SimulationService',
     'ToolkitCapabilities',
     'ToolkitError'
@@ -384,7 +385,7 @@ function validateExtensionNamespace(extensions, baseline, shared) {
 }
 
 /**
- * Verifies the exact shared root namespace and pinned 17-class inventory.
+ * Verifies the exact shared root namespace and pinned 18-class inventory.
  * @param {Record<string, any>} namespace Package root namespace.
  * @param {Record<string, any>} shared Shared CircuitJSON root namespace.
  * @returns {void}

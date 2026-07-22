@@ -14,6 +14,7 @@ export {
     PcbSvgRenderer,
     QueryService,
     SchematicSvgRenderer,
+    SelfAdjustingComputation,
     SimulationService,
     ToolkitError
 } from 'circuitjson-toolkit'

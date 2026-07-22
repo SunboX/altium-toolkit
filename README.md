@@ -45,6 +45,12 @@ deeply frozen without a redundant defensive graph copy. Parser parameters,
 document envelopes, extension fields, and return shapes remain unchanged. See
 the [1.4.0 release notes](docs/release-notes-v1.4.0.md).
 
+Version 1.4.1 re-exports the canonical `SelfAdjustingComputation` runtime from
+CircuitJSON Toolkit 1.4.1. Persistent Altium consumers can retain dependency
+traces across input edits without changing parser, document, renderer, or
+native-extension contracts. See the
+[1.4.1 release notes](docs/release-notes-v1.4.1.md).
+
 Default `extensions: 'canonical'` keeps compact Altium summary metadata.
 Request the complete native read model with `extensions: 'full'`,
 `preserveRaw: true`, or `extensions: ['altium.native-model']`. Project batches
@@ -212,6 +218,7 @@ const legacyCircuitJson = AltiumParser.parseArrayBuffer(file.name, arrayBuffer)
 - [API](docs/api.md)
 - [Capabilities](docs/capabilities.md)
 - [Migration from 1.1.41](docs/migration.md)
+- [1.4.1 release notes](docs/release-notes-v1.4.1.md)
 - [1.4.0 release notes](docs/release-notes-v1.4.0.md)
 - [1.3.0 release notes](docs/release-notes-v1.3.0.md)
 - [1.2.1 release notes](docs/release-notes-v1.2.1.md)
