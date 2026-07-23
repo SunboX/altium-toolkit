@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 import { ToolkitContractFixtures } from 'circuitjson-toolkit/testing'
@@ -16,6 +18,82 @@ import {
 } from '../src/extensions.mjs'
 
 const FIXTURES = ToolkitContractFixtures.altium()
+const PROJECT_ROOT = fileURLToPath(new URL('../', import.meta.url))
+const PROJECT_RESOLUTION_EXCEPTION_PROBE = `
+import inspector from 'node:inspector'
+import { Parser } from './src/convergence/Parser.mjs'
+import { AltiumProjectDocumentResolver } from './src/convergence/AltiumProjectDocumentResolver.mjs'
+
+const schematic = Parser.parse(
+    {
+        fileName: 'Sheets/Fake.SchDoc',
+        data:
+            '|HEADER=Schematic Document' +
+            '|RECORD=31|CUSTOMX=120|CUSTOMY=80|VISIBLEGRIDSIZE=10|SNAPGRIDSIZE=5' +
+            '|BORDERON=F|TITLEBLOCKON=F|FONTIDCOUNT=1|SIZE1=10|FONTNAME1=Arial' +
+            '|RECORD=4|LOCATION.X=20|LOCATION.Y=40|FONTID=1|TEXT==ProjectName'
+    },
+    { extensions: ['altium.native-model'] }
+)
+const project = {
+    source: { fileType: 'prjpcb', fileName: 'Fake.PrjPcb' },
+    extensions: {
+        altium: {
+            projectContext: {
+                parameters: {},
+                documents: ['Sheets/Fake.SchDoc']
+            }
+        }
+    }
+}
+const session = new inspector.Session()
+session.connect()
+const post = (method, parameters = {}) =>
+    new Promise((resolve, reject) =>
+        session.post(method, parameters, (error, result) =>
+            error ? reject(error) : resolve(result)
+        )
+    )
+
+let binaryBrandProbes = 0
+session.on('Debugger.paused', (message) => {
+    if (
+        message.params.callFrames.some(
+            (frame) => frame.functionName === '#callLength'
+        )
+    ) {
+        binaryBrandProbes += 1
+    }
+    session.post('Debugger.resume')
+})
+
+await post('Debugger.enable')
+await post('Debugger.setPauseOnExceptions', { state: 'all' })
+AltiumProjectDocumentResolver.resolve(
+    { projectEntry: { name: 'Fake.PrjPcb' } },
+    [project, schematic],
+    ['altium.native-model']
+)
+await new Promise((resolve) => setImmediate(resolve))
+await post('Debugger.setPauseOnExceptions', { state: 'none' })
+session.disconnect()
+process.stdout.write(String(binaryBrandProbes))
+`
+
+test('project resolution avoids defensive binary brand probes for toolkit-owned rebuilds', () => {
+    const result = spawnSync(
+        process.execPath,
+        ['--input-type=module', '--eval', PROJECT_RESOLUTION_EXCEPTION_PROBE],
+        {
+            cwd: PROJECT_ROOT,
+            encoding: 'utf8',
+            timeout: 10_000
+        }
+    )
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.ok(Number(result.stdout.trim()) <= 2)
+})
 
 test('project loader resolves schematic project strings before returning canonical documents', () => {
     const entries = [

@@ -51,6 +51,12 @@ traces across input edits without changing parser, document, renderer, or
 native-extension contracts. See the
 [1.4.1 release notes](docs/release-notes-v1.4.1.md).
 
+Version 1.4.2 rebuilds project-resolved canonical documents through the
+toolkit-owned validation path and CircuitJSON Toolkit 1.4.2. Large native
+extension graphs retain their proven ownership instead of repeating defensive
+binary classification. See the
+[1.4.2 release notes](docs/release-notes-v1.4.2.md).
+
 Default `extensions: 'canonical'` keeps compact Altium summary metadata.
 Request the complete native read model with `extensions: 'full'`,
 `preserveRaw: true`, or `extensions: ['altium.native-model']`. Project batches
@@ -218,6 +224,7 @@ const legacyCircuitJson = AltiumParser.parseArrayBuffer(file.name, arrayBuffer)
 - [API](docs/api.md)
 - [Capabilities](docs/capabilities.md)
 - [Migration from 1.1.41](docs/migration.md)
+- [1.4.2 release notes](docs/release-notes-v1.4.2.md)
 - [1.4.1 release notes](docs/release-notes-v1.4.1.md)
 - [1.4.0 release notes](docs/release-notes-v1.4.0.md)
 - [1.3.0 release notes](docs/release-notes-v1.3.0.md)

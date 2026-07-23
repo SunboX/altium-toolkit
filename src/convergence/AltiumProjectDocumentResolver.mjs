@@ -239,13 +239,13 @@ export class AltiumProjectDocumentResolver {
     }
 
     /**
-     * Rebuilds one canonical document through the validating shared boundary.
+     * Rebuilds one canonical document through the toolkit-owned shared boundary.
      * @param {object} document Existing canonical document.
      * @param {{ model?: object[], extensions?: object, statistics?: object }} fields Replacements.
      * @returns {object} Proven immutable document.
      */
     static #rebuild(document, fields) {
-        return DocumentResult.createValidated(
+        return DocumentResult.createValidatedOwned(
             {
                 id: document.id,
                 model: fields.model || document.model,
