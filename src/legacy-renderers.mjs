@@ -15,7 +15,7 @@ export {
     PcbSideResolvedRenderModel,
     isCopperPrimitive,
     preparePcbSideResolvedRenderModel
-} from './ui/PcbSideResolvedRenderModel.mjs'
+} from './convergence/PcbSideResolvedRenderModel.mjs'
 export { PcbSvgRenderer } from './ui/PcbSvgRenderer.mjs'
 export { SchematicColorResolver } from './ui/SchematicColorResolver.mjs'
 export { SchematicContentLayout } from './ui/SchematicContentLayout.mjs'

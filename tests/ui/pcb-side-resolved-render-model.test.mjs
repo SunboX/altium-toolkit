@@ -98,15 +98,104 @@ test('PcbSideResolvedRenderModel resolves back-facing PCB render data', () => {
     )
     assert.deepEqual(
         resolved.pcb.tracks.map((track) => track.layerCode),
-        [-1, -32, 33]
+        [-1, -32]
     )
     assert.deepEqual(
         resolved.pcb.fills.map((fill) => fill.layerCode),
-        [-1, 33]
+        [-1]
     )
     assert.equal(isCopperPrimitive(resolved.pcb.tracks[0]), true)
-    assert.equal(isCopperPrimitive(resolved.pcb.tracks[2]), false)
 })
+
+/**
+ * Verifies side projection excludes opposite-side fabrication details while
+ * retaining neutral documentation layers.
+ */
+test('PcbSideResolvedRenderModel filters opposite-side fabrication details', () => {
+    const board = {
+        summary: { title: 'Surface detail fixture board' },
+        pcb: {
+            components: [],
+            primitiveLayers: [
+                { layerId: 33, name: 'Top Overlay' },
+                { layerId: 34, name: 'Bottom Overlay' },
+                { layerId: 35, name: 'Top Paste' },
+                { layerId: 36, name: 'Bottom Paste' },
+                { layerId: 37, name: 'Top Solder' },
+                { layerId: 38, name: 'Bottom Solder' },
+                { layerId: 57, name: 'Mechanical 1' }
+            ],
+            polygons: [],
+            fills: [
+                { id: 'front-overlay-fill', layerId: 33, layerCode: 33 },
+                { id: 'back-overlay-fill', layerId: 34, layerCode: 34 }
+            ],
+            tracks: [
+                { id: 'front-paste-track', layerId: 35, layerCode: 35 },
+                { id: 'back-paste-track', layerId: 36, layerCode: 36 }
+            ],
+            arcs: [
+                { id: 'front-mask-arc', layerId: 37, layerCode: 37 },
+                { id: 'back-mask-arc', layerId: 38, layerCode: 38 }
+            ],
+            regions: [
+                { id: 'front-overlay-region', layerId: 33, layerCode: 33 },
+                { id: 'back-overlay-region', layerId: 34, layerCode: 34 }
+            ],
+            shapeBasedRegions: [
+                {
+                    id: 'front-mask-region',
+                    layerId: 37,
+                    layerCode: 37
+                },
+                { id: 'back-mask-region', layerId: 38, layerCode: 38 }
+            ],
+            boardRegions: [
+                { id: 'neutral-board-region', layerId: 57, layerCode: 57 }
+            ],
+            vias: [],
+            pads: []
+        }
+    }
+
+    const front = preparePcbSideResolvedRenderModel(board, 'front')
+    const back = preparePcbSideResolvedRenderModel(board, 'back')
+
+    assert.deepEqual(collectSurfaceDetailIds(front.pcb), {
+        fills: ['front-overlay-fill'],
+        tracks: ['front-paste-track'],
+        arcs: ['front-mask-arc'],
+        regions: ['front-overlay-region'],
+        shapeBasedRegions: ['front-mask-region'],
+        boardRegions: ['neutral-board-region']
+    })
+    assert.deepEqual(collectSurfaceDetailIds(back.pcb), {
+        fills: ['back-overlay-fill'],
+        tracks: ['back-paste-track'],
+        arcs: ['back-mask-arc'],
+        regions: ['back-overlay-region'],
+        shapeBasedRegions: ['back-mask-region'],
+        boardRegions: ['neutral-board-region']
+    })
+})
+
+/**
+ * Collects primitive identifiers from side-resolved fabrication details.
+ * @param {object} pcb Side-resolved PCB model.
+ * @returns {Record<string, string[]>}
+ */
+function collectSurfaceDetailIds(pcb) {
+    return Object.fromEntries(
+        [
+            'fills',
+            'tracks',
+            'arcs',
+            'regions',
+            'shapeBasedRegions',
+            'boardRegions'
+        ].map((key) => [key, (pcb[key] || []).map((primitive) => primitive.id)])
+    )
+}
 
 /**
  * Builds a minimal normalized PCB with both top and bottom entities.
