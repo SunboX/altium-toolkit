@@ -4,6 +4,7 @@
 export * from 'circuitjson-toolkit/extensions'
 
 export { AltiumExtensionResolver } from './convergence/AltiumExtensionResolver.mjs'
+export { PcbSvgRenderer } from './convergence/PcbSvgRenderer.mjs'
 export { SchematicSvgRenderer } from './convergence/SchematicSvgRenderer.mjs'
 export * from './legacy-parser.mjs'
 export * from './legacy-netlist-query.mjs'

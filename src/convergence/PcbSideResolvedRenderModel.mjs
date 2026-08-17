@@ -123,10 +123,14 @@ export class PcbSideResolvedRenderModel {
         const layerId = PcbSideResolvedRenderModel.#effectivePadLayerId(pad)
         const apertureSide =
             layerId === 1 ? 'front' : layerId === 32 ? 'back' : side
-        if (apertureSide !== 'back') return { ...pad }
+        const projectedPad = {
+            ...pad,
+            copperRenderGroup: apertureSide === side ? 'surface' : 'subsurface'
+        }
+        if (apertureSide !== 'back') return projectedPad
 
         return {
-            ...pad,
+            ...projectedPad,
             sizeTopX: PcbSideResolvedRenderModel.#firstFiniteValue(
                 pad.sizeBottomX,
                 pad.sizeMidX,

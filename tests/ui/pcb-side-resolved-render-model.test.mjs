@@ -150,6 +150,7 @@ test('PcbSideResolvedRenderModel includes opposite-side copper pads only when re
             id: pad.id,
             layerCode: pad.layerCode,
             layerId: pad.layerId,
+            copperRenderGroup: pad.copperRenderGroup,
             shapeTop: pad.shapeTop,
             sizeTopX: pad.sizeTopX,
             sizeTopY: pad.sizeTopY
@@ -159,6 +160,7 @@ test('PcbSideResolvedRenderModel includes opposite-side copper pads only when re
                 id: 'top-pad',
                 layerCode: 1,
                 layerId: 1,
+                copperRenderGroup: 'surface',
                 shapeTop: 2,
                 sizeTopX: 50,
                 sizeTopY: 40
@@ -167,6 +169,7 @@ test('PcbSideResolvedRenderModel includes opposite-side copper pads only when re
                 id: 'bottom-pad',
                 layerCode: 32,
                 layerId: 32,
+                copperRenderGroup: 'subsurface',
                 shapeTop: 3,
                 sizeTopX: 70,
                 sizeTopY: 45
@@ -175,6 +178,7 @@ test('PcbSideResolvedRenderModel includes opposite-side copper pads only when re
                 id: 'multi-layer-pad',
                 layerCode: 2,
                 layerId: 2,
+                copperRenderGroup: 'surface',
                 shapeTop: 5,
                 sizeTopX: 30,
                 sizeTopY: 25
@@ -186,6 +190,7 @@ test('PcbSideResolvedRenderModel includes opposite-side copper pads only when re
             id: pad.id,
             layerCode: pad.layerCode,
             layerId: pad.layerId,
+            copperRenderGroup: pad.copperRenderGroup,
             shapeTop: pad.shapeTop,
             sizeTopX: pad.sizeTopX,
             sizeTopY: pad.sizeTopY
@@ -195,6 +200,7 @@ test('PcbSideResolvedRenderModel includes opposite-side copper pads only when re
                 id: 'top-pad',
                 layerCode: 1,
                 layerId: 1,
+                copperRenderGroup: 'subsurface',
                 shapeTop: 2,
                 sizeTopX: 50,
                 sizeTopY: 40
@@ -203,6 +209,7 @@ test('PcbSideResolvedRenderModel includes opposite-side copper pads only when re
                 id: 'bottom-pad',
                 layerCode: 32,
                 layerId: 32,
+                copperRenderGroup: 'surface',
                 shapeTop: 3,
                 sizeTopX: 70,
                 sizeTopY: 45
@@ -211,6 +218,7 @@ test('PcbSideResolvedRenderModel includes opposite-side copper pads only when re
                 id: 'multi-layer-pad',
                 layerCode: 2,
                 layerId: 2,
+                copperRenderGroup: 'surface',
                 shapeTop: 5,
                 sizeTopX: 30,
                 sizeTopY: 25

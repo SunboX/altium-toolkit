@@ -270,6 +270,10 @@
     fill: var(--pcb-copper-solid-fill);
 }
 
+.pcb-copper--subsurface .pcb-pad--smd .pcb-pad__ring {
+    fill: var(--pcb-subsurface-track-color);
+}
+
 .pcb-footprint-fill {
     fill: var(--pcb-footprint-fill);
 }
