@@ -108,6 +108,118 @@ test('PcbSideResolvedRenderModel resolves back-facing PCB render data', () => {
 })
 
 /**
+ * Verifies opposite-side copper context includes surface pads only when the
+ * caller explicitly requests it.
+ */
+test('PcbSideResolvedRenderModel includes opposite-side copper pads only when requested', () => {
+    const board = buildSideFixtureBoard()
+
+    const strictFront = preparePcbSideResolvedRenderModel(board, {
+        side: 'front'
+    })
+    const strictBack = preparePcbSideResolvedRenderModel(board, {
+        side: 'back'
+    })
+    const contextualFront = preparePcbSideResolvedRenderModel(board, {
+        side: 'front',
+        includeOppositeCopper: true
+    })
+    const contextualBack = preparePcbSideResolvedRenderModel(board, {
+        side: 'back',
+        includeOppositeCopper: true
+    })
+
+    assert.deepEqual(
+        strictFront.pcb.pads.map((pad) => pad.id),
+        ['top-pad', 'multi-layer-pad']
+    )
+    assert.deepEqual(
+        strictBack.pcb.pads.map((pad) => pad.id),
+        ['bottom-pad', 'multi-layer-pad']
+    )
+    assert.deepEqual(
+        contextualFront.pcb.pads.map((pad) => pad.id),
+        ['top-pad', 'bottom-pad', 'multi-layer-pad']
+    )
+    assert.deepEqual(
+        contextualBack.pcb.pads.map((pad) => pad.id),
+        ['top-pad', 'bottom-pad', 'multi-layer-pad']
+    )
+    assert.deepEqual(
+        contextualFront.pcb.pads.map((pad) => ({
+            id: pad.id,
+            layerCode: pad.layerCode,
+            layerId: pad.layerId,
+            shapeTop: pad.shapeTop,
+            sizeTopX: pad.sizeTopX,
+            sizeTopY: pad.sizeTopY
+        })),
+        [
+            {
+                id: 'top-pad',
+                layerCode: 1,
+                layerId: 1,
+                shapeTop: 2,
+                sizeTopX: 50,
+                sizeTopY: 40
+            },
+            {
+                id: 'bottom-pad',
+                layerCode: 32,
+                layerId: 32,
+                shapeTop: 3,
+                sizeTopX: 70,
+                sizeTopY: 45
+            },
+            {
+                id: 'multi-layer-pad',
+                layerCode: 2,
+                layerId: 2,
+                shapeTop: 5,
+                sizeTopX: 30,
+                sizeTopY: 25
+            }
+        ]
+    )
+    assert.deepEqual(
+        contextualBack.pcb.pads.map((pad) => ({
+            id: pad.id,
+            layerCode: pad.layerCode,
+            layerId: pad.layerId,
+            shapeTop: pad.shapeTop,
+            sizeTopX: pad.sizeTopX,
+            sizeTopY: pad.sizeTopY
+        })),
+        [
+            {
+                id: 'top-pad',
+                layerCode: 1,
+                layerId: 1,
+                shapeTop: 2,
+                sizeTopX: 50,
+                sizeTopY: 40
+            },
+            {
+                id: 'bottom-pad',
+                layerCode: 32,
+                layerId: 32,
+                shapeTop: 3,
+                sizeTopX: 70,
+                sizeTopY: 45
+            },
+            {
+                id: 'multi-layer-pad',
+                layerCode: 2,
+                layerId: 2,
+                shapeTop: 5,
+                sizeTopX: 30,
+                sizeTopY: 25
+            }
+        ]
+    )
+})
+
+/**
  * Verifies side projection excludes opposite-side fabrication details while
  * retaining neutral documentation layers.
  */

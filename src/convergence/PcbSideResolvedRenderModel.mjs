@@ -13,11 +13,13 @@ export class PcbSideResolvedRenderModel {
     /**
      * Resolves a normalized PCB model for the requested board side.
      * @param {object | null} board
-     * @param {'front' | 'back' | { side?: 'front' | 'back' }} [options]
+     * @param {'front' | 'back' | { side?: 'front' | 'back', includeOppositeCopper?: boolean }} [options]
      * @returns {object | null}
      */
     static resolve(board, options = {}) {
         const side = PcbSideResolvedRenderModel.#normalizeSide(options)
+        const includeOppositeCopper =
+            PcbSideResolvedRenderModel.#includeOppositeCopper(options)
         const resolved = HistoricalPcbSideResolvedRenderModel.resolve(
             board,
             options
@@ -52,7 +54,13 @@ export class PcbSideResolvedRenderModel {
                 boardRegions: PcbSideResolvedRenderModel.#filterPrimitives(
                     pcb.boardRegions,
                     side
-                )
+                ),
+                pads: includeOppositeCopper
+                    ? PcbSideResolvedRenderModel.#prepareContextPads(
+                          board?.pcb?.pads,
+                          side
+                      )
+                    : pcb.pads
             }
         }
     }
@@ -68,7 +76,7 @@ export class PcbSideResolvedRenderModel {
 
     /**
      * Normalizes the caller side option.
-     * @param {'front' | 'back' | { side?: 'front' | 'back' }} options
+     * @param {'front' | 'back' | { side?: 'front' | 'back', includeOppositeCopper?: boolean }} options
      * @returns {'front' | 'back'}
      */
     static #normalizeSide(options) {
@@ -77,6 +85,102 @@ export class PcbSideResolvedRenderModel {
             return 'back'
         }
         return 'front'
+    }
+
+    /**
+     * Checks whether the caller requested opposite-side copper context.
+     * @param {'front' | 'back' | { side?: 'front' | 'back', includeOppositeCopper?: boolean }} options
+     * @returns {boolean}
+     */
+    static #includeOppositeCopper(options) {
+        return Boolean(
+            options &&
+            typeof options === 'object' &&
+            options.includeOppositeCopper === true
+        )
+    }
+
+    /**
+     * Projects every copper-bearing pad into the requested composite view.
+     * @param {readonly object[] | undefined} pads Source pads.
+     * @param {'front' | 'back'} side Requested board side.
+     * @returns {object[]}
+     */
+    static #prepareContextPads(pads, side) {
+        return (pads || []).map((pad) =>
+            PcbSideResolvedRenderModel.#projectPadForTopRenderer(pad, side)
+        )
+    }
+
+    /**
+     * Projects the authored aperture for one pad into the top-oriented
+     * renderer while retaining front-only apertures as opposite-side context.
+     * @param {object} pad Source pad.
+     * @param {'front' | 'back'} side Requested board side.
+     * @returns {object}
+     */
+    static #projectPadForTopRenderer(pad, side) {
+        const layerId = PcbSideResolvedRenderModel.#effectivePadLayerId(pad)
+        const apertureSide =
+            layerId === 1 ? 'front' : layerId === 32 ? 'back' : side
+        if (apertureSide !== 'back') return { ...pad }
+
+        return {
+            ...pad,
+            sizeTopX: PcbSideResolvedRenderModel.#firstFiniteValue(
+                pad.sizeBottomX,
+                pad.sizeMidX,
+                pad.sizeTopX
+            ),
+            sizeTopY: PcbSideResolvedRenderModel.#firstFiniteValue(
+                pad.sizeBottomY,
+                pad.sizeMidY,
+                pad.sizeTopY
+            ),
+            shapeTop: PcbSideResolvedRenderModel.#firstFiniteValue(
+                pad.shapeBottom,
+                pad.shapeMid,
+                pad.shapeTop
+            ),
+            roundedRectShapeTop: PcbSideResolvedRenderModel.#firstFiniteValue(
+                pad.roundedRectShapeBottom,
+                pad.roundedRectShapeMid,
+                pad.roundedRectShapeTop
+            ),
+            cornerRadiusTop: PcbSideResolvedRenderModel.#firstFiniteValue(
+                pad.cornerRadiusBottom,
+                pad.cornerRadiusMid,
+                pad.cornerRadiusTop
+            )
+        }
+    }
+
+    /**
+     * Resolves the authored Altium layer id for a pad.
+     * @param {object | null} pad Pad to inspect.
+     * @returns {number | null}
+     */
+    static #effectivePadLayerId(pad) {
+        const layerId = Number(pad?.layerId)
+        if (Number.isInteger(layerId) && layerId > 0) return layerId
+
+        const legacyLayerId = Number(pad?.legacyLayerId)
+        return Number.isInteger(legacyLayerId) && legacyLayerId > 0
+            ? legacyLayerId
+            : null
+    }
+
+    /**
+     * Returns the first finite numeric value.
+     * @param {...unknown} values Values to inspect.
+     * @returns {number | undefined}
+     */
+    static #firstFiniteValue(...values) {
+        for (const value of values) {
+            const number = Number(value)
+            if (Number.isFinite(number)) return number
+        }
+        return undefined
     }
 
     /**
@@ -115,7 +219,7 @@ export class PcbSideResolvedRenderModel {
 /**
  * Resolves a normalized PCB model for the requested board side.
  * @param {object | null} board
- * @param {'front' | 'back' | { side?: 'front' | 'back' }} [options]
+ * @param {'front' | 'back' | { side?: 'front' | 'back', includeOppositeCopper?: boolean }} [options]
  * @returns {object | null}
  */
 export function preparePcbSideResolvedRenderModel(board, options = {}) {
