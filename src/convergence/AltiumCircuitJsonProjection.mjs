@@ -24,8 +24,12 @@ export class AltiumCircuitJsonProjection {
      * @returns {object[]} Canonical CircuitJSON rows.
      */
     static project(adapted, native) {
+        const pcbModel = AltiumCircuitJsonProjection.#projectPcbSmtPads(
+            adapted,
+            native?.pcb
+        )
         const nativeSchematic = native?.schematic
-        if (!nativeSchematic) return [...adapted]
+        if (!nativeSchematic) return pcbModel
         const schematic =
             AltiumCircuitJsonProjection.#schematicWithSourceTypes(
                 nativeSchematic
@@ -53,18 +57,18 @@ export class AltiumCircuitJsonProjection {
             ])
         )
         const legacySchematicSourceTraceIds = new Set(
-            adapted
+            pcbModel
                 .filter((element) => element?.type === 'schematic_trace')
                 .map((element) => String(element.source_trace_id || ''))
                 .filter(Boolean)
         )
         const protectedPcbSourceTraceIds = new Set(
-            adapted
+            pcbModel
                 .filter((element) => element?.type === 'pcb_trace')
                 .map((element) => String(element.source_trace_id || ''))
                 .filter(Boolean)
         )
-        const model = adapted
+        const model = pcbModel
             .filter((element) =>
                 AltiumCircuitJsonProjection.#preservesAdaptedElement(
                     element,
@@ -107,6 +111,72 @@ export class AltiumCircuitJsonProjection {
             model,
             schematic?.sheet?.height
         )
+    }
+
+    /**
+     * Restores anisotropic Altium ROUND pads as CircuitJSON pills while the
+     * historical native adapter remains byte-for-byte frozen.
+     * @param {object[]} adapted Historical adapter output.
+     * @param {Record<string, any> | undefined} pcb Native PCB model.
+     * @returns {object[]} PCB-shape-corrected canonical rows.
+     */
+    static #projectPcbSmtPads(adapted, pcb) {
+        const nativeSmtPads = Primitives.array(pcb?.pads).filter(
+            (pad) => !Primitives.isThroughHolePad(pad)
+        )
+        let smtPadIndex = 0
+
+        return adapted.map((element) => {
+            if (element?.type !== 'pcb_smtpad') return element
+
+            const pad = nativeSmtPads[smtPadIndex]
+            smtPadIndex += 1
+            if (!AltiumCircuitJsonProjection.#isAnisotropicRoundPad(pad)) {
+                return element
+            }
+
+            const width = Primitives.milNumber(
+                pad.sizeTopX || pad.sizeX || pad.width,
+                0
+            )
+            const height = Primitives.milNumber(
+                pad.sizeTopY || pad.sizeY || pad.height,
+                0
+            )
+            const rotation =
+                Primitives.number(pad.rotation || pad.holeRotation, 0) || 0
+
+            return {
+                ...element,
+                shape: rotation === 0 ? 'pill' : 'rotated_pill',
+                width,
+                height,
+                radius: Primitives.round(Math.min(width, height) / 2),
+                ...(rotation === 0 ? {} : { ccw_rotation: rotation })
+            }
+        })
+    }
+
+    /**
+     * Returns whether one native ROUND pad has distinct X and Y dimensions.
+     * @param {Record<string, any> | undefined} pad Native PCB pad.
+     * @returns {boolean} Whether canonical output requires pill geometry.
+     */
+    static #isAnisotropicRoundPad(pad) {
+        const shape = String(
+            pad?.shapeTopName || pad?.shapeName || pad?.shape || ''
+        )
+            .trim()
+            .toLowerCase()
+        if (shape !== 'round' && shape !== 'circle') return false
+
+        const width =
+            Primitives.number(pad?.sizeTopX ?? pad?.sizeX ?? pad?.width, 0) || 0
+        const height =
+            Primitives.number(pad?.sizeTopY ?? pad?.sizeY ?? pad?.height, 0) ||
+            0
+
+        return width > 0 && height > 0 && width !== height
     }
 
     /**
