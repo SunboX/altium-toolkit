@@ -24,12 +24,13 @@ export class AltiumCircuitJsonProjection {
      * @returns {object[]} Canonical CircuitJSON rows.
      */
     static project(adapted, native) {
-        const pcbModel = AltiumCircuitJsonProjection.#projectPcbSmtPads(
-            adapted,
-            native?.pcb
-        )
+        const elementsWithProjectedPadShapes =
+            AltiumCircuitJsonProjection.#projectPcbSmtPadShapes(
+                adapted,
+                native?.pcb
+            )
         const nativeSchematic = native?.schematic
-        if (!nativeSchematic) return pcbModel
+        if (!nativeSchematic) return elementsWithProjectedPadShapes
         const schematic =
             AltiumCircuitJsonProjection.#schematicWithSourceTypes(
                 nativeSchematic
@@ -57,18 +58,18 @@ export class AltiumCircuitJsonProjection {
             ])
         )
         const legacySchematicSourceTraceIds = new Set(
-            pcbModel
+            elementsWithProjectedPadShapes
                 .filter((element) => element?.type === 'schematic_trace')
                 .map((element) => String(element.source_trace_id || ''))
                 .filter(Boolean)
         )
         const protectedPcbSourceTraceIds = new Set(
-            pcbModel
+            elementsWithProjectedPadShapes
                 .filter((element) => element?.type === 'pcb_trace')
                 .map((element) => String(element.source_trace_id || ''))
                 .filter(Boolean)
         )
-        const model = pcbModel
+        const model = elementsWithProjectedPadShapes
             .filter((element) =>
                 AltiumCircuitJsonProjection.#preservesAdaptedElement(
                     element,
@@ -120,7 +121,7 @@ export class AltiumCircuitJsonProjection {
      * @param {Record<string, any> | undefined} pcb Native PCB model.
      * @returns {object[]} PCB-shape-corrected canonical rows.
      */
-    static #projectPcbSmtPads(adapted, pcb) {
+    static #projectPcbSmtPadShapes(adapted, pcb) {
         const nativeSmtPads = Primitives.array(pcb?.pads).filter(
             (pad) => !Primitives.isThroughHolePad(pad)
         )
@@ -129,22 +130,27 @@ export class AltiumCircuitJsonProjection {
         return adapted.map((element) => {
             if (element?.type !== 'pcb_smtpad') return element
 
-            const pad = nativeSmtPads[smtPadIndex]
+            const nativePad = nativeSmtPads[smtPadIndex]
             smtPadIndex += 1
-            if (!AltiumCircuitJsonProjection.#isAnisotropicRoundPad(pad)) {
+            if (
+                !AltiumCircuitJsonProjection.#isAnisotropicRoundPad(nativePad)
+            ) {
                 return element
             }
 
             const width = Primitives.milNumber(
-                pad.sizeTopX || pad.sizeX || pad.width,
+                nativePad.sizeTopX || nativePad.sizeX || nativePad.width,
                 0
             )
             const height = Primitives.milNumber(
-                pad.sizeTopY || pad.sizeY || pad.height,
+                nativePad.sizeTopY || nativePad.sizeY || nativePad.height,
                 0
             )
             const rotation =
-                Primitives.number(pad.rotation || pad.holeRotation, 0) || 0
+                Primitives.number(
+                    nativePad.rotation || nativePad.holeRotation,
+                    0
+                ) || 0
 
             return {
                 ...element,
