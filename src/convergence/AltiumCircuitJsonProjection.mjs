@@ -24,16 +24,21 @@ export class AltiumCircuitJsonProjection {
      * @returns {object[]} Canonical CircuitJSON rows.
      */
     static project(adapted, native) {
+        const nativeSchematic = native?.schematic
+        if (!nativeSchematic) {
+            return AltiumCircuitJsonProjection.#projectPcbSmtPadShapes(
+                adapted,
+                native?.pcb
+            )
+        }
+        const schematic =
+            AltiumCircuitJsonProjection.#schematicWithSourceTypes(
+                nativeSchematic
+            )
         const elementsWithProjectedPadShapes =
             AltiumCircuitJsonProjection.#projectPcbSmtPadShapes(
                 adapted,
                 native?.pcb
-            )
-        const nativeSchematic = native?.schematic
-        if (!nativeSchematic) return elementsWithProjectedPadShapes
-        const schematic =
-            AltiumCircuitJsonProjection.#schematicWithSourceTypes(
-                nativeSchematic
             )
 
         const sourceFormat = Primitives.sourceFormat(native)
