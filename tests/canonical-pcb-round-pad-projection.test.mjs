@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { AltiumParser } from '../src/core/altium/AltiumParser.mjs'
+import { CircuitJsonModelAdapter } from '../src/core/circuit-json/CircuitJsonModelAdapter.mjs'
 import { Parser } from '../src/convergence/Parser.mjs'
 
 const MILS_PER_MM = 39.37007874015748
@@ -40,12 +41,31 @@ function createRendererModel() {
         fileName: 'neutral-board.PcbDoc',
         summary: { title: 'Neutral board' },
         diagnostics: [],
+        schematic: {
+            sheet: { width: 100, height: 50 },
+            components: [],
+            pins: [],
+            nets: [],
+            lines: [],
+            texts: []
+        },
         pcb: {
             boardOutline: { widthMil: 1000, heightMil: 500 },
+            components: [
+                {
+                    componentIndex: 0,
+                    designator: 'U1',
+                    x: 100,
+                    y: 100,
+                    layer: 'Top Layer'
+                }
+            ],
             pads: [
                 {
                     x: 100,
                     y: 100,
+                    componentIndex: 0,
+                    name: 'A1',
                     shapeTopName: 'ROUND',
                     sizeTopX: 27.5591,
                     sizeTopY: 98.4252,
@@ -55,6 +75,7 @@ function createRendererModel() {
                 {
                     x: 200,
                     y: 100,
+                    componentIndex: 0,
                     shapeTopName: 'ROUND',
                     sizeTopX: 90,
                     sizeTopY: 90,
@@ -66,6 +87,8 @@ function createRendererModel() {
                 {
                     x: 300,
                     y: 100,
+                    componentIndex: 0,
+                    name: 'A2',
                     shapeTopName: 'ROUND',
                     sizeTopX: 27.5591,
                     sizeTopY: 98.4252,
@@ -75,7 +98,9 @@ function createRendererModel() {
                 {
                     x: 400,
                     y: 100,
-                    shapeTopName: 'ROUND',
+                    componentIndex: 0,
+                    name: 'A3',
+                    shapeTopName: 'CIRCLE',
                     sizeTopX: 27.5591,
                     sizeTopY: 98.4252,
                     rotation: 90,
@@ -84,6 +109,7 @@ function createRendererModel() {
                 {
                     x: 500,
                     y: 100,
+                    componentIndex: 0,
                     shapeTopName: 'ROUND',
                     sizeTopX: 27.5591,
                     sizeTopY: 27.5591,
@@ -96,8 +122,21 @@ function createRendererModel() {
 }
 
 test('public parser preserves anisotropic round SMT pad geometry', () => {
-    const original = AltiumParser.parseArrayBufferToRendererModel
+    const originalParser = AltiumParser.parseArrayBufferToRendererModel
+    const originalAdapter = CircuitJsonModelAdapter.fromRendererModel
+    let originalProjectedPad
     AltiumParser.parseArrayBufferToRendererModel = () => createRendererModel()
+    CircuitJsonModelAdapter.fromRendererModel = (rendererModel) =>
+        originalAdapter(rendererModel).map((element) => {
+            if (element?.type !== 'pcb_smtpad' || originalProjectedPad) {
+                return element
+            }
+            originalProjectedPad = {
+                ...element,
+                metadata: { source: 'neutral-pad-metadata' }
+            }
+            return originalProjectedPad
+        })
 
     try {
         const document = Parser.parse({
@@ -108,6 +147,9 @@ test('public parser preserves anisotropic round SMT pad geometry', () => {
             (element) => element.type === 'pcb_smtpad'
         )
 
+        assert.ok(
+            document.model.some((element) => element.type === 'schematic_sheet')
+        )
         assert.deepEqual(
             smtPads.map((pad) => pad.shape),
             ['pill', 'pill', 'rotated_pill', 'circle']
@@ -125,7 +167,30 @@ test('public parser preserves anisotropic round SMT pad geometry', () => {
         assert.equal(smtPads[2].radius, radiusMillimetres(27.5591))
         assert.equal('ccw_rotation' in smtPads[1], false)
         assert.equal(smtPads[2].ccw_rotation, 90)
+        assert.deepEqual(
+            {
+                pcb_smtpad_id: smtPads[0].pcb_smtpad_id,
+                pcb_component_id: smtPads[0].pcb_component_id,
+                pcb_port_id: smtPads[0].pcb_port_id,
+                x: smtPads[0].x,
+                y: smtPads[0].y,
+                layer: smtPads[0].layer,
+                port_hints: smtPads[0].port_hints,
+                metadata: smtPads[0].metadata
+            },
+            {
+                pcb_smtpad_id: originalProjectedPad.pcb_smtpad_id,
+                pcb_component_id: originalProjectedPad.pcb_component_id,
+                pcb_port_id: originalProjectedPad.pcb_port_id,
+                x: originalProjectedPad.x,
+                y: originalProjectedPad.y,
+                layer: originalProjectedPad.layer,
+                port_hints: originalProjectedPad.port_hints,
+                metadata: originalProjectedPad.metadata
+            }
+        )
     } finally {
-        AltiumParser.parseArrayBufferToRendererModel = original
+        AltiumParser.parseArrayBufferToRendererModel = originalParser
+        CircuitJsonModelAdapter.fromRendererModel = originalAdapter
     }
 })
