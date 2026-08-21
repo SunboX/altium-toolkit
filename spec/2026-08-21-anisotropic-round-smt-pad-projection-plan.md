@@ -21,11 +21,11 @@
 1. Add a synthetic renderer-model fixture by temporarily replacing `AltiumParser.parseArrayBufferToRendererModel`.
 2. Exercise `Parser.parse()` rather than the convergence helper directly.
 3. Include, in mixed renderer order:
-   - an unequal ROUND SMT pad at zero rotation;
-   - a through-hole ROUND pad between SMT pads;
-   - an unequal ROUND SMT pad with near-zero rotation;
-   - an unequal ROUND SMT pad at 90 degrees;
-   - an equal-diameter ROUND SMT pad.
+    - an unequal ROUND SMT pad at zero rotation;
+    - a through-hole ROUND pad between SMT pads;
+    - an unequal ROUND SMT pad with near-zero rotation;
+    - an unequal ROUND SMT pad at 90 degrees;
+    - an equal-diameter ROUND SMT pad.
 4. Assert the public Circuit JSON output contains `pill`, `pill`, `rotated_pill`, and `circle` respectively, with both anisotropic dimensions preserved.
 5. Run the focused test and confirm it fails because the unequal pads are still circles.
 6. Commit the failing regression test with contributor attribution.
@@ -39,8 +39,8 @@
 
 1. Add a private projection method that filters native renderer pads to SMT pads and pairs them with canonical SMT pads in stable order.
 2. For renderer `ROUND`/`CIRCLE` pads with zero hole, positive unequal X/Y sizes, update the canonical pad shape:
-   - `pill` when absolute rotation is at most `1e-6` degrees;
-   - `rotated_pill` otherwise.
+    - `pill` when absolute rotation is at most `1e-6` degrees;
+    - `rotated_pill` otherwise.
 3. Set `radius = min(width, height) / 2`, preserve `width` and `height`, and leave IDs, layers, positions, rotations, and metadata untouched.
 4. Call the projection after the existing native schematic projection and before model construction.
 5. Run the focused test and confirm it passes.
