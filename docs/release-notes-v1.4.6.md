@@ -13,7 +13,7 @@ converting Altium renderer data to Circuit JSON.
 
 ## Verification
 
-- Public-parser regression coverage exercises schematic and PCB-only models,
+- Public `Parser.parse()` regression coverage exercises schematic and PCB-only models,
   mixed SMT/through-hole order, rotation tolerance, and metadata preservation.
 - The complete test suite, performance check, feature-preservation check,
   formatting check, and npm publish dry run passed for this release metadata.
