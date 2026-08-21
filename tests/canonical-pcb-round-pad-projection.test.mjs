@@ -31,9 +31,10 @@ function radiusMillimetres(mils) {
 
 /**
  * Builds the neutral renderer model used by the public parser regression.
+ * @param {{ includeSchematic?: boolean }} [options] Fixture shape options.
  * @returns {Record<string, any>} Synthetic native renderer model.
  */
-function createRendererModel() {
+function createRendererModel({ includeSchematic = true } = {}) {
     return {
         sourceFormat: 'altium',
         kind: 'pcb',
@@ -41,14 +42,18 @@ function createRendererModel() {
         fileName: 'neutral-board.PcbDoc',
         summary: { title: 'Neutral board' },
         diagnostics: [],
-        schematic: {
-            sheet: { width: 100, height: 50 },
-            components: [],
-            pins: [],
-            nets: [],
-            lines: [],
-            texts: []
-        },
+        ...(includeSchematic
+            ? {
+                  schematic: {
+                      sheet: { width: 100, height: 50 },
+                      components: [],
+                      pins: [],
+                      nets: [],
+                      lines: [],
+                      texts: []
+                  }
+              }
+            : {}),
         pcb: {
             boardOutline: { widthMil: 1000, heightMil: 500 },
             components: [
@@ -192,5 +197,34 @@ test('public parser preserves anisotropic round SMT pad geometry', () => {
     } finally {
         AltiumParser.parseArrayBufferToRendererModel = originalParser
         CircuitJsonModelAdapter.fromRendererModel = originalAdapter
+    }
+})
+
+test('public parser projects anisotropic round SMT pads without a schematic', () => {
+    const originalParser = AltiumParser.parseArrayBufferToRendererModel
+    AltiumParser.parseArrayBufferToRendererModel = () =>
+        createRendererModel({ includeSchematic: false })
+
+    try {
+        const document = Parser.parse({
+            fileName: 'neutral-board.PcbDoc',
+            data: new Uint8Array([0])
+        })
+        const smtPads = document.model.filter(
+            (element) => element.type === 'pcb_smtpad'
+        )
+
+        assert.deepEqual(
+            smtPads.map((pad) => pad.shape),
+            ['pill', 'pill', 'rotated_pill', 'circle']
+        )
+        assert.equal(
+            document.model.some(
+                (element) => element.type === 'schematic_sheet'
+            ),
+            false
+        )
+    } finally {
+        AltiumParser.parseArrayBufferToRendererModel = originalParser
     }
 })
