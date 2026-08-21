@@ -24,8 +24,13 @@ export class AltiumCircuitJsonProjection {
      * @returns {object[]} Canonical CircuitJSON rows.
      */
     static project(adapted, native) {
+        const elementsWithProjectedPadShapes =
+            AltiumCircuitJsonProjection.#projectPcbSmtPadShapes(
+                adapted,
+                native?.pcb
+            )
         const nativeSchematic = native?.schematic
-        if (!nativeSchematic) return [...adapted]
+        if (!nativeSchematic) return elementsWithProjectedPadShapes
         const schematic =
             AltiumCircuitJsonProjection.#schematicWithSourceTypes(
                 nativeSchematic
@@ -53,18 +58,18 @@ export class AltiumCircuitJsonProjection {
             ])
         )
         const legacySchematicSourceTraceIds = new Set(
-            adapted
+            elementsWithProjectedPadShapes
                 .filter((element) => element?.type === 'schematic_trace')
                 .map((element) => String(element.source_trace_id || ''))
                 .filter(Boolean)
         )
         const protectedPcbSourceTraceIds = new Set(
-            adapted
+            elementsWithProjectedPadShapes
                 .filter((element) => element?.type === 'pcb_trace')
                 .map((element) => String(element.source_trace_id || ''))
                 .filter(Boolean)
         )
-        const model = adapted
+        const model = elementsWithProjectedPadShapes
             .filter((element) =>
                 AltiumCircuitJsonProjection.#preservesAdaptedElement(
                     element,
@@ -107,6 +112,79 @@ export class AltiumCircuitJsonProjection {
             model,
             schematic?.sheet?.height
         )
+    }
+
+    /**
+     * Restores native dimensions for unequal round SMT pads after the frozen
+     * historical adapter has classified them as circles.
+     * @param {object[]} adapted Historical adapter output.
+     * @param {Record<string, any> | undefined} pcb Native PCB model.
+     * @returns {object[]} Canonical rows with projected SMT pad shapes.
+     */
+    static #projectPcbSmtPadShapes(adapted, pcb) {
+        const nativeSmtPads = Primitives.array(pcb?.pads).filter(
+            (pad) => !Primitives.isThroughHolePad(pad)
+        )
+        let smtPadIndex = 0
+
+        return adapted.map((element) => {
+            if (element?.type !== 'pcb_smtpad') return element
+
+            const nativePad = nativeSmtPads[smtPadIndex]
+            smtPadIndex += 1
+            if (
+                !AltiumCircuitJsonProjection.#isAnisotropicRoundSmtPad(
+                    nativePad
+                )
+            ) {
+                return element
+            }
+
+            const width = Primitives.milNumber(
+                nativePad.sizeTopX || nativePad.sizeX || nativePad.width,
+                0
+            )
+            const height = Primitives.milNumber(
+                nativePad.sizeTopY || nativePad.sizeY || nativePad.height,
+                0
+            )
+            const rotation =
+                Primitives.number(
+                    nativePad.rotation || nativePad.holeRotation,
+                    0
+                ) || 0
+            const hasRotation = Math.abs(rotation) > 0.000001
+
+            return {
+                ...element,
+                shape: hasRotation ? 'rotated_pill' : 'pill',
+                width,
+                height,
+                radius: Primitives.round(Math.min(width, height) / 2),
+                ...(hasRotation ? { ccw_rotation: rotation } : {})
+            }
+        })
+    }
+
+    /**
+     * Returns whether a native SMT pad requires a dimension-preserving pill.
+     * @param {Record<string, any> | undefined} pad Native PCB pad.
+     * @returns {boolean} Whether the native pad is an unequal round SMT pad.
+     */
+    static #isAnisotropicRoundSmtPad(pad) {
+        const shape = String(
+            pad?.shapeTopName || pad?.shapeName || pad?.shape || ''
+        )
+            .trim()
+            .toLowerCase()
+        if (shape !== 'round' && shape !== 'circle') return false
+
+        const width =
+            Primitives.number(pad?.sizeTopX ?? pad?.sizeX ?? pad?.width, 0) || 0
+        const height =
+            Primitives.number(pad?.sizeTopY ?? pad?.sizeY ?? pad?.height, 0) ||
+            0
+        return width > 0 && height > 0 && width !== height
     }
 
     /**
