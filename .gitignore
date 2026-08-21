@@ -5,6 +5,7 @@ dist/
 superpowers/
 docs/.superpowers/
 docs/superpowers/
+.worktrees/
 .DS_Store
 npm-debug.log*
 .npmrc
