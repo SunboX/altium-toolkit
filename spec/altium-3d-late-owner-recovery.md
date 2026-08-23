@@ -18,23 +18,23 @@ vendor names, or library identifiers.
   span.
 - Use component height agreement only as supporting evidence for nearby
   package ownership; height alone is insufficient.
-- Preserve a pad-centroid body position because it is already a valid authored
-  package center.
+- Preserve pad-centroid and nearby height-backed body positions because they
+  are valid authored source anchors, and mark height-backed anchors so the
+  runtime does not apply a second source-origin adjustment.
 - Center proven corner-origin and row-origin bodies on the component owner and
   retain the source offset as transform diagnostics.
 - Recompute component side and authored vertical standoff after late owner
   recovery.
-- Correct the half-turn of a four-pad tactile-switch model when its exact owner,
-  footprint topology, and tilted source frame jointly establish that package
-  class.
+- Preserve authored component yaw; model-local axis normalization belongs to
+  the runtime that has access to the imported mesh envelope.
 - Decline ambiguous matches.
 
 ## Verification
 
-- Focused synthetic tests use obfuscated package identities and cover pad
-  centroid, corner origin, row origin, late standoff, ambiguity rejection, and
-  tactile-switch yaw.
+- Focused synthetic tests use obfuscated package identities and cover exact and
+  near pad centroids, corner origin, row origin, authored source anchors, late
+  standoff, ambiguity rejection, and preserved component yaw.
 - The full toolkit test suite and formatting check pass.
 - A read-only probe of the supplied PCB must show real component designators
-  for the affected placements, owner-centered corner/row models, recovered
-  top-side standoff, and corrected switch yaw.
+  for the affected placements, owner-centered corner/row models, preserved
+  authored anchors, recovered top-side standoff, and source-authored yaw.

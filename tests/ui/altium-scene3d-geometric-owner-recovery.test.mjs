@@ -150,6 +150,38 @@ test('geometric owner recovery preserves an authored pad-centroid anchor', () =>
     assert.equal(repaired.modelTransform.ownerAnchorOffsetMil, undefined)
 })
 
+test('geometric owner recovery preserves a near-centroid authored anchor', () => {
+    const component = buildComponent({
+        componentIndex: 2,
+        designator: 'J2',
+        x: 1200,
+        y: 1200,
+        description: 'Nine-pad surface connector'
+    })
+    const pads = [
+        buildPad(2, 1140, 1200),
+        buildPad(2, 1200, 1200),
+        buildPad(2, 1260, 1200),
+        buildPad(2, 1140, 1260),
+        buildPad(2, 1200, 1260),
+        buildPad(2, 1260, 1260)
+    ]
+    const placement = buildPlacement({
+        bodyPositionMil: { x: 1200, y: 1239 },
+        positionMil: { x: 700, y: 739, z: 40 }
+    })
+    const repaired = repair(
+        placement,
+        [component],
+        [buildBody(placement)],
+        pads
+    )
+
+    assert.equal(repaired.designator, 'J2')
+    assert.deepEqual(repaired.positionMil, { x: 700, y: 739, z: 40 })
+    assert.equal(repaired.modelTransform.ownerAnchorOffsetMil, undefined)
+})
+
 test('geometric owner recovery centers a proven model-corner origin', () => {
     const component = buildComponent({
         designator: 'X4',
@@ -280,7 +312,9 @@ test('geometric owner recovery uses height only with nearby footprint support', 
     )
 
     assert.equal(repaired.designator, 'J10')
-    assert.deepEqual(repaired.positionMil, { x: 3000, y: 3000, z: 40 })
+    assert.deepEqual(repaired.positionMil, { x: 2890, y: 2906, z: 40 })
+    assert.equal(repaired.modelTransform.ownerAnchorOffsetMil, undefined)
+    assert.equal(repaired.modelTransform.preserveSourceAnchor, true)
 })
 
 test('geometric owner recovery declines equally supported owners', () => {
@@ -357,7 +391,7 @@ test('geometric owner recovery rejects tied source-body rows', () => {
     assert.equal(repaired.designator, 'PKG_BODY')
 })
 
-test('geometric owner recovery corrects four-pad tactile-switch yaw', () => {
+test('geometric owner recovery preserves four-pad tactile-switch yaw', () => {
     const component = buildComponent({
         componentIndex: 12,
         designator: 'SW4',
@@ -391,10 +425,10 @@ test('geometric owner recovery corrects four-pad tactile-switch yaw', () => {
     )
 
     assert.equal(repaired.designator, 'SW4')
-    assert.equal(repaired.rotationDeg, 90)
+    assert.equal(repaired.rotationDeg, 270)
 })
 
-test('geometric owner recovery corrects a newly recovered tactile owner', () => {
+test('geometric owner recovery preserves a newly recovered tactile owner yaw', () => {
     const component = buildComponent({
         componentIndex: 13,
         designator: 'SW5',
@@ -427,10 +461,10 @@ test('geometric owner recovery corrects a newly recovered tactile owner', () => 
     )
 
     assert.equal(repaired.designator, 'SW5')
-    assert.equal(repaired.rotationDeg, 90)
+    assert.equal(repaired.rotationDeg, 270)
 })
 
-test('geometric owner recovery corrects rotated tactile topology', () => {
+test('geometric owner recovery preserves rotated tactile topology yaw', () => {
     const component = buildComponent({
         componentIndex: 15,
         designator: 'SW15',
@@ -472,7 +506,7 @@ test('geometric owner recovery corrects rotated tactile topology', () => {
         pads
     )
 
-    assert.equal(repaired.rotationDeg, 225)
+    assert.equal(repaired.rotationDeg, 45)
 })
 
 test('geometric owner recovery does not rotate generic four-pad switches', () => {

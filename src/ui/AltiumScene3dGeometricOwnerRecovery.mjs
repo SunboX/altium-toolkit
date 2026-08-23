@@ -13,6 +13,7 @@ export class AltiumScene3dGeometricOwnerRecovery {
     static #COMPONENT_INDEX_CELL_MIL = 500
     static #MINIMUM_SCORE = 12
     static #MINIMUM_SCORE_MARGIN = 4
+    static #PAD_CENTROID_TOLERANCE_MIL = 12
 
     /**
      * Applies geometry-backed owner recovery to final external placements.
@@ -108,14 +109,7 @@ export class AltiumScene3dGeometricOwnerRecovery {
         const currentOwner = context.componentsByDesignator.get(
             String(placement?.designator || '')
         )
-        if (currentOwner) {
-            return AltiumScene3dGeometricOwnerRecovery.#correctTactileYaw(
-                placement,
-                currentOwner,
-                body,
-                context.geometryByComponent.get(currentOwner)
-            )
-        }
+        if (currentOwner) return placement
 
         const match =
             AltiumScene3dGeometricOwnerRecovery.#resolveGeometricOwner(
@@ -125,17 +119,11 @@ export class AltiumScene3dGeometricOwnerRecovery {
             )
         if (!match) return placement
 
-        const recovered = AltiumScene3dGeometricOwnerRecovery.#withOwner(
+        return AltiumScene3dGeometricOwnerRecovery.#withOwner(
             placement,
             body,
             match,
             context.board
-        )
-        return AltiumScene3dGeometricOwnerRecovery.#correctTactileYaw(
-            recovered,
-            match.component,
-            body,
-            context.geometryByComponent.get(match.component)
         )
     }
 
@@ -329,7 +317,7 @@ export class AltiumScene3dGeometricOwnerRecovery {
 
         if (
             centroidDistance <=
-            AltiumScene3dGeometricOwnerRecovery.#ANCHOR_TOLERANCE_MIL
+            AltiumScene3dGeometricOwnerRecovery.#PAD_CENTROID_TOLERANCE_MIL
         ) {
             score = 24
             mode = 'pad-centroid'
@@ -570,7 +558,9 @@ export class AltiumScene3dGeometricOwnerRecovery {
         const component = match.component
         const mountSide =
             AltiumScene3dGeometricOwnerRecovery.#componentSide(component)
-        const preserveAnchor = match.mode === 'pad-centroid'
+        const preserveAnchor =
+            match.mode === 'pad-centroid' ||
+            match.mode === 'height-backed-origin'
         const offset = {
             x:
                 Number(placement?.bodyPositionMil?.x || 0) -
@@ -588,6 +578,10 @@ export class AltiumScene3dGeometricOwnerRecovery {
         const modelTransform = {
             ...(placement?.modelTransform || {}),
             dzMil: verticalOffset
+        }
+
+        if (match.mode === 'height-backed-origin') {
+            modelTransform.preserveSourceAnchor = true
         }
 
         if (!preserveAnchor) {
@@ -620,107 +614,6 @@ export class AltiumScene3dGeometricOwnerRecovery {
             },
             modelTransform
         }
-    }
-
-    /**
-     * Corrects the source-frame half-turn for a four-pad tactile switch.
-     * @param {object} placement External placement.
-     * @param {object} component Resolved owner.
-     * @param {object} body Source body.
-     * @param {object | null} geometry Precomputed owner pad geometry.
-     * @returns {object}
-     */
-    static #correctTactileYaw(placement, component, body, geometry) {
-        const identity = [
-            component?.designator,
-            component?.description,
-            component?.provenance?.footprintDescription
-        ]
-            .map((value) => String(value || ''))
-            .join(' ')
-        const sourceTilt = AltiumScene3dGeometricOwnerRecovery.#normalizeAngle(
-            body?.modelRotationDeg?.x
-        )
-        const currentYaw = AltiumScene3dGeometricOwnerRecovery.#normalizeAngle(
-            placement?.rotationDeg
-        )
-        const componentYaw =
-            AltiumScene3dGeometricOwnerRecovery.#normalizeAngle(
-                component?.rotation
-            )
-        const isTactileSwitch =
-            /(?:^|[^a-z0-9])(?:tact|tactile|pushbutton)(?:$|[^a-z0-9])/i.test(
-                identity
-            ) &&
-            AltiumScene3dGeometricOwnerRecovery.#hasTactileContactTopology(
-                geometry
-            )
-
-        if (
-            !isTactileSwitch ||
-            (sourceTilt !== 90 && sourceTilt !== 270) ||
-            currentYaw !== componentYaw
-        ) {
-            return placement
-        }
-
-        return {
-            ...placement,
-            rotationDeg: AltiumScene3dGeometricOwnerRecovery.#normalizeAngle(
-                currentYaw + 180
-            )
-        }
-    }
-
-    /**
-     * Detects a two-by-two tactile contact layout with two duplicated routed
-     * contact pairs aligned along one footprint axis.
-     * @param {object | null} geometry Precomputed owner pad geometry.
-     * @returns {boolean}
-     */
-    static #hasTactileContactTopology(geometry) {
-        if (
-            geometry?.pads?.length !== 4 ||
-            geometry.xCount !== 2 ||
-            geometry.yCount !== 2
-        ) {
-            return false
-        }
-
-        const groups = new Map()
-        for (const pad of geometry.localPads) {
-            const sourcePad = pad.source
-            const netName = String(sourcePad?.netName || '').trim()
-            const netIndex = sourcePad?.netIndex
-            const contactKey = netName
-                ? `name:${netName}`
-                : netIndex !== null &&
-                    netIndex !== undefined &&
-                    netIndex !== '' &&
-                    Number.isFinite(Number(netIndex))
-                  ? `index:${Number(netIndex)}`
-                  : ''
-            if (!contactKey) return false
-            groups.set(contactKey, [...(groups.get(contactKey) || []), pad])
-        }
-        if (
-            groups.size !== 2 ||
-            [...groups.values()].some((group) => group.length !== 2)
-        ) {
-            return false
-        }
-
-        return [...groups.values()].every((group) => {
-            const sameX =
-                AltiumScene3dGeometricOwnerRecovery.#distinctCoordinateCount(
-                    group.map((pad) => Number(pad?.x || 0))
-                ) === 1
-            const sameY =
-                AltiumScene3dGeometricOwnerRecovery.#distinctCoordinateCount(
-                    group.map((pad) => Number(pad?.y || 0))
-                ) === 1
-            return sameX || sameY
-        })
     }
 
     /**
