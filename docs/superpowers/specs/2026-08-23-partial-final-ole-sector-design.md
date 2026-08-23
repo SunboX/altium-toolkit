@@ -10,11 +10,12 @@ declared stream byte is present.
 
 ## Decision
 
-Keep structural sectors strict and recover only logical stream tails. Directory,
-FAT, DIFAT, and mini-FAT reads must still have complete sectors. A regular stream
-may read a partial final sector only when its declared byte length requires no
-byte beyond the physical input. The reader zero-fills only the unused remainder
-needed by its internal fixed-sector concatenation.
+Keep the immutable historical OLE reader unchanged and adapt only the convergence
+parser input. Directory, FAT, DIFAT, and mini-FAT sectors must still be physically
+complete. A regular stream may use a partial final sector only when its declared
+byte length requires no byte beyond the physical input. The convergence adapter
+then zero-fills only the unused remainder before invoking the strict native
+reader.
 
 This is preferred over unconditional padding because it rejects actual stream
 truncation. It is also preferred over an ECAD Forge loader workaround because
@@ -22,22 +23,24 @@ OLE integrity belongs to `altium-toolkit`.
 
 ## Data Flow
 
-1. Parse the OLE header without requiring total-file sector alignment.
-2. Resolve structural chains with full-sector availability requirements.
-3. Resolve a regular stream chain with its declared stream length.
+1. Detect a misaligned OLE input at the convergence parser boundary.
+2. Read its header, DIFAT, FAT, directory, and mini-FAT chains while requiring
+   every structural sector to exist in the original bytes.
+3. Resolve each regular directory or root stream with its declared stream length.
 4. For every sector in that chain, compute the logical bytes required from that
    sector and compare them with the physical bytes available.
-5. Reject when required bytes are missing; otherwise return the available bytes
-   and leave only unused tail padding zero-filled.
+5. Preserve the original buffer when required bytes are missing; otherwise pass
+   a zero-padded aligned copy to the unchanged native reader.
 
 Mini-stream entries remain protected by the root mini-stream's declared regular
 stream length.
 
 ## Error Handling
 
-Use the existing actionable corruption error when a structural sector is short
-or a declared stream byte is missing. Do not turn malformed FAT chains, directory
-chains, or genuinely truncated streams into successful parses.
+Preserve the original misaligned buffer when a structural sector is short, a
+chain is invalid, or a declared stream byte is missing, so the unchanged native
+reader emits its existing actionable corruption error. Do not turn malformed FAT
+chains, directory chains, or genuinely truncated streams into successful parses.
 
 ## Verification
 

@@ -4,7 +4,7 @@
 
 **Goal:** Parse OLE-backed Altium documents that omit only unused padding from the final sector while continuing to reject missing logical stream bytes.
 
-**Architecture:** Keep full-sector reads as the default for structural OLE data. Pass an expected logical byte length only for regular stream chains, validate physical availability per sector, and zero-fill solely the unused part of an otherwise complete logical stream tail.
+**Architecture:** Keep the immutable historical OLE reader unchanged. Add a convergence input normalizer that validates structural sectors and declared regular-stream bytes against the original physical length, then zero-fills solely the unused part of an otherwise complete logical stream tail.
 
 **Tech Stack:** JavaScript ES modules, Node.js test runner, npm, OLE Compound File Binary Format.
 
@@ -17,73 +17,75 @@
 
 ---
 
-### Task 1: Lock the recovery boundary with synthetic OLE tests
+### Task 1: Lock the convergence recovery boundary with synthetic OLE tests
 
 **Files:**
-- Modify: `tests/core/ole-compound-document.test.mjs`
+- Create: `tests/convergence-ole-tail-normalizer.test.mjs`
 
 **Interfaces:**
-- Consumes: `OleTestDocumentFactory.createDocumentBuffer()` and `OleCompoundDocument.fromArrayBuffer(arrayBuffer)`.
+- Consumes: a generated OLE buffer and `OleCompoundDocument.fromArrayBuffer(arrayBuffer)` as the unchanged strict reader.
 - Produces: regression coverage for recoverable missing padding and unrecoverable missing logical bytes.
 
 - [ ] **Step 1: Add a factory option for the standard stream's logical length**
 
-Extend the generated directory entry and standard-stream payload so one test can
-truncate only unused padding while another truncates declared data.
+Generate a compact OLE file whose FAT and directory sectors are complete and
+whose declared regular stream occupies the physical final sector.
 
 - [ ] **Step 2: Write the recoverable-tail test**
 
-Create a synthetic aligned document, declare the standard stream length as 13,
-slice the file after those 13 final-sector bytes, parse it, and assert
-`getStream('StandardStream')` returns `standard-data`.
+Create a synthetic aligned document, slice the file after the declared final
+stream bytes, normalize it, and assert the unchanged strict reader returns the
+exact stream.
 
 - [ ] **Step 3: Retain a genuine-truncation test**
 
-Slice one additional byte so only 12 of the declared 13 bytes remain and assert
-that reading `StandardStream` throws the existing sector-alignment corruption
-message.
+Slice one additional declared byte and assert normalization preserves the
+misaligned input so the unchanged strict reader retains its corruption error.
 
 - [ ] **Step 4: Run the focused test and verify RED**
 
-Run: `node --test tests/core/ole-compound-document.test.mjs`
+Run: `node --test tests/convergence-ole-tail-normalizer.test.mjs`
 
-Expected: the recoverable-tail test fails because construction still rejects the
-partial sector; the genuine-truncation assertion remains meaningful.
+Expected: FAIL because `AltiumOleInputTailNormalizer` does not exist.
 
-### Task 2: Implement bounded partial-sector reads
+### Task 2: Implement bounded convergence input normalization
 
 **Files:**
-- Modify: `src/core/ole/OleCompoundDocument.mjs`
-- Test: `tests/core/ole-compound-document.test.mjs`
+- Create: `src/convergence/AltiumOleInputTailNormalizer.mjs`
+- Modify: `src/convergence/AltiumDocumentBuilder.mjs`
+- Test: `tests/convergence-ole-tail-normalizer.test.mjs`
 
 **Interfaces:**
-- Consumes: regular sector ids, physical reader byte length, and optional declared stream byte length.
-- Produces: `#readRegularChain(startSectorId, expectedByteLength?)` with strict structural reads and bounded logical-stream tail recovery.
+- Consumes: one owned parser `ArrayBuffer` before the native decoder.
+- Produces: `AltiumOleInputTailNormalizer.normalize(arrayBuffer)` with strict structural validation and bounded logical-stream tail recovery.
 
-- [ ] **Step 1: Remove the blanket total-file alignment rejection**
+- [ ] **Step 1: Preserve the historical native reader**
 
-Retain the actionable corruption message as a shared private error constructor or
-throw helper used by availability checks.
+Do not modify `src/core/ole/OleCompoundDocument.mjs` or its immutable source
+manifest. Run the canonical performance contract to prove the baseline remains
+byte-exact.
 
 - [ ] **Step 2: Validate required bytes per sector**
 
-For structural reads, require the full sector. For a stream chain, require
+In the convergence normalizer, require full DIFAT, FAT, directory, and mini-FAT
+sectors. For a regular stream chain, require
 `min(sectorSize, max(0, expectedByteLength - logicalOffset))` from each sector.
-Reject if the physical buffer contains fewer bytes than required.
+Preserve the original input if the physical buffer contains fewer bytes.
 
 - [ ] **Step 3: Zero-fill only unused tail padding**
 
-Read the available prefix of a permitted partial final sector into the existing
-fixed-size concatenation buffer. Do not synthesize any declared stream byte.
+Copy a proven complete logical input into an aligned zero-filled buffer. Do not
+synthesize any declared stream byte.
 
-- [ ] **Step 4: Pass declared sizes at stream boundaries**
+- [ ] **Step 4: Normalize before the native parser boundary**
 
-Pass the root mini-stream size and regular entry stream size into
-`#readRegularChain`; leave FAT, DIFAT, directory, and mini-FAT calls strict.
+Invoke the normalizer from `AltiumDocumentBuilder.decode` after obtaining the
+owned input buffer and before the unchanged `AltiumParser` call.
 
 - [ ] **Step 5: Run the focused test and verify GREEN**
 
-Run: `node --test tests/core/ole-compound-document.test.mjs`
+Run: `node --test tests/convergence-ole-tail-normalizer.test.mjs` and
+`node --test tests/canonical-performance-contract.test.mjs`
 
 Expected: all focused OLE tests pass.
 

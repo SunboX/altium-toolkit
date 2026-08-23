@@ -7,6 +7,7 @@ import { AltiumParser } from '../core/altium/AltiumParser.mjs'
 import { CircuitJsonModelAdapter } from '../core/circuit-json/CircuitJsonModelAdapter.mjs'
 import { CircuitJsonSchematicImageProjection } from '../core/circuit-json/CircuitJsonSchematicImageProjection.mjs'
 import { AltiumCircuitJsonProjection } from './AltiumCircuitJsonProjection.mjs'
+import { AltiumOleInputTailNormalizer } from './AltiumOleInputTailNormalizer.mjs'
 import { AltiumSchematicImageNormalizer } from './AltiumSchematicImageNormalizer.mjs'
 import { ParserInput } from './ParserInput.mjs'
 
@@ -20,7 +21,9 @@ export class AltiumDocumentBuilder {
      * @returns {{ native: Record<string, any>, model: object[], nativeSidecarCount: number }} Decoded source data.
      */
     static decode(normalized) {
-        const buffer = ParserInput.arrayBuffer(normalized.input.data)
+        const buffer = AltiumOleInputTailNormalizer.normalize(
+            ParserInput.arrayBuffer(normalized.input.data)
+        )
         const native = AltiumSchematicImageNormalizer.normalize(
             AltiumParser.parseArrayBufferToRendererModel(
                 normalized.input.fileName,
