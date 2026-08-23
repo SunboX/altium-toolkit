@@ -43,16 +43,19 @@ height contract remains unchanged.
 The converged `PcbScene3dBuilder` delegates scene construction to the preserved
 native builder, then corrects bottom placements only when signed bounds show
 that the source solid extends predominantly into negative Z and the associated
-source body carries an authored X-axis half-turn. `src/extensions.mjs` exports
-the converged classes under the existing public names.
+source body carries an authored X-axis half-turn. The converged
+`PcbScene3dScenePreparator` composes the same registry and builder for worker
+preprocessing. `src/extensions.mjs` exports the converged classes under the
+existing public names.
 
 ## Data Flow
 
 1. The parser supplies the embedded STEP payload and authored model transform.
 2. The converged registry delegates native matching, parses Cartesian points,
    converts signed extents to mils, and adds `sourceBoundsMil`.
-3. The historical builder creates and repairs the scene unchanged.
-4. The converged builder compares negative and positive source-Z extensions. A
+3. Direct and worker-prepared scenes both flow through the converged builder.
+4. The historical builder creates and repairs the scene unchanged, then the
+   converged builder compares negative and positive source-Z extensions. A
    dominant negative extension restores the authored half-turn; otherwise the
    historical result remains unchanged.
 5. The format-neutral viewer consumes the final scene description without any

@@ -78,6 +78,7 @@ git commit -m "fix: preserve negative-Z bottom STEP orientation"
 
 **Files:**
 - Add: `src/convergence/PcbScene3dBuilder.mjs`
+- Add: `src/convergence/PcbScene3dScenePreparator.mjs`
 - Modify: `src/extensions.mjs`
 - Test: `tests/ui/pcb-scene-builder-bottom-half-turn.test.mjs:27-196`
 
@@ -164,7 +165,9 @@ Expected: the negative-Z surface-mount case FAILS with X=0 instead of X=-180.
 
 Delegate to the historical builder, then structurally restore X=-180 for a
 bottom placement only when its resolved model has dominant negative-Z signed
-bounds and its matched source body carries an authored X half-turn.
+bounds and its matched source body carries an authored X half-turn. Export a
+converged async scene preparator so worker preprocessing composes the same
+registry and builder.
 
 - [x] **Step 4: Run both focused suites and verify GREEN**
 

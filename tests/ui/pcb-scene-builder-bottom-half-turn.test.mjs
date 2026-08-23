@@ -4,7 +4,10 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbScene3dBuilder } from '../../src/extensions.mjs'
+import {
+    PcbScene3dBuilder,
+    PcbScene3dScenePreparator
+} from '../../src/extensions.mjs'
 
 /**
  * Builds a small rectangular board outline for bottom-half-turn tests.
@@ -179,6 +182,42 @@ test('PcbScene3dBuilder preserves negative-Z bottom source half-turns', () => {
 
     assert.equal(scene.externalPlacements.length, 1)
     assert.equal(scene.externalPlacements[0].designator, 'U5')
+    assert.deepEqual(scene.externalPlacements[0].modelTransform.rotationDeg, {
+        x: -180,
+        y: -0,
+        z: 0
+    })
+})
+
+/**
+ * Verifies async scene preprocessing uses the same converged negative-Z
+ * orientation policy as direct scene construction.
+ */
+test('PcbScene3dScenePreparator preserves negative-Z bottom source half-turns', async () => {
+    const sourceBoundsMil = {
+        minX: -60,
+        maxX: 60,
+        minY: -45,
+        maxY: 45,
+        minZ: -95,
+        maxZ: 5
+    }
+    const documentModel = buildBottomBodyDocument({
+        componentIndex: 6,
+        holeDiameter: 0,
+        designator: 'U6',
+        pattern: 'SURFACE_DEVICE',
+        source: 'GENERIC/SURFACE_DEVICE',
+        modelName: 'prepared-body.step',
+        modelId: '{MODEL-PREPARED-NEGATIVE-Z}',
+        modelRotationDeg: { x: 180, y: 0, z: 180 }
+    })
+
+    const scene = await PcbScene3dScenePreparator.prepare(documentModel, {
+        modelRegistry: buildModelRegistry(sourceBoundsMil)
+    })
+
+    assert.equal(scene.externalPlacements.length, 1)
     assert.deepEqual(scene.externalPlacements[0].modelTransform.rotationDeg, {
         x: -180,
         y: -0,
