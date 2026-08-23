@@ -31,12 +31,17 @@ repository fixtures or production rules.
 
 ## Considered Approaches
 
-### Group primitives by authored owner
+### Align primitives by authored owner at the convergence boundary
 
-Use the existing lower-right footer predicate only to identify a footer owner,
-then classify every primitive family with that owner as native footer chrome.
-This preserves the authored grouping contract and keeps the current sheet and
-footer detection behavior.
+Use the existing lower-right footer predicate to identify footer owners and
+derive the historical footer group's single right-edge translation. Before the
+preserved renderer runs, pretranslate only the non-seed primitives belonging
+to those owners. Seed primitives remain unchanged and receive the same offset
+from the historical native-footer SVG group.
+
+This preserves the authored grouping contract and the frozen historical
+renderer while giving every member of a seeded owner the same effective
+translation.
 
 This is the approved approach because it derives alignment from structural
 ownership rather than sample dimensions or text.
@@ -55,19 +60,22 @@ rejected because native-template fidelity is required.
 
 ## Approved Behavior
 
-`SchematicNativeFooterPartitioner` must partition promoted-sheet footer
-graphics in two passes:
+The convergence renderer must prepare promoted-sheet footer graphics in two
+passes before delegating to the preserved historical renderer:
 
 1. Apply the existing promoted-sheet and lower-right footer predicate to find
    structurally qualifying primitives with non-empty owner indexes.
-2. Collect the qualifying owner indexes.
-3. Classify every line, polygon, rectangle, rounded rectangle, ellipse, arc,
-   bezier, pie, IEEE symbol, text, and image with one of those owners into the
-   native footer.
-4. Leave ownerless primitives and primitives belonging to other owners in
-   their existing coordinate space.
-5. Compute footer bounds from the complete classified owner groups so the
-   existing right-edge translation is derived from the complete footer.
+2. Collect the qualifying owner indexes and the maximum horizontal bound of
+   all qualifying seed primitives.
+3. Derive the exact single translation used by the historical footer group
+   from the promoted sheet width, native footer margin, and seed maximum.
+4. Pretranslate every non-seed line, polygon, rectangle, rounded rectangle,
+   ellipse, arc, bezier, pie, IEEE symbol, text, and image belonging to a
+   qualifying owner by that shared offset.
+5. Leave seed primitives, ownerless primitives, and primitives belonging to
+   other owners unchanged.
+6. Delegate the adapted render-only view to the preserved historical renderer,
+   which continues to partition and translate seed primitives normally.
 
 Owner indexes must be normalized as trimmed strings. The rule must not match
 file names, project identifiers, vendor text, image data, labels, or fixed
@@ -75,21 +83,24 @@ sample coordinates.
 
 ## Ownership and Scope
 
-The correction belongs in `altium-toolkit`, which owns Altium schematic
-parsing and deterministic SVG rendering. ECAD Forge must not add an app-side
-SVG translation, CSS override, or document-specific adapter.
+The correction belongs in the `altium-toolkit` convergence layer, which owns
+Altium schematic parsing and deterministic SVG rendering. ECAD Forge must not
+add an app-side SVG translation, CSS override, or document-specific adapter.
 
-Only the native-footer partitioning behavior and its renderer regression test
-are in scope. The app's existing uncommitted PCB and release work must remain
-untouched.
+The historical `src/ui` renderer and partitioner are frozen compatibility
+sources and must remain byte-for-byte unchanged. Only the convergence adapter,
+its renderer integration, and its regression test are in scope. The app's
+existing uncommitted PCB and release work must remain untouched.
 
 ## Testing
 
-A repository-owned fake promoted sheet will contain one footer owner whose
-lower primitive qualifies under the existing predicate and whose upper line,
-text, and image extend beyond the cutoff. The observable SVG must place the
-entire owner group inside one translated `schematic-native-footer` group and
-must not leave those upper primitives in `schematic-content`.
+A repository-owned fake promoted sheet will contain a footer owner whose lower
+primitive qualifies under the existing predicate and whose upper line, text,
+and image extend beyond the cutoff. The observable SVG must show the qualifying
+seed under the native footer group transform and the remaining owner members
+pretranslated by the same amount. A second seeded owner verifies that all
+owners receive the one shared transform computed by the historical renderer.
+Unrelated owners must remain unchanged.
 
 The focused test must fail before production changes and pass after them. The
 complete toolkit test and formatting checks must pass. The supplied live route

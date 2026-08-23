@@ -3,6 +3,7 @@
 
 import { SchematicSvgRenderer as LegacySchematicSvgRenderer } from '../ui/SchematicSvgRenderer.mjs'
 import { AltiumSchematicImageNormalizer } from './AltiumSchematicImageNormalizer.mjs'
+import { AltiumSchematicNativeFooterOwnerAligner } from './AltiumSchematicNativeFooterOwnerAligner.mjs'
 
 /**
  * Renders native Altium schematic models through the preserved historical
@@ -20,8 +21,10 @@ export class SchematicSvgRenderer {
     static render(documentModel, options = {}) {
         const normalized =
             AltiumSchematicImageNormalizer.normalize(documentModel)
+        const aligned =
+            AltiumSchematicNativeFooterOwnerAligner.align(normalized)
         return LegacySchematicSvgRenderer.render(
-            SchematicSvgRenderer.#visibilityAwareDocument(normalized),
+            SchematicSvgRenderer.#visibilityAwareDocument(aligned),
             options
         )
     }
