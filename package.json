@@ -1,6 +1,6 @@
 {
     "name": "altium-toolkit",
-    "version": "1.4.9",
+    "version": "1.4.10",
     "description": "Altium document parsing and non-interactive rendering utilities",
     "keywords": [
         "altium",
