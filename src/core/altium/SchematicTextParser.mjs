@@ -25,11 +25,9 @@ export class SchematicTextParser {
             }
 
             const name = ParserUtils.getField(record.fields, 'Name').trim()
-            const value =
-                ParserUtils.getDisplayText(record.fields) ||
-                ParserUtils.getField(record.fields, 'Text')
+            const value = ParserUtils.getDisplayText(record.fields)
 
-            if (!name || !value) {
+            if (!name || !value || value === '*') {
                 continue
             }
 
@@ -139,7 +137,6 @@ export class SchematicTextParser {
      * @param {{ width: number, marginWidth: number, titleBlockOn?: boolean }} sheet
      * @param {Record<string, { size: number, family: string, bold: boolean, italic?: boolean, rotation: number }>} fonts
      * @param {Map<string, Record<string, string>>} [ownerMetadata]
-     * @param {Set<string>} [footerOwnerIndexes]
      * @returns {{ x: number, y: number, text: string, color: string, hidden: boolean, name: string, ownerIndex?: string, recordType: string, style: number, fontSize: number, fontFamily: string, fontWeight: number, fontStyle?: string, rotation: number, sourceOrientation?: number, isMirrored?: boolean, anchor: 'start' | 'middle' | 'end', verticalAnchor?: 'middle' | 'top', powerPortDirection?: 'up' | 'down' | 'left' | 'right', cornerX?: number, cornerY?: number, fill?: string, borderColor?: string, isSolid?: boolean, showBorder?: boolean, textMargin?: number, noteLines?: string[] } | null}
      */
     static normalizeSchematicTextRecord(
@@ -147,8 +144,7 @@ export class SchematicTextParser {
         metadata,
         sheet,
         fonts,
-        ownerMetadata = new Map(),
-        footerOwnerIndexes = new Set()
+        ownerMetadata = new Map()
     ) {
         const x = ParserUtils.parseNumericField(fields, 'Location.X')
         const y = ParserUtils.parseNumericField(fields, 'Location.Y')
@@ -157,12 +153,10 @@ export class SchematicTextParser {
         const rawText = ParserUtils.getDisplayText(fields)
         const recordType = ParserUtils.getField(fields, 'RECORD')
         const ownerIndex = ParserUtils.getField(fields, 'OwnerIndex')
-        const isFooterText =
-            SchematicTextParser.isTitleBlockFooterRecord(
-                fields,
-                sheet.width
-            ) || Boolean(ownerIndex && footerOwnerIndexes.has(ownerIndex))
-        const textMetadata = isFooterText
+        const textMetadata = SchematicTextParser.isTitleBlockFooterRecord(
+            fields,
+            sheet.width
+        )
             ? metadata
             : SchematicTextParser.#resolveSchematicTextMetadata(
                   ownerIndex,
@@ -185,8 +179,7 @@ export class SchematicTextParser {
                 name,
                 rawText,
                 textRuns.text,
-                sheet,
-                isFooterText
+                sheet
             )
         ) {
             return null
@@ -300,28 +293,6 @@ export class SchematicTextParser {
     }
 
     /**
-     * Collects owner indexes whose text records form one native footer group.
-     * @param {{ fields: Record<string, string | string[]> }[]} records
-     * @param {number} sheetWidth
-     * @returns {Set<string>}
-     */
-    static collectTitleBlockFooterOwners(records, sheetWidth) {
-        return new Set(
-            (records || [])
-                .filter((record) =>
-                    SchematicTitleBlockParser.isFooterRecord(
-                        record.fields,
-                        sheetWidth
-                    )
-                )
-                .map((record) =>
-                    ParserUtils.getField(record.fields, 'OwnerIndex')
-                )
-                .filter(Boolean)
-        )
-    }
-
-    /**
      * Resolves visible title-block placeholders from hidden sheet metadata.
      * @param {string} text
      * @param {Record<string, string>} metadata
@@ -359,17 +330,9 @@ export class SchematicTextParser {
      * @param {string} rawText
      * @param {string} text
      * @param {{ width: number, marginWidth: number, titleBlockOn?: boolean }} sheet
-     * @param {boolean} [isFooterText]
      * @returns {boolean}
      */
-    static #shouldSkipSchematicText(
-        fields,
-        name,
-        rawText,
-        text,
-        sheet,
-        isFooterText = false
-    ) {
+    static #shouldSkipSchematicText(fields, name, rawText, text, sheet) {
         const normalizedName = String(name || '')
             .trim()
             .toLowerCase()
@@ -393,8 +356,7 @@ export class SchematicTextParser {
 
         if (nonDrawableNames.has(normalizedName)) return true
         if (/uniqueid$/i.test(normalizedName)) return true
-        if (!normalizedText) return true
-        if (normalizedText === '*' && !isFooterText) return true
+        if (!normalizedText || normalizedText === '*') return true
         if (
             sheet.titleBlockOn &&
             SchematicTextParser.isTitleBlockFooterRecord(fields, sheet.width)

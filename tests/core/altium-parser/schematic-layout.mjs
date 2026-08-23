@@ -145,41 +145,6 @@ test('parseAltiumArrayBuffer derives native landscape template dimensions', () =
 })
 
 /**
- * Verifies an embedded standard template that reaches its stored frame edge
- * keeps that complete native frame even when the actual circuit is sparse.
- */
-test('parseAltiumArrayBuffer preserves a sparse embedded native template frame', () => {
-    const arrayBuffer = new TextEncoder().encode(
-        '|HEADER=Schematic Document' +
-            '|RECORD=31|SheetStyle=1|CustomX=1550|CustomY=1110' +
-            '|VisibleGridSize=10|SnapGridSize=5|BorderOn=T|TitleBlockOn=F' +
-            '|CustomMarginWidth=20|CustomXZones=10|CustomYZones=4' +
-            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
-            '|TemplateFileName=C:\\Templates\\A3_OBSCURA.SchDot' +
-            '|RECORD=6|OwnerIndex=1|Location.X=1160|Location.Y=40' +
-            '|Corner.X=1530|Corner.Y=40|LineWidth=1|Color=128' +
-            '|RECORD=6|OwnerIndex=1|Location.X=1530|Location.Y=40' +
-            '|Corner.X=1530|Corner.Y=180|LineWidth=1|Color=128' +
-            '|RECORD=13|Location.X=200|Location.Y=700' +
-            '|Corner.X=900|Corner.Y=790|LineWidth=1|Color=128'
-    ).buffer
-    const documentModel = AltiumParser.parseArrayBuffer(
-        'sparse-native-frame.SchDoc',
-        arrayBuffer
-    )
-    const markup = SchematicSvgRenderer.render(documentModel)
-
-    assert.equal(documentModel.schematic.sheet.paperSize, 'A3')
-    assert.equal(documentModel.schematic.sheet.width, 1550)
-    assert.equal(documentModel.schematic.sheet.height, 1110)
-    assert.equal(documentModel.schematic.sheet.sourceWidth, 1550)
-    assert.equal(documentModel.schematic.sheet.sourceHeight, 1110)
-    assert.equal(documentModel.schematic.sheet.xZones, 8)
-    assert.equal(documentModel.schematic.sheet.yZones, 4)
-    assert.match(markup, /viewBox="0 0 1550 1110"/u)
-})
-
-/**
  * Verifies native footer linework that reaches the recovered custom sheet
  * edge does not receive an extra right margin during sheet-width inference.
  */

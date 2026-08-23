@@ -4,6 +4,8 @@
 import { SchematicSvgRenderer as LegacySchematicSvgRenderer } from '../ui/SchematicSvgRenderer.mjs'
 import { AltiumSchematicImageNormalizer } from './AltiumSchematicImageNormalizer.mjs'
 import { AltiumSchematicNativeFooterOwnerAligner } from './AltiumSchematicNativeFooterOwnerAligner.mjs'
+import { AltiumSchematicFidelityNormalizer } from './AltiumSchematicFidelityNormalizer.mjs'
+import { SchematicHarnessRenderer } from '../ui/SchematicHarnessRenderer.mjs'
 
 /**
  * Renders native Altium schematic models through the preserved historical
@@ -21,11 +23,41 @@ export class SchematicSvgRenderer {
     static render(documentModel, options = {}) {
         const normalized =
             AltiumSchematicImageNormalizer.normalize(documentModel)
+        const fidelityNormalized =
+            AltiumSchematicFidelityNormalizer.normalize(normalized)
         const aligned =
-            AltiumSchematicNativeFooterOwnerAligner.align(normalized)
-        return LegacySchematicSvgRenderer.render(
-            SchematicSvgRenderer.#visibilityAwareDocument(aligned),
+            AltiumSchematicNativeFooterOwnerAligner.align(fidelityNormalized)
+        const renderDocument =
+            SchematicSvgRenderer.#visibilityAwareDocument(aligned)
+        const markup = LegacySchematicSvgRenderer.render(
+            renderDocument,
             options
+        )
+
+        return SchematicSvgRenderer.#injectHarnessMarkup(markup, renderDocument)
+    }
+
+    /**
+     * Inserts first-class harness markup into the preserved SVG hierarchy.
+     * @param {string} markup Historical schematic SVG markup.
+     * @param {Record<string, any>} documentModel Fidelity-normalized document.
+     * @returns {string} SVG markup with harness primitives.
+     */
+    static #injectHarnessMarkup(markup, documentModel) {
+        if (markup.includes('class="schematic-harnesses"')) return markup
+
+        const schematic = documentModel?.schematic
+        const harnessMarkup = SchematicHarnessRenderer.buildMarkup(
+            schematic?.harnesses,
+            Number(schematic?.sheet?.height || 0),
+            schematic?.sheet || {}
+        )
+        if (!harnessMarkup) return markup
+
+        const marker = '<g class="schematic-images">'
+        return markup.replace(
+            marker,
+            '<g class="schematic-harnesses">' + harnessMarkup + '</g>' + marker
         )
     }
 

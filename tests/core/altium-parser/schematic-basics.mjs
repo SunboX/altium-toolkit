@@ -337,7 +337,7 @@ test('parseAltiumArrayBuffer exposes harness connector model', () => {
                         recordKey: 'schematic-record-2',
                         name: 'CTRL_A',
                         side: 'left',
-                        distanceFromTop: 15,
+                        distanceFromTop: 150,
                         harnessType: 'CTRL_GROUP',
                         textStyle: 'short',
                         textColor: '#ff0000'
@@ -375,52 +375,6 @@ test('parseAltiumArrayBuffer exposes harness connector model', () => {
             }
         ]
     })
-    assert.equal(
-        documentModel.schematic.texts.some(
-            (text) => text.recordType === '217'
-        ),
-        false
-    )
-})
-
-/**
- * Verifies additional-list harness children attach by record structure when
- * the source format omits explicit owner indexes.
- */
-test('parseAltiumArrayBuffer attaches implicit harness additional-list children', () => {
-    const arrayBuffer = new TextEncoder().encode(
-        '|HEADER=Schematic Document' +
-            '|RECORD=31|CustomX=300|CustomY=180|VisibleGridSize=10|SnapGridSize=5' +
-            '|BorderOn=F|TitleBlockOn=F|CustomMarginWidth=10|CustomXZones=6|CustomYZones=4' +
-            '|FontIdCount=1|Size1=10|FontName1=Times New Roman|Bold1=F|Rotation1=0' +
-            '|RECORD=215|Location.X=40|Location.Y=120|XSize=70|YSize=40' +
-            '|PrimaryConnectionPosition=20|LineWidth=1|Color=128|AreaColor=16777215' +
-            '|RECORD=216|OwnerIndexAdditionalList=T|Name=DATA_P|Side=1|DistanceFromTop=1' +
-            '|HarnessType=DATA_BUS|TextStyle=Full|TextColor=255' +
-            '|RECORD=216|OwnerIndexAdditionalList=T|Name=DATA_N|Side=1|DistanceFromTop=4' +
-            '|HarnessType=DATA_BUS|TextStyle=Full|TextColor=255' +
-            '|RECORD=217|OwnerIndexAdditionalList=T|Location.X=40|Location.Y=130' +
-            '|Text=DATA_BUS|Color=8388608' +
-            '|RECORD=218|LocationCount=2|X1=10|Y1=100|X2=40|Y2=100' +
-            '|Color=15254943|LineWidth=2'
-    ).buffer
-    const documentModel = AltiumParser.parseArrayBuffer(
-        'implicit-harness-children.SchDoc',
-        arrayBuffer
-    )
-    const [connector] = documentModel.schematic.harnesses.connectors
-
-    assert.deepEqual(
-        connector.entries.map((entry) => ({
-            name: entry.name,
-            distanceFromTop: entry.distanceFromTop
-        })),
-        [
-            { name: 'DATA_P', distanceFromTop: 10 },
-            { name: 'DATA_N', distanceFromTop: 40 }
-        ]
-    )
-    assert.equal(connector.typeLabel.text, 'DATA_BUS')
 })
 
 /**

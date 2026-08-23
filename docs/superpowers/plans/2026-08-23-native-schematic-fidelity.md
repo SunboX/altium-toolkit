@@ -4,7 +4,9 @@
 
 **Goal:** Restore authored schematic placement and missing native content while preserving the ECAD Forge color scheme and canvas-border layout.
 
-**Architecture:** The Altium parser keeps structurally proven native template dimensions, resolves footer parameters by owner group, and recovers additional-list harness ownership. Focused renderer helpers emit harness markup through existing theme variables and correct right-side rotated owner-text columns without changing sheet chrome.
+**Architecture:** The frozen Altium parser and historical renderer remain byte-identical. The convergence normalizer uses the native ownership sidecar to restore structurally proven template dimensions, footer parameters, additional-list harness ownership, and rotated owner-text columns. Focused renderer helpers emit harness markup through existing theme variables without changing sheet chrome.
+
+**Implementation correction:** Repository verification showed that the initial task file targets are part of the immutable v1.1.41 source manifest. The completed implementation therefore routes Tasks 1-5 through `src/convergence/AltiumSchematicFidelityNormalizer.mjs`, `src/convergence/SchematicSvgRenderer.mjs`, and focused new UI helpers, with coverage in `tests/convergence-schematic-fidelity.test.mjs`.
 
 **Tech Stack:** JavaScript ES modules, Node.js test runner, SVG, npm.
 

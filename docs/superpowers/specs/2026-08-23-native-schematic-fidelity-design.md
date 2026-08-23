@@ -31,37 +31,38 @@ structure rather than a file name, template vendor, label, or designator.
 
 ### Repair the final SVG in ECAD Forge
 
-This is rejected because the defects belong to the parser and renderer model.
-An app-side adapter would duplicate Altium semantics and leave every other
-toolkit consumer incorrect.
+This is rejected because the defects belong to the toolkit rendering model.
+An ECAD Forge adapter would duplicate Altium semantics and leave every other
+toolkit consumer incorrect. The toolkit's frozen historical parser and
+renderer remain byte-identical; the repair belongs to its convergence layer.
 
 ## Architecture
 
 ### Native template canvas
 
-`AltiumLayoutParser` will distinguish an explicit standard-template coordinate
-frame from a generic sparse custom page. When `SheetStyle=1`, the template name
-identifies an ISO size, the stored positive dimensions use the same orientation,
-and recovered drawable bounds fit inside those dimensions, the stored
-dimensions are the native frame. They remain `width`, `height`, `sourceWidth`,
-and `sourceHeight`. Sparse content must never shorten such a frame.
+`AltiumSchematicFidelityNormalizer` distinguishes an explicit
+standard-template coordinate frame from a generic sparse custom page by using
+the native ownership sidecar. When `SheetStyle=1`, the template identifies an
+ISO size, the stored positive dimensions use the same orientation, and owned
+chrome reaches the stored frame edge without overflowing it, those dimensions
+become the render frame. Sparse content must never shorten such a frame.
 
 This rule preserves arbitrary valid template frames. It does not match template
 paths or project names beyond the existing structural ISO-size extraction.
 
 ### Footer parameter resolution
 
-`SchematicTextParser` will identify a native footer owner from seeded lower
-footer records, then treat every visible text record with that owner as footer
-text. All such placeholders resolve against sheet metadata, including address
-and approval rows above the historical `y <= 100` band. Metadata values of `*`
-remain drawable for authored footer cells instead of being discarded as empty.
+The convergence normalizer identifies a native footer owner from seeded lower
+footer records in the ownership sidecar, then treats every visible text record
+with that owner as footer text. All such placeholders resolve against raw sheet
+metadata, including address and approval rows above the historical `y <= 100`
+band. Metadata values of `*` remain drawable for authored footer cells.
 
 ### Harness parsing and rendering
 
-`SchematicHarnessParser` will attach record 216 entries and record 217 type
+The convergence normalizer attaches record 216 entries and record 217 type
 labels to a connector when their `OwnerIndexAdditionalList` flag is present and
-they form the adjacent additional-stream group following record 215. Explicit
+they form the adjacent ownership-sidecar group following record 215. Explicit
 owner indices remain authoritative.
 
 A focused `SchematicHarnessRenderer` will render:
@@ -96,9 +97,10 @@ chrome geometry, CSS variables, palette rules, or existing connector fills.
 ## Data Flow
 
 1. The OLE stream extractor supplies printable schematic records.
-2. The parser resolves the native sheet frame and normalized primitive models.
-3. Footer ownership and additional-list harness ownership are recovered from
-   structural adjacency and owner seeds.
+2. The frozen parser produces its historical model plus the native ownership
+   sidecar.
+3. The convergence normalizer resolves the native frame, footer ownership, and
+   additional-list harness ownership from structural adjacency and owner seeds.
 4. The convergence renderer receives the normalized model and emits native
    sheet chrome through the unchanged border renderer, plus ordinary schematic
    primitives, corrected owner-text columns, and themed harness markup in

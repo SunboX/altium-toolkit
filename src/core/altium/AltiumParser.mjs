@@ -70,7 +70,6 @@ const {
     stripExtension
 } = ParserUtils
 const {
-    collectTitleBlockFooterOwners,
     extractSchematicFonts,
     extractSchematicFontDiagnostics,
     extractSchematicMetadata,
@@ -319,15 +318,13 @@ export class AltiumParser {
                 activeMultipartOwnerParts
             )
         )
-        const drawableTextRecords = textRecords.filter(
-            (record) =>
-                getField(record.fields, 'RECORD') !== '217' &&
-                AltiumParser.#isDrawableSchematicRecord(
-                    record.fields,
-                    ownersWithImplicitDisplayMode,
-                    activeOwnerDisplayModes,
-                    activeMultipartOwnerParts
-                )
+        const drawableTextRecords = textRecords.filter((record) =>
+            AltiumParser.#isDrawableSchematicRecord(
+                record.fields,
+                ownersWithImplicitDisplayMode,
+                activeOwnerDisplayModes,
+                activeMultipartOwnerParts
+            )
         )
         const lineRecords = records.filter(
             (record) =>
@@ -509,10 +506,6 @@ export class AltiumParser {
                 schematicFonts
             )
         }
-        const footerOwnerIndexes = collectTitleBlockFooterOwners(
-            textRecords,
-            sheet.width
-        )
 
         let lines = [
             ...lineRecords.map((record, index) => ({
@@ -650,8 +643,7 @@ export class AltiumParser {
                     metadataTexts,
                     sheet,
                     schematicFonts,
-                    ownerMetadataTexts,
-                    footerOwnerIndexes
+                    ownerMetadataTexts
                 )
             )
             .filter(Boolean)
@@ -1499,7 +1491,7 @@ export class AltiumParser {
      * @returns {boolean}
      */
     static #hasDisplayText(fields) {
-        return Boolean(getDisplayText(fields) || getField(fields, 'Text'))
+        return Boolean(getDisplayText(fields))
     }
 
     /**

@@ -8,7 +8,7 @@
 export class SchematicRotatedOwnerTextPlacement {
     /**
      * Resolves the horizontal baseline for one rotated owner annotation.
-     * @param {{ ownerIndex?: string, rotation?: number }} text
+     * @param {{ ownerIndex?: string, recordType?: string, rotation?: number }} text
      * @param {number} sourceX
      * @param {number} fontSize
      * @param {Map<string, { minX: number, minY: number, maxX: number, maxY: number }>} ownerBodyBounds
@@ -23,6 +23,7 @@ export class SchematicRotatedOwnerTextPlacement {
         )
 
         if (
+            text?.recordType !== '41' ||
             !ownerIndex ||
             (rotation !== 90 && rotation !== 270) ||
             !Number.isFinite(numericX) ||
