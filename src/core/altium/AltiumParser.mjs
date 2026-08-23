@@ -319,13 +319,15 @@ export class AltiumParser {
                 activeMultipartOwnerParts
             )
         )
-        const drawableTextRecords = textRecords.filter((record) =>
-            AltiumParser.#isDrawableSchematicRecord(
-                record.fields,
-                ownersWithImplicitDisplayMode,
-                activeOwnerDisplayModes,
-                activeMultipartOwnerParts
-            )
+        const drawableTextRecords = textRecords.filter(
+            (record) =>
+                getField(record.fields, 'RECORD') !== '217' &&
+                AltiumParser.#isDrawableSchematicRecord(
+                    record.fields,
+                    ownersWithImplicitDisplayMode,
+                    activeOwnerDisplayModes,
+                    activeMultipartOwnerParts
+                )
         )
         const lineRecords = records.filter(
             (record) =>

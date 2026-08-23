@@ -21,6 +21,7 @@ import { SchematicSheetSymbolRenderer } from './SchematicSheetSymbolRenderer.mjs
 import { SchematicImageRenderer } from './SchematicImageRenderer.mjs'
 import { SchematicNativeFooterPartitioner } from './SchematicNativeFooterPartitioner.mjs'
 import { SchematicOwnerPinMarkerLineThemer } from './SchematicOwnerPinMarkerLineThemer.mjs'
+import { SchematicHarnessRenderer } from './SchematicHarnessRenderer.mjs'
 import { TextGeometrySidecarBuilder } from './TextGeometrySidecarBuilder.mjs'
 import { SchematicRenderOpsSidecarBuilder } from './SchematicRenderOpsSidecarBuilder.mjs'
 import { SchematicProjectParameterResolver } from '../core/altium/SchematicProjectParameterResolver.mjs'
@@ -102,6 +103,7 @@ export class SchematicSvgRenderer {
         const authoredJunctions = (schematic.junctions || []).slice(0, 500)
         const busEntries = (schematic.busEntries || []).slice(0, 500)
         const images = (schematic.images || []).slice(0, 100)
+        const harnesses = schematic.harnesses || null
         const semanticContext =
             SchematicSvgRenderer.#buildSemanticContext(schematic)
         const semanticMetadata = SchematicSvgRenderer.#buildSemanticMetadata(
@@ -490,6 +492,11 @@ export class SchematicSvgRenderer {
                     ''
             }
         )
+        const harnessMarkup = SchematicHarnessRenderer.buildMarkup(
+            harnesses,
+            contentHeight,
+            renderedSheet.contentSheet
+        )
         const markerDefsMarkup =
             SchematicSvgRenderer.#buildSchematicLineMarkerDefs(contentLines)
         const ownerTextBodyBounds =
@@ -797,6 +804,9 @@ export class SchematicSvgRenderer {
             '</g>' +
             '<g class="schematic-bus-entries" stroke-linecap="round">' +
             busEntryMarkup +
+            '</g>' +
+            '<g class="schematic-harnesses">' +
+            harnessMarkup +
             '</g>' +
             '<g class="schematic-images">' +
             imageMarkup +

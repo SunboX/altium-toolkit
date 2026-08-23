@@ -7,6 +7,7 @@ import { ParserUtils } from './ParserUtils.mjs'
 const {
     getDisplayText,
     getField,
+    parseBoolean,
     parseNumericField,
     parseSchematicLineWidth,
     toColor
@@ -55,17 +56,18 @@ export class SchematicHarnessParser {
      */
     static #connector(record, records) {
         const ownerKeys = new Set(SchematicHarnessParser.#ownerKeys(record))
-        const entries = (records || [])
+        const ownedChildren = SchematicHarnessParser.#ownedChildren(
+            record,
+            records,
+            ownerKeys
+        )
+        const entries = ownedChildren
             .filter(
-                (candidate) =>
-                    getField(candidate.fields, 'RECORD') === '216' &&
-                    ownerKeys.has(getField(candidate.fields, 'OwnerIndex'))
+                (candidate) => getField(candidate.fields, 'RECORD') === '216'
             )
             .map((entry) => SchematicHarnessParser.#entry(entry))
-        const typeLabelRecord = (records || []).find(
-            (candidate) =>
-                getField(candidate.fields, 'RECORD') === '217' &&
-                ownerKeys.has(getField(candidate.fields, 'OwnerIndex'))
+        const typeLabelRecord = ownedChildren.find(
+            (candidate) => getField(candidate.fields, 'RECORD') === '217'
         )
         const indexInSheet = parseNumericField(record.fields, 'IndexInSheet')
         const connectorKey =
@@ -186,7 +188,51 @@ export class SchematicHarnessParser {
     static #distanceFromTop(fields) {
         const whole = parseNumericField(fields, 'DistanceFromTop') || 0
         const fraction = parseNumericField(fields, 'DistanceFromTop_Frac1') || 0
-        return Number(((whole + fraction / 1000000) * 100).toFixed(4))
+        return Number((whole * 10 + fraction / 100000).toFixed(4))
+    }
+
+    /**
+     * Resolves explicit children and consecutive additional-list children.
+     * @param {object} connector Connector record.
+     * @param {object[]} records All schematic records.
+     * @param {Set<string>} ownerKeys Valid explicit owner keys.
+     * @returns {object[]}
+     */
+    static #ownedChildren(connector, records, ownerKeys) {
+        const sourceRecords = records || []
+        const children = sourceRecords.filter((candidate) => {
+            const recordType = getField(candidate.fields, 'RECORD')
+            return (
+                (recordType === '216' || recordType === '217') &&
+                ownerKeys.has(getField(candidate.fields, 'OwnerIndex'))
+            )
+        })
+        const connectorPosition = sourceRecords.indexOf(connector)
+
+        for (
+            let index = connectorPosition + 1;
+            connectorPosition >= 0 && index < sourceRecords.length;
+            index += 1
+        ) {
+            const candidate = sourceRecords[index]
+            const recordType = getField(candidate.fields, 'RECORD')
+            if (recordType !== '216' && recordType !== '217') {
+                break
+            }
+            if (
+                getField(candidate.fields, 'OwnerIndex') ||
+                !parseBoolean(
+                    getField(candidate.fields, 'OwnerIndexAdditionalList')
+                )
+            ) {
+                break
+            }
+            if (!children.includes(candidate)) {
+                children.push(candidate)
+            }
+        }
+
+        return children
     }
 
     /**
