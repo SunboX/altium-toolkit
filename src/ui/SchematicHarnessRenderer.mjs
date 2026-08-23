@@ -4,7 +4,6 @@
 
 import { SchematicSvgUtils } from './SchematicSvgUtils.mjs'
 import { SchematicTypography } from './SchematicTypography.mjs'
-import { SchematicColorResolver } from './SchematicColorResolver.mjs'
 
 const { createSvgText, escapeHtml, formatNumber, projectSchematicY } =
     SchematicSvgUtils
@@ -49,32 +48,99 @@ export class SchematicHarnessRenderer {
      * @returns {string}
      */
     static #buildSignalHarnessMarkup(signalHarness, sheetHeight) {
-        const points = (signalHarness.points || [])
-            .map(
-                (point) =>
-                    formatNumber(point.x) +
-                    ',' +
-                    formatNumber(projectSchematicY(sheetHeight, point.y))
+        const projectedPoints = (signalHarness.points || [])
+            .map((point) => ({
+                x: Number(point?.x),
+                y: projectSchematicY(sheetHeight, Number(point?.y))
+            }))
+            .filter(
+                (point) => Number.isFinite(point.x) && Number.isFinite(point.y)
             )
+        const points = projectedPoints
+            .map((point) => formatNumber(point.x) + ',' + formatNumber(point.y))
             .join(' ')
 
-        if (!points) return ''
+        if (projectedPoints.length < 2) return ''
+
+        const railWidth = Math.max(
+            (Number(signalHarness.lineWidth) || 1) * 4,
+            8
+        )
 
         return (
-            '<polyline class="schematic-signal-harness" points="' +
+            '<g class="schematic-signal-harness">' +
+            '<polyline class="schematic-signal-harness__outline" points="' +
             escapeHtml(points) +
-            '" fill="none" stroke="' +
-            escapeHtml(
-                SchematicColorResolver.resolveNonTextColor(
-                    signalHarness.color,
-                    '--schematic-default-ink-color',
-                    true
-                )
+            '" fill="none" stroke="var(--schematic-accent-ink-color)" stroke-opacity="0.28" stroke-width="' +
+            formatNumber(railWidth + 2) +
+            '" stroke-linecap="round" stroke-linejoin="round" />' +
+            '<polyline class="schematic-signal-harness__rail" points="' +
+            escapeHtml(points) +
+            '" fill="none" stroke="var(--schematic-pin-marker-fill)" stroke-width="' +
+            formatNumber(railWidth) +
+            '" stroke-linecap="round" stroke-linejoin="round" />' +
+            SchematicHarnessRenderer.#buildSignalHarnessMarks(
+                projectedPoints,
+                railWidth
             ) +
-            '" stroke-width="' +
-            formatNumber(Math.max(Number(signalHarness.lineWidth) || 1, 1)) +
-            '" stroke-linecap="round" stroke-linejoin="round" />'
+            '</g>'
         )
+    }
+
+    /**
+     * Builds repeated diagonal marks along every projected harness segment.
+     * @param {{ x: number, y: number }[]} points Projected harness points.
+     * @param {number} railWidth Rendered harness width.
+     * @returns {string}
+     */
+    static #buildSignalHarnessMarks(points, railWidth) {
+        const marks = []
+        const spacing = Math.max(railWidth * 1.45, 10)
+
+        for (let index = 1; index < points.length; index += 1) {
+            const start = points[index - 1]
+            const end = points[index]
+            const deltaX = end.x - start.x
+            const deltaY = end.y - start.y
+            const length = Math.hypot(deltaX, deltaY)
+
+            if (!Number.isFinite(length) || length <= 0.001) continue
+
+            const tangentX = deltaX / length
+            const tangentY = deltaY / length
+            const normalX = -tangentY
+            const normalY = tangentX
+            const halfAlong = railWidth * 0.32
+            const halfNormal = railWidth * 0.42
+            const markCount = Math.min(
+                Math.max(Math.floor(length / spacing), 1),
+                4096
+            )
+
+            for (let markIndex = 0; markIndex < markCount; markIndex += 1) {
+                const distance = ((markIndex + 0.5) * length) / markCount
+                const centerX = start.x + tangentX * distance
+                const centerY = start.y + tangentY * distance
+                const x1 = centerX - tangentX * halfAlong - normalX * halfNormal
+                const y1 = centerY - tangentY * halfAlong - normalY * halfNormal
+                const x2 = centerX + tangentX * halfAlong + normalX * halfNormal
+                const y2 = centerY + tangentY * halfAlong + normalY * halfNormal
+
+                marks.push(
+                    '<line class="schematic-signal-harness__mark" x1="' +
+                        formatNumber(x1) +
+                        '" y1="' +
+                        formatNumber(y1) +
+                        '" x2="' +
+                        formatNumber(x2) +
+                        '" y2="' +
+                        formatNumber(y2) +
+                        '" stroke="var(--schematic-accent-ink-color)" stroke-opacity="0.32" stroke-width="1.4" stroke-linecap="round" />'
+                )
+            }
+        }
+
+        return marks.join('')
     }
 
     /**
@@ -85,25 +151,19 @@ export class SchematicHarnessRenderer {
      * @returns {string}
      */
     static #buildConnectorMarkup(connector, sheetHeight, sheet) {
-        const stroke = SchematicColorResolver.resolveNonTextColor(
-            connector.color,
-            '--schematic-default-ink-color',
-            true
-        )
-        const fill = SchematicColorResolver.resolveFill(
-            connector.fill,
-            '--schematic-fill-light-color'
-        )
         const textOptions =
             SchematicTypography.buildDefaultSchematicFontOptions(sheet)
+        const geometry = SchematicHarnessRenderer.#connectorGeometry(
+            connector,
+            sheetHeight
+        )
         const entryMarkup = (connector.entries || [])
             .map((entry) =>
                 SchematicHarnessRenderer.#buildEntryMarkup(
                     connector,
                     entry,
                     sheetHeight,
-                    textOptions,
-                    stroke
+                    textOptions
                 )
             )
             .join('')
@@ -117,20 +177,14 @@ export class SchematicHarnessRenderer {
 
         return (
             '<g class="schematic-harness-connector">' +
-            '<polygon points="' +
-            escapeHtml(
-                SchematicHarnessRenderer.#connectorPoints(
-                    connector,
-                    sheetHeight
-                )
-            ) +
-            '" fill="' +
-            escapeHtml(fill) +
-            '" stroke="' +
-            escapeHtml(stroke) +
-            '" stroke-width="' +
+            '<path class="schematic-harness-connector__body" d="' +
+            escapeHtml(geometry.bodyPath) +
+            '" fill="var(--schematic-pin-marker-fill)" stroke="none" />' +
+            '<path class="schematic-harness-connector__bracket" d="' +
+            escapeHtml(geometry.bracketPath) +
+            '" fill="none" stroke="var(--schematic-accent-ink-color)" stroke-opacity="0.46" stroke-width="' +
             formatNumber(Math.max(Number(connector.lineWidth) || 1, 1)) +
-            '" stroke-linejoin="round" />' +
+            '" stroke-linecap="round" />' +
             entryMarkup +
             typeMarkup +
             '</g>'
@@ -138,68 +192,204 @@ export class SchematicHarnessRenderer {
     }
 
     /**
-     * Builds the concave connector outline from its primary connection side.
+     * Builds the filled connector region and open primary-side bracket.
      * @param {{ x: number, y: number, width: number, height: number, side?: 'left' | 'right' | 'top' | 'bottom', primaryConnectionPosition?: number }} connector
      * @param {number} sheetHeight
-     * @returns {string}
+     * @returns {{ bodyPath: string, bracketPath: string }}
      */
-    static #connectorPoints(connector, sheetHeight) {
+    static #connectorGeometry(connector, sheetHeight) {
         const x = Number(connector.x) || 0
-        const y = Number(connector.y) || 0
         const width = Math.max(Number(connector.width) || 0, 1)
         const height = Math.max(Number(connector.height) || 0, 1)
         const inset = Math.min(12, width / 3, height / 3)
+        const top = projectSchematicY(sheetHeight, Number(connector.y) || 0)
+        const bottom = top + height
+        const left = x
+        const right = x + width
+        const side = connector.side || 'left'
+        const primaryExtent =
+            side === 'top' || side === 'bottom' ? width : height
         const primary = Math.min(
             Math.max(Number(connector.primaryConnectionPosition) || 0, 0),
-            connector.side === 'top' || connector.side === 'bottom'
-                ? width
-                : height
+            primaryExtent
         )
-        const side = connector.side || 'left'
-        let points
+        const primaryX = left + primary
+        const primaryY = top + primary
+        const xCurve = inset * 0.7
+        const yUpperCurve = Math.max((primaryY - top) * 0.45, 1)
+        const yLowerCurve = Math.max((bottom - primaryY) * 0.45, 1)
+        const xLeftCurve = Math.max((primaryX - left) * 0.45, 1)
+        const xRightCurve = Math.max((right - primaryX) * 0.45, 1)
 
         if (side === 'right') {
-            points = [
-                { x, y },
-                { x: x + width - inset, y },
-                { x: x + width, y: y - primary },
-                { x: x + width - inset, y: y - height },
-                { x, y: y - height }
-            ]
-        } else if (side === 'top') {
-            points = [
-                { x, y: y - inset },
-                { x: x + primary, y },
-                { x: x + width, y: y - inset },
-                { x: x + width, y: y - height },
-                { x, y: y - height }
-            ]
-        } else if (side === 'bottom') {
-            points = [
-                { x, y },
-                { x: x + width, y },
-                { x: x + width, y: y - height + inset },
-                { x: x + primary, y: y - height },
-                { x, y: y - height + inset }
-            ]
-        } else {
-            points = [
-                { x: x + inset, y },
-                { x: x + width, y },
-                { x: x + width, y: y - height },
-                { x: x + inset, y: y - height },
-                { x, y: y - primary }
-            ]
+            const inner = right - inset
+            const forward =
+                'M ' +
+                formatNumber(inner) +
+                ' ' +
+                formatNumber(top) +
+                ' C ' +
+                formatNumber(inner + xCurve) +
+                ' ' +
+                formatNumber(top) +
+                ' ' +
+                formatNumber(right) +
+                ' ' +
+                formatNumber(primaryY - yUpperCurve) +
+                ' ' +
+                formatNumber(right) +
+                ' ' +
+                formatNumber(primaryY) +
+                ' C ' +
+                formatNumber(right) +
+                ' ' +
+                formatNumber(primaryY + yLowerCurve) +
+                ' ' +
+                formatNumber(inner + xCurve) +
+                ' ' +
+                formatNumber(bottom) +
+                ' ' +
+                formatNumber(inner) +
+                ' ' +
+                formatNumber(bottom)
+            return {
+                bracketPath: forward,
+                bodyPath:
+                    forward +
+                    ' H ' +
+                    formatNumber(left) +
+                    ' V ' +
+                    formatNumber(top) +
+                    ' Z'
+            }
         }
 
-        return points
-            .map(
-                (point) =>
-                    formatNumber(point.x) +
-                    ',' +
-                    formatNumber(projectSchematicY(sheetHeight, point.y))
-            )
-            .join(' ')
+        if (side === 'top') {
+            const inner = top + inset
+            const forward =
+                'M ' +
+                formatNumber(left) +
+                ' ' +
+                formatNumber(inner) +
+                ' C ' +
+                formatNumber(left) +
+                ' ' +
+                formatNumber(inner - xCurve) +
+                ' ' +
+                formatNumber(primaryX - xLeftCurve) +
+                ' ' +
+                formatNumber(top) +
+                ' ' +
+                formatNumber(primaryX) +
+                ' ' +
+                formatNumber(top) +
+                ' C ' +
+                formatNumber(primaryX + xRightCurve) +
+                ' ' +
+                formatNumber(top) +
+                ' ' +
+                formatNumber(right) +
+                ' ' +
+                formatNumber(inner - xCurve) +
+                ' ' +
+                formatNumber(right) +
+                ' ' +
+                formatNumber(inner)
+            return {
+                bracketPath: forward,
+                bodyPath:
+                    forward +
+                    ' V ' +
+                    formatNumber(bottom) +
+                    ' H ' +
+                    formatNumber(left) +
+                    ' Z'
+            }
+        }
+
+        if (side === 'bottom') {
+            const inner = bottom - inset
+            const forward =
+                'M ' +
+                formatNumber(left) +
+                ' ' +
+                formatNumber(inner) +
+                ' C ' +
+                formatNumber(left) +
+                ' ' +
+                formatNumber(inner + xCurve) +
+                ' ' +
+                formatNumber(primaryX - xLeftCurve) +
+                ' ' +
+                formatNumber(bottom) +
+                ' ' +
+                formatNumber(primaryX) +
+                ' ' +
+                formatNumber(bottom) +
+                ' C ' +
+                formatNumber(primaryX + xRightCurve) +
+                ' ' +
+                formatNumber(bottom) +
+                ' ' +
+                formatNumber(right) +
+                ' ' +
+                formatNumber(inner + xCurve) +
+                ' ' +
+                formatNumber(right) +
+                ' ' +
+                formatNumber(inner)
+            return {
+                bracketPath: forward,
+                bodyPath:
+                    forward +
+                    ' V ' +
+                    formatNumber(top) +
+                    ' H ' +
+                    formatNumber(left) +
+                    ' Z'
+            }
+        }
+
+        const inner = left + inset
+        const forward =
+            'M ' +
+            formatNumber(inner) +
+            ' ' +
+            formatNumber(top) +
+            ' C ' +
+            formatNumber(inner - xCurve) +
+            ' ' +
+            formatNumber(top) +
+            ' ' +
+            formatNumber(left) +
+            ' ' +
+            formatNumber(primaryY - yUpperCurve) +
+            ' ' +
+            formatNumber(left) +
+            ' ' +
+            formatNumber(primaryY) +
+            ' C ' +
+            formatNumber(left) +
+            ' ' +
+            formatNumber(primaryY + yLowerCurve) +
+            ' ' +
+            formatNumber(inner - xCurve) +
+            ' ' +
+            formatNumber(bottom) +
+            ' ' +
+            formatNumber(inner) +
+            ' ' +
+            formatNumber(bottom)
+        return {
+            bracketPath: forward,
+            bodyPath:
+                forward +
+                ' H ' +
+                formatNumber(right) +
+                ' V ' +
+                formatNumber(top) +
+                ' Z'
+        }
     }
 
     /**
@@ -208,45 +398,27 @@ export class SchematicHarnessRenderer {
      * @param {{ name?: string, side?: 'left' | 'right' | 'top' | 'bottom', distanceFromTop?: number, textColor?: string }} entry
      * @param {number} sheetHeight
      * @param {{ fontSize: number, fontFamily: string, fontWeight: number }} textOptions
-     * @param {string} connectorStroke
      * @returns {string}
      */
-    static #buildEntryMarkup(
-        connector,
-        entry,
-        sheetHeight,
-        textOptions,
-        connectorStroke
-    ) {
+    static #buildEntryMarkup(connector, entry, sheetHeight, textOptions) {
         const placement = SchematicHarnessRenderer.#entryPlacement(
             connector,
             entry,
             sheetHeight
         )
-        const labelColor = SchematicColorResolver.resolveColor(
-            entry.textColor,
-            '--schematic-default-ink-color',
-            true
-        )
 
         return (
-            '<g class="schematic-harness-entry"><line x1="' +
-            formatNumber(placement.x1) +
-            '" y1="' +
-            formatNumber(placement.y1) +
-            '" x2="' +
-            formatNumber(placement.x2) +
-            '" y2="' +
-            formatNumber(placement.y2) +
-            '" stroke="' +
-            escapeHtml(connectorStroke) +
-            '" />' +
+            '<g class="schematic-harness-entry"><circle class="schematic-harness-entry-dot" cx="' +
+            formatNumber(placement.dotX) +
+            '" cy="' +
+            formatNumber(placement.dotY) +
+            '" r="1.5" fill="var(--schematic-default-ink-color)" />' +
             createSvgText(
                 'schematic-harness-entry-label',
                 placement.labelX,
                 placement.labelY,
                 entry.name || '',
-                labelColor,
+                'var(--schematic-default-ink-color)',
                 placement.anchor,
                 textOptions
             ) +
@@ -259,7 +431,7 @@ export class SchematicHarnessRenderer {
      * @param {{ x: number, y: number, width: number, height: number }} connector
      * @param {{ side?: 'left' | 'right' | 'top' | 'bottom', distanceFromTop?: number }} entry
      * @param {number} sheetHeight
-     * @returns {{ x1: number, y1: number, x2: number, y2: number, labelX: number, labelY: number, anchor: 'start' | 'middle' | 'end' }}
+     * @returns {{ dotX: number, dotY: number, labelX: number, labelY: number, anchor: 'start' | 'middle' | 'end' }}
      */
     static #entryPlacement(connector, entry, sheetHeight) {
         const x = Number(connector.x) || 0
@@ -273,25 +445,21 @@ export class SchematicHarnessRenderer {
         if (side === 'left') {
             const entryY = projectSchematicY(sheetHeight, y - distance)
             return {
-                x1: x,
-                y1: entryY,
-                x2: x - 10,
-                y2: entryY,
-                labelX: x - 14,
+                dotX: x,
+                dotY: entryY,
+                labelX: x + 8,
                 labelY: entryY + baselineLift,
-                anchor: 'end'
+                anchor: 'start'
             }
         }
         if (side === 'top') {
             const entryX = x + distance
             const entryY = projectSchematicY(sheetHeight, y)
             return {
-                x1: entryX,
-                y1: entryY,
-                x2: entryX,
-                y2: entryY - 10,
+                dotX: entryX,
+                dotY: entryY,
                 labelX: entryX,
-                labelY: entryY - 13,
+                labelY: entryY + 12,
                 anchor: 'middle'
             }
         }
@@ -299,25 +467,21 @@ export class SchematicHarnessRenderer {
             const entryX = x + distance
             const entryY = projectSchematicY(sheetHeight, y - height)
             return {
-                x1: entryX,
-                y1: entryY,
-                x2: entryX,
-                y2: entryY + 10,
+                dotX: entryX,
+                dotY: entryY,
                 labelX: entryX,
-                labelY: entryY + 19,
+                labelY: entryY - 5,
                 anchor: 'middle'
             }
         }
 
         const entryY = projectSchematicY(sheetHeight, y - distance)
         return {
-            x1: x + width,
-            y1: entryY,
-            x2: x + width + 10,
-            y2: entryY,
-            labelX: x + width + 14,
+            dotX: x + width,
+            dotY: entryY,
+            labelX: x + width - 8,
             labelY: entryY + baselineLift,
-            anchor: 'start'
+            anchor: 'end'
         }
     }
 
@@ -334,11 +498,7 @@ export class SchematicHarnessRenderer {
             typeLabel.x,
             projectSchematicY(sheetHeight, typeLabel.y),
             typeLabel.text || '',
-            SchematicColorResolver.resolveColor(
-                typeLabel.color,
-                '--schematic-default-ink-color',
-                true
-            ),
+            'var(--schematic-default-ink-color)',
             'start',
             textOptions
         )

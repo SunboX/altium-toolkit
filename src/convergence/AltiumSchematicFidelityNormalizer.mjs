@@ -50,11 +50,18 @@ export class AltiumSchematicFidelityNormalizer {
             schematic.harnesses,
             records
         )
+        const symbolPrimitives =
+            AltiumSchematicFidelityNormalizer.#normalizeSymbolPrimitives(
+                schematic
+            )
 
         if (
             sheet === schematic.sheet &&
             texts === schematic.texts &&
-            harnesses === schematic.harnesses
+            harnesses === schematic.harnesses &&
+            symbolPrimitives.lines === schematic.lines &&
+            symbolPrimitives.rectangles === schematic.rectangles &&
+            symbolPrimitives.roundedRectangles === schematic.roundedRectangles
         ) {
             return documentModel
         }
@@ -63,11 +70,128 @@ export class AltiumSchematicFidelityNormalizer {
             ...documentModel,
             schematic: {
                 ...schematic,
+                ...symbolPrimitives,
                 sheet,
                 texts,
                 ...(harnesses ? { harnesses } : {})
             }
         }
+    }
+
+    /**
+     * Themes geometry owned by pin-bearing symbol groups while retaining
+     * pinless decorative source-color strips.
+     * @param {Record<string, any>} schematic Native schematic model.
+     * @returns {{ lines: object[], rectangles: object[], roundedRectangles: object[] }} Normalized primitive collections.
+     */
+    static #normalizeSymbolPrimitives(schematic) {
+        const pinOwners = new Set(
+            (schematic.pins || [])
+                .map((pin) => String(pin?.ownerIndex || '').trim())
+                .filter(Boolean)
+        )
+
+        if (!pinOwners.size) {
+            return {
+                lines: schematic.lines || [],
+                rectangles: schematic.rectangles || [],
+                roundedRectangles: schematic.roundedRectangles || []
+            }
+        }
+
+        return {
+            lines: AltiumSchematicFidelityNormalizer.#mapChanged(
+                schematic.lines || [],
+                (line) =>
+                    pinOwners.has(String(line?.ownerIndex || '').trim())
+                        ? {
+                              ...line,
+                              color: 'var(--schematic-power-color)'
+                          }
+                        : line
+            ),
+            rectangles: AltiumSchematicFidelityNormalizer.#mapChanged(
+                schematic.rectangles || [],
+                (rectangle) =>
+                    AltiumSchematicFidelityNormalizer.#themeSymbolRectangle(
+                        rectangle,
+                        pinOwners
+                    )
+            ),
+            roundedRectangles: AltiumSchematicFidelityNormalizer.#mapChanged(
+                schematic.roundedRectangles || [],
+                (rectangle) =>
+                    AltiumSchematicFidelityNormalizer.#themeSymbolRectangle(
+                        rectangle,
+                        pinOwners
+                    )
+            )
+        }
+    }
+
+    /**
+     * Resolves one pin-bearing symbol rectangle to shared theme roles.
+     * @param {Record<string, any>} rectangle Rectangle primitive.
+     * @param {Set<string>} pinOwners Pin-bearing owner keys.
+     * @returns {Record<string, any>} Original or themed rectangle.
+     */
+    static #themeSymbolRectangle(rectangle, pinOwners) {
+        const owner = String(rectangle?.ownerIndex || '').trim()
+        if (!owner || !pinOwners.has(owner)) return rectangle
+
+        const isSolid = rectangle?.isSolid === true
+        const isContact =
+            isSolid &&
+            AltiumSchematicFidelityNormalizer.#isNarrowSymbolContact(rectangle)
+
+        return {
+            ...rectangle,
+            color: 'var(--schematic-power-color)',
+            ...(isSolid
+                ? {
+                      fill: isContact
+                          ? 'var(--schematic-power-color)'
+                          : 'var(--schematic-fill-color)',
+                      transparent: false
+                  }
+                : {})
+        }
+    }
+
+    /**
+     * Returns true when a solid symbol rectangle encodes a contact bar.
+     * @param {{ width?: number, height?: number }} rectangle Rectangle primitive.
+     * @returns {boolean} Whether the rectangle is a narrow contact.
+     */
+    static #isNarrowSymbolContact(rectangle) {
+        const width = Math.abs(Number(rectangle?.width || 0))
+        const height = Math.abs(Number(rectangle?.height || 0))
+        const shortSide = Math.min(width, height)
+        const longSide = Math.max(width, height)
+
+        return (
+            shortSide > 0 &&
+            shortSide <= 6 &&
+            longSide >= 12 &&
+            longSide >= shortSide * 2.5
+        )
+    }
+
+    /**
+     * Maps a collection while retaining its identity when no row changes.
+     * @param {object[]} values Source rows.
+     * @param {(value: object) => object} mapper Row mapper.
+     * @returns {object[]} Original or mapped collection.
+     */
+    static #mapChanged(values, mapper) {
+        let changed = false
+        const mapped = values.map((value) => {
+            const next = mapper(value)
+            changed ||= next !== value
+            return next
+        })
+
+        return changed ? mapped : values
     }
 
     /**

@@ -273,6 +273,152 @@ function createNativeFidelityFixture() {
     }
 }
 
+/**
+ * Builds synthetic pin-bearing symbol groups and one pinless color strip.
+ * @returns {Record<string, any>} Native renderer model.
+ */
+function createThemedSymbolFixture() {
+    return {
+        summary: { title: 'Themed primitive roles' },
+        schematic: {
+            sheet: { width: 260, height: 180 },
+            lines: [
+                {
+                    ownerIndex: '302',
+                    x1: 220,
+                    y1: 80,
+                    x2: 212,
+                    y2: 86,
+                    color: '#000000',
+                    width: 1,
+                    recordType: '6',
+                    renderOrder: 3
+                }
+            ],
+            polygons: [],
+            rectangles: [
+                {
+                    ownerIndex: '301',
+                    x: 56,
+                    y: 55,
+                    width: 8,
+                    height: 40,
+                    color: '#800000',
+                    fill: '#ffffb0',
+                    isSolid: true,
+                    transparent: true,
+                    lineWidth: 1,
+                    renderOrder: 2
+                },
+                {
+                    ownerIndex: '302',
+                    x: 180,
+                    y: 70,
+                    width: 40,
+                    height: 40,
+                    color: '#800000',
+                    fill: '#ffffb0',
+                    isSolid: true,
+                    transparent: true,
+                    lineWidth: 1,
+                    renderOrder: 2
+                },
+                {
+                    ownerIndex: '302',
+                    x: 190,
+                    y: 70,
+                    width: 20,
+                    height: 5,
+                    color: '#a44a1b',
+                    fill: '#ffe16f',
+                    isSolid: true,
+                    transparent: false,
+                    lineWidth: 1,
+                    renderOrder: 4
+                },
+                {
+                    ownerIndex: '399',
+                    x: 240,
+                    y: 40,
+                    width: 5,
+                    height: 30,
+                    color: '#000080',
+                    fill: '#800000',
+                    isSolid: true,
+                    transparent: false,
+                    lineWidth: 1,
+                    renderOrder: 5
+                }
+            ],
+            roundedRectangles: [],
+            ellipses: [],
+            arcs: [],
+            pies: [],
+            texts: [],
+            components: [],
+            pins: [
+                {
+                    ownerIndex: '301',
+                    x: 60,
+                    y: 55,
+                    length: 10,
+                    orientation: 'bottom',
+                    name: '1',
+                    designator: '1',
+                    color: '#000000',
+                    labelMode: 'hidden'
+                },
+                {
+                    ownerIndex: '301',
+                    x: 60,
+                    y: 95,
+                    length: 10,
+                    orientation: 'top',
+                    name: '2',
+                    designator: '2',
+                    color: '#000000',
+                    labelMode: 'hidden'
+                },
+                {
+                    ownerIndex: '302',
+                    x: 180,
+                    y: 90,
+                    length: 10,
+                    orientation: 'left',
+                    name: '1',
+                    designator: '1',
+                    color: '#000000',
+                    labelMode: 'number-only'
+                },
+                {
+                    ownerIndex: '302',
+                    x: 220,
+                    y: 90,
+                    length: 10,
+                    orientation: 'right',
+                    name: '2',
+                    designator: '2',
+                    color: '#000000',
+                    labelMode: 'number-only'
+                },
+                {
+                    ownerIndex: '302',
+                    x: 200,
+                    y: 110,
+                    length: 10,
+                    orientation: 'top',
+                    name: '3',
+                    designator: '3',
+                    color: '#000000',
+                    labelMode: 'number-only'
+                }
+            ],
+            ports: [],
+            crosses: []
+        }
+    }
+}
+
 test('convergence schematic fidelity restores native frame, footer, harness, and passive columns', () => {
     const normalized = AltiumSchematicFidelityNormalizer.normalize(
         createNativeFidelityFixture()
@@ -320,17 +466,58 @@ test('convergence schematic renderer emits complete harness geometry in the exis
 
     assert.match(markup, /viewBox="0 0 300 220"/u)
     assert.match(markup, /class="schematic-signal-harness"/u)
+    assert.match(markup, /class="schematic-signal-harness__rail"/u)
+    assert.match(markup, /class="schematic-signal-harness__mark"/u)
     assert.match(markup, /class="schematic-harness-connector"/u)
+    assert.match(markup, /class="schematic-harness-connector__body"/u)
+    assert.match(markup, /class="schematic-harness-connector__bracket"/u)
     assert.match(markup, /class="schematic-harness-entry"/u)
+    assert.match(markup, /class="schematic-harness-entry-dot"/u)
     assert.match(markup, />DATA_P</u)
     assert.match(markup, />DATA_N</u)
     assert.match(markup, /class="schematic-harness-type"/u)
     assert.match(markup, />DATA_BUS</u)
-    assert.match(markup, /stroke="#9fc5e8"/u)
+    assert.match(
+        markup,
+        /class="schematic-harness-entry-label" x="102"[^>]*fill="var\(--schematic-default-ink-color\)" text-anchor="end"/u
+    )
+    assert.match(
+        markup,
+        /class="schematic-harness-entry-dot" cx="110"[^>]*fill="var\(--schematic-default-ink-color\)"/u
+    )
+    assert.match(markup, /stroke="var\(--schematic-accent-ink-color\)"/u)
+    assert.match(markup, /fill="var\(--schematic-pin-marker-fill\)"/u)
+    assert.doesNotMatch(markup, /#9fc5e8/iu)
     assert.match(markup, /class="schematic-label" x="99"[^>]*>R42</u)
     assert.match(markup, /class="schematic-label" x="118"[^>]*>62R</u)
     assert.match(markup, /class="schematic-label" x="128"[^>]*>0\.5W</u)
     assert.doesNotMatch(markup, /style="[^";]*color:/u)
+})
+
+test('convergence schematic renderer themes pin-bearing symbol primitive roles', () => {
+    const markup = SchematicSvgRenderer.render(createThemedSymbolFixture())
+
+    assert.match(
+        markup,
+        /<rect class="schematic-rectangle" x="56" y="85" width="8" height="40" fill="var\(--schematic-fill-color\)" stroke="var\(--schematic-power-color\)"/u
+    )
+    assert.match(
+        markup,
+        /<rect class="schematic-rectangle" x="180" y="70" width="40" height="40" fill="var\(--schematic-fill-color\)" stroke="var\(--schematic-power-color\)"/u
+    )
+    assert.match(
+        markup,
+        /<rect class="schematic-rectangle" x="190" y="105" width="20" height="5" fill="var\(--schematic-power-color\)" stroke="var\(--schematic-power-color\)"/u
+    )
+    assert.match(
+        markup,
+        /<line x1="220" y1="100" x2="212" y2="94" stroke="var\(--schematic-power-color\)"/u
+    )
+    assert.match(
+        markup,
+        /<rect class="schematic-rectangle" x="240" y="110" width="5" height="30" fill="#6f2a2a" stroke="#2a2a6f"/u
+    )
+    assert.doesNotMatch(markup, /#d2d289|#d2c389|#8a5235/iu)
 })
 
 test('project context preserves native footer metadata fallback values', () => {
