@@ -4,7 +4,7 @@
 
 **Goal:** Render dense Altium PCB pad copper groups in linear space and publish the corrected toolkit and ECAD Forge app.
 
-**Architecture:** `PcbSideResolvedRenderModel` continues to assign `copperRenderGroup`; the historical SVG renderer partitions pad fragments during its existing pad iteration and appends them directly to the matching copper groups. The convergence wrapper stops rewriting completed SVG strings. Releases proceed strictly from toolkit tests to npm publication, then registry-backed app integration and deployment.
+**Architecture:** `PcbSideResolvedRenderModel` continues to assign `copperRenderGroup`; the convergence wrapper delegates once to the immutable historical SVG renderer, partitions top-level pad groups with one progressive scan, and rebuilds the SVG once. Releases proceed strictly from toolkit tests to npm publication, then registry-backed app integration and deployment.
 
 **Tech Stack:** JavaScript ES modules, Node.js test runner, npm, GitHub CLI, Playwright CLI, GitHub Actions.
 
@@ -25,7 +25,7 @@
 - Modify: `tests/ui/pcb-pad-copper-group.test.mjs`
 
 **Interfaces:**
-- Consumes: public convergence `PcbSvgRenderer.render(documentModel, options)` and historical `PcbSvgRenderer.render(documentModel, options)`.
+- Consumes: public convergence `PcbSvgRenderer.render(documentModel, options)`.
 - Produces: a child-process probe that exits successfully only when 1,000 grouped pads render within a 384 MiB heap.
 
 - [ ] **Step 1: Create the dense fake-board probe**
@@ -101,36 +101,13 @@ const padKeys = markup.match(/data-element-key="pcb-pad-\d+"/gu) || []
 console.log(JSON.stringify({ markupLength: markup.length, padCount: padKeys.length }))
 ```
 
-- [ ] **Step 2: Add direct-grouping and bounded-heap tests**
+- [ ] **Step 2: Add the bounded-heap test**
 
 Add these imports:
 
 ```js
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { PcbSvgRenderer as HistoricalPcbSvgRenderer } from '../../src/legacy-renderers.mjs'
-```
-
-Add the direct renderer contract test:
-
-```js
-test('historical PcbSvgRenderer places pads directly in copper groups', () => {
-    const markup = HistoricalPcbSvgRenderer.render(buildGroupedPadBoard())
-    const subsurfaceStart = markup.indexOf(
-        '<g class="pcb-copper pcb-copper--subsurface">'
-    )
-    const surfaceStart = markup.indexOf(
-        '<g class="pcb-copper pcb-copper--surface">'
-    )
-    const footprintStart = markup.indexOf('<g class="pcb-footprints">')
-    const subsurfaceMarkup = markup.slice(subsurfaceStart, surfaceStart)
-    const surfaceMarkup = markup.slice(surfaceStart, footprintStart)
-
-    assert.match(subsurfaceMarkup, /data-element-key="pcb-pad-0"/u)
-    assert.doesNotMatch(subsurfaceMarkup, /data-element-key="pcb-pad-1"/u)
-    assert.match(surfaceMarkup, /data-element-key="pcb-pad-1"/u)
-    assert.doesNotMatch(surfaceMarkup, /data-element-key="pcb-pad-0"/u)
-})
 ```
 
 Add this bounded probe test:
@@ -157,54 +134,36 @@ test('PcbSvgRenderer renders dense grouped pads within a bounded heap', () => {
 
 Run: `node --test tests/ui/pcb-pad-copper-group.test.mjs`
 
-Expected: the direct historical grouping assertion fails and the bounded probe exits non-zero with V8 heap exhaustion.
+Expected: the bounded probe exits non-zero with V8 heap exhaustion.
 
 ---
 
-### Task 2: Render pad groups structurally
+### Task 2: Partition pad groups in one convergence pass
 
 **Files:**
-- Modify: `src/ui/PcbSvgRenderer.mjs`
 - Modify: `src/convergence/PcbSvgRenderer.mjs`
 - Test: `tests/ui/pcb-pad-copper-group.test.mjs`
 
 **Interfaces:**
 - Consumes: `pad.copperRenderGroup` with supported value `subsurface`; every other value uses `surface`.
-- Produces: identical public SVG semantics without completed-markup relocation.
+- Produces: identical public SVG semantics with one linear completed-markup partition.
 
-- [ ] **Step 1: Partition pad fragments during rendering**
+- [ ] **Step 1: Partition selected pad groups with a forward scan**
 
-Replace the single `padMarkup` string with grouped fragment arrays:
+Build a `Set` of subsurface pad indexes, delegate exactly once to the
+historical renderer, and scan from the surface copper group to the footprint
+group. Accumulate retained surface fragments and selected pad fragments in
+stable order, then reconstruct the markup once at the subsurface close.
 
-```js
-const padMarkup = pads.reduce(
-    (groups, pad, index) => {
-        const markup = PcbSvgRenderer.#renderPad(
-            pad,
-            PcbSvgRenderer.#primitiveIndex(
-                semanticContext,
-                'pads',
-                pad,
-                index
-            ),
-            semanticContext
-        )
-        const group =
-            pad?.copperRenderGroup === 'subsurface'
-                ? 'subsurface'
-                : 'surface'
-        groups[group].push(markup)
-        return groups
-    },
-    { surface: [], subsurface: [] }
-)
-```
+Return historical markup unchanged for layer-only views, models without
+subsurface pads, or markup without the expected structural groups. Treat every
+missing or unknown `copperRenderGroup` value as surface.
 
-Insert `padMarkup.subsurface.join('')` before the subsurface copper group's closing tag and `padMarkup.surface.join('')` at the existing surface pad position.
+- [ ] **Step 2: Preserve the canonical historical source**
 
-- [ ] **Step 2: Remove the convergence markup relocation**
-
-Reduce `src/convergence/PcbSvgRenderer.mjs` to direct delegation for `render()` and `renderLayerSvgs()`. Delete `#SUBSURFACE_GROUP`, `#SURFACE_GROUP`, `#subsurfacePadIndexes()`, `#movePadsToSubsurfaceGroup()`, and `#extractPadGroup()`.
+Run `git diff --exit-code -- src/ui/PcbSvgRenderer.mjs` and keep the canonical
+convergence benchmark green. The historical renderer must remain byte-for-byte
+unchanged.
 
 - [ ] **Step 3: Run focused tests and verify GREEN**
 
@@ -221,7 +180,7 @@ Expected: both commands exit `0` with no test failures or formatting differences
 - [ ] **Step 5: Commit the fix**
 
 ```bash
-git add src/ui/PcbSvgRenderer.mjs src/convergence/PcbSvgRenderer.mjs tests/ui/pcb-pad-copper-group.test.mjs tests/helpers/DenseGroupedPadRendererProbe.mjs
+git add src/convergence/PcbSvgRenderer.mjs tests/ui/pcb-pad-copper-group.test.mjs tests/helpers/DenseGroupedPadRendererProbe.mjs docs/superpowers/specs/2026-08-23-linear-pcb-pad-copper-grouping-design.md docs/superpowers/plans/2026-08-23-linear-pcb-pad-copper-grouping.md
 git commit -m 'fix: render PCB pad copper groups linearly'
 ```
 

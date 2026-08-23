@@ -23,22 +23,22 @@ renderer heap and crash the tab.
 
 ## Approaches Considered
 
-### Render pads directly into their copper groups
-
-Partition rendered pad fragments using each pad's `copperRenderGroup` while the
-legacy SVG renderer is already iterating the pad model. Append subsurface pad
-markup to the subsurface copper group and all remaining pad markup to the
-surface group. The convergence wrapper can then delegate without rewriting the
-completed SVG.
-
-This is the selected approach. It is linear in the output size, follows the
-existing data model, and removes the failure mechanism.
-
 ### Rewrite completed SVG in one pass
 
-A single scan could extract all selected pad groups and rebuild the SVG once.
-This would reduce asymptotic cost, but it would still treat renderer output as a
-second input language and depend on markup layout details.
+A single progressive scan extracts every selected top-level pad group from the
+surface span, accumulates retained and relocated fragments in stable order, and
+rebuilds the SVG once.
+
+This is the selected approach. It is linear in the output size, follows the
+existing `copperRenderGroup` data model, and preserves the canonical historical
+renderer source, which the convergence benchmark intentionally pins byte for
+byte.
+
+### Render pads directly into their copper groups
+
+Partitioning pad fragments while the historical renderer iterates the model
+would also be linear. It is not selected because modifying that renderer would
+break the immutable historical-source contract used to measure convergence.
 
 ### Reject or simplify dense boards
 
@@ -48,17 +48,15 @@ reject or silently degrade valid input. It would not correct the renderer.
 ## Architecture and Data Flow
 
 `PcbSideResolvedRenderModel` remains responsible for assigning
-`copperRenderGroup`. The historical PCB SVG renderer consumes that property at
-the point where it turns each pad into markup. It accumulates two ordered
-fragment lists:
+`copperRenderGroup`. The convergence renderer builds a set of subsurface pad
+indexes, delegates exactly once to the immutable historical renderer, and then
+scans only the surface copper span from left to right. Selected top-level pad
+groups are accumulated for the subsurface group; the remaining surface span is
+accumulated separately. One final reconstruction inserts the selected groups
+before the subsurface group closes and preserves all other markup exactly.
 
-1. Pads with `copperRenderGroup === 'subsurface'` enter the subsurface list.
-2. Every other pad enters the surface list, preserving legacy behavior for
-   models without the property.
-
-The final SVG assembly inserts each list into its corresponding copper group.
-The convergence `PcbSvgRenderer` becomes a direct delegate for composite and
-layer renders; no completed SVG is searched or sliced.
+Layer-only renders and composite renders without subsurface pads return the
+historical markup unchanged.
 
 ## Error Handling
 
@@ -68,13 +66,13 @@ input-size thresholds.
 
 ## Testing
 
-- Add a small renderer regression proving the historical renderer places
-  explicit surface and subsurface pads directly into the matching groups.
-- Keep the existing convergence-level copper grouping test to prove its public
-  output contract remains unchanged.
+- Keep the convergence-level copper grouping regression to prove the public
+  output contract, stable group order, and surface default remain unchanged.
 - Add a dense synthetic renderer regression using only repo-owned fake model
   data. It must complete under a bounded child-process heap and preserve all pad
   element keys; the pre-fix quadratic relocation must fail that bound.
+- Keep the canonical convergence benchmark green to prove the historical
+  renderer source remains byte-for-byte unchanged.
 - Run the complete `altium-toolkit` test and format checks.
 - Publish/dry-run the toolkit package and verify the npm version and `latest`
   dist-tag.

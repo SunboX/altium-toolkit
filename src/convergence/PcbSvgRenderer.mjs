@@ -10,6 +10,7 @@ import { PcbSvgRenderer as LegacyPcbSvgRenderer } from '../ui/PcbSvgRenderer.mjs
 export class PcbSvgRenderer {
     static #SUBSURFACE_GROUP = '<g class="pcb-copper pcb-copper--subsurface">'
     static #SURFACE_GROUP = '<g class="pcb-copper pcb-copper--surface">'
+    static #FOOTPRINT_GROUP = '<g class="pcb-footprints">'
 
     /**
      * Renders one native Altium PCB document as SVG markup.
@@ -23,7 +24,7 @@ export class PcbSvgRenderer {
             documentModel,
             options
         )
-        if (subsurfacePadIndexes.length === 0) return markup
+        if (subsurfacePadIndexes.size === 0) return markup
 
         return PcbSvgRenderer.#movePadsToSubsurfaceGroup(
             markup,
@@ -46,85 +47,125 @@ export class PcbSvgRenderer {
      * Layer-only exports do not use composite surface/subsurface grouping.
      * @param {Record<string, any>} documentModel Native renderer document.
      * @param {Record<string, any>} options Historical renderer options.
-     * @returns {number[]} Stable pad indexes.
+     * @returns {Set<number>} Stable pad indexes.
      */
     static #subsurfacePadIndexes(documentModel, options) {
-        if (options?.layerView) return []
+        if (options?.layerView) return new Set()
 
-        return (documentModel?.pcb?.pads || [])
-            .map((pad, index) =>
-                pad?.copperRenderGroup === 'subsurface' ? index : -1
-            )
-            .filter((index) => index >= 0)
+        const indexes = new Set()
+        for (const [index, pad] of (documentModel?.pcb?.pads || []).entries()) {
+            if (pad?.copperRenderGroup === 'subsurface') {
+                indexes.add(index)
+            }
+        }
+        return indexes
     }
 
     /**
      * Moves contextual pad groups into the same SVG group as contextual traces
-     * so the browser composites both primitives with one shared opacity.
+     * with one forward scan and one final markup reconstruction.
      * @param {string} markup Historical renderer markup.
-     * @param {number[]} padIndexes Stable pad indexes to relocate.
+     * @param {Set<number>} padIndexes Stable pad indexes to relocate.
      * @returns {string} Copper-group-aware markup.
      */
     static #movePadsToSubsurfaceGroup(markup, padIndexes) {
         const subsurfaceStart = markup.indexOf(PcbSvgRenderer.#SUBSURFACE_GROUP)
         const surfaceStart = markup.indexOf(PcbSvgRenderer.#SURFACE_GROUP)
-        if (subsurfaceStart < 0 || surfaceStart <= subsurfaceStart) {
+        const surfaceEnd = markup.indexOf(
+            PcbSvgRenderer.#FOOTPRINT_GROUP,
+            surfaceStart
+        )
+        if (
+            subsurfaceStart < 0 ||
+            surfaceStart <= subsurfaceStart ||
+            surfaceEnd <= surfaceStart
+        ) {
             return markup
         }
 
         const subsurfaceClose = markup.lastIndexOf('</g>', surfaceStart)
         if (subsurfaceClose < subsurfaceStart) return markup
 
-        let remainingMarkup = markup
-        const relocatedPads = []
-        for (const padIndex of padIndexes) {
-            const result = PcbSvgRenderer.#extractPadGroup(
-                remainingMarkup,
-                padIndex,
-                surfaceStart
-            )
-            if (!result) continue
-            remainingMarkup = result.markup
-            relocatedPads.push(result.padMarkup)
-        }
-        if (relocatedPads.length === 0) return markup
+        const partition = PcbSvgRenderer.#partitionSurfacePads(
+            markup,
+            surfaceStart,
+            surfaceEnd,
+            padIndexes
+        )
+        if (!partition.subsurfacePadMarkup) return markup
 
-        const updatedSurfaceStart = remainingMarkup.indexOf(
-            PcbSvgRenderer.#SURFACE_GROUP
-        )
-        const updatedSubsurfaceClose = remainingMarkup.lastIndexOf(
-            '</g>',
-            updatedSurfaceStart
-        )
         return (
-            remainingMarkup.slice(0, updatedSubsurfaceClose) +
-            relocatedPads.join('') +
-            remainingMarkup.slice(updatedSubsurfaceClose)
+            markup.slice(0, subsurfaceClose) +
+            partition.subsurfacePadMarkup +
+            markup.slice(subsurfaceClose, surfaceStart) +
+            partition.surfaceMarkup +
+            markup.slice(surfaceEnd)
         )
     }
 
     /**
-     * Extracts one top-level pad group from the historical surface group.
-     * Pad groups contain only leaf SVG shapes, so their first closing group is
-     * also the matching closing tag.
-     * @param {string} markup Current renderer markup.
-     * @param {number} padIndex Stable pad index.
-     * @param {number} minimumStart Earliest valid surface-group position.
-     * @returns {{ markup: string, padMarkup: string } | null} Extraction result.
+     * Partitions selected top-level pad groups from one surface-group span.
+     * @param {string} markup Complete historical renderer markup.
+     * @param {number} start Surface-group start offset.
+     * @param {number} end Surface-group end offset.
+     * @param {Set<number>} padIndexes Stable pad indexes to relocate.
+     * @returns {{ surfaceMarkup: string, subsurfacePadMarkup: string }}
      */
-    static #extractPadGroup(markup, padIndex, minimumStart) {
-        const elementKey = 'data-element-key="pcb-pad-' + padIndex + '"'
-        const keyStart = markup.indexOf(elementKey, minimumStart)
-        if (keyStart < 0) return null
+    static #partitionSurfacePads(markup, start, end, padIndexes) {
+        const surfaceFragments = []
+        const subsurfacePadFragments = []
+        const padGroupPattern =
+            /<g class="pcb-pad\b[^"]*"[^>]*data-element-key="pcb-pad-(\d+)"[^>]*>/gu
+        let cursor = start
+        padGroupPattern.lastIndex = start
 
-        const groupStart = markup.lastIndexOf('<g', keyStart)
-        const groupEndStart = markup.indexOf('</g>', keyStart)
-        if (groupStart < minimumStart || groupEndStart < 0) return null
+        for (
+            let match = padGroupPattern.exec(markup);
+            match && match.index < end;
+            match = padGroupPattern.exec(markup)
+        ) {
+            const groupEnd = PcbSvgRenderer.#groupEnd(
+                markup,
+                padGroupPattern.lastIndex,
+                end
+            )
+            if (groupEnd < 0) break
 
-        const groupEnd = groupEndStart + '</g>'.length
-        return {
-            markup: markup.slice(0, groupStart) + markup.slice(groupEnd),
-            padMarkup: markup.slice(groupStart, groupEnd)
+            if (padIndexes.has(Number(match[1]))) {
+                surfaceFragments.push(markup.slice(cursor, match.index))
+                subsurfacePadFragments.push(markup.slice(match.index, groupEnd))
+                cursor = groupEnd
+            }
+            padGroupPattern.lastIndex = groupEnd
         }
+
+        surfaceFragments.push(markup.slice(cursor, end))
+        return {
+            surfaceMarkup: surfaceFragments.join(''),
+            subsurfacePadMarkup: subsurfacePadFragments.join('')
+        }
+    }
+
+    /**
+     * Finds the matching close for one renderer-owned pad group.
+     * @param {string} markup Complete historical renderer markup.
+     * @param {number} contentStart Offset immediately after the pad open tag.
+     * @param {number} limit Exclusive end of the surface-group span.
+     * @returns {number} Offset immediately after the matching close, or -1.
+     */
+    static #groupEnd(markup, contentStart, limit) {
+        const groupTagPattern = /<g\b[^>]*>|<\/g>/gu
+        let depth = 1
+        groupTagPattern.lastIndex = contentStart
+
+        for (
+            let match = groupTagPattern.exec(markup);
+            match && match.index < limit;
+            match = groupTagPattern.exec(markup)
+        ) {
+            depth += match[0] === '</g>' ? -1 : 1
+            if (depth === 0) return groupTagPattern.lastIndex
+        }
+        return -1
     }
 }

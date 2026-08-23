@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { PcbSvgRenderer } from '../../src/extensions.mjs'
 
 /**
@@ -84,6 +86,77 @@ test('PcbSvgRenderer places contextual pads in their copper render group', () =>
     assert.doesNotMatch(subsurfaceMarkup, /data-layer-id="32"/u)
     assert.match(surfaceMarkup, /data-layer-id="32"/u)
     assert.doesNotMatch(surfaceMarkup, /data-layer-id="1"/u)
+})
+
+/**
+ * Verifies grouping preserves pad order and keeps unknown values on surface.
+ */
+test('PcbSvgRenderer preserves grouped pad order and surface defaults', () => {
+    const board = buildGroupedPadBoard()
+    board.pcb.pads = [
+        {
+            ...board.pcb.pads[0],
+            id: 'context-a',
+            x: 100,
+            holeDiameter: 20,
+            holeShape: 2,
+            holeSlotLength: 40
+        },
+        { ...board.pcb.pads[1], id: 'surface-a', x: 300 },
+        { ...board.pcb.pads[0], id: 'context-b', x: 500 },
+        {
+            ...board.pcb.pads[1],
+            id: 'surface-default',
+            x: 700,
+            copperRenderGroup: 'unknown'
+        }
+    ]
+
+    const markup = PcbSvgRenderer.render(board)
+    const subsurfaceStart = markup.indexOf(
+        '<g class="pcb-copper pcb-copper--subsurface">'
+    )
+    const surfaceStart = markup.indexOf(
+        '<g class="pcb-copper pcb-copper--surface">'
+    )
+    const footprintStart = markup.indexOf('<g class="pcb-footprints">')
+    const subsurfaceMarkup = markup.slice(subsurfaceStart, surfaceStart)
+    const surfaceMarkup = markup.slice(surfaceStart, footprintStart)
+    const elementKeyPattern = /data-element-key="pcb-pad-(\d+)"/gu
+
+    assert.deepEqual(
+        [...subsurfaceMarkup.matchAll(elementKeyPattern)].map(
+            (match) => match[1]
+        ),
+        ['0', '2']
+    )
+    assert.deepEqual(
+        [...surfaceMarkup.matchAll(elementKeyPattern)].map((match) => match[1]),
+        ['1', '3']
+    )
+    assert.equal(
+        (subsurfaceMarkup.match(/<g\b/gu) || []).length,
+        (subsurfaceMarkup.match(/<\/g>/gu) || []).length
+    )
+})
+
+/**
+ * Verifies dense grouped-pad rendering remains within a browser-sized heap.
+ */
+test('PcbSvgRenderer renders dense grouped pads within a bounded heap', () => {
+    const probePath = fileURLToPath(
+        new URL('../helpers/DenseGroupedPadRendererProbe.mjs', import.meta.url)
+    )
+    const result = spawnSync(
+        process.execPath,
+        ['--max-old-space-size=384', probePath],
+        { encoding: 'utf8', timeout: 20_000 }
+    )
+
+    assert.equal(result.status, 0, result.stderr)
+    const output = JSON.parse(result.stdout)
+    assert.equal(output.padCount, 1000)
+    assert.ok(output.markupLength > 1_000_000)
 })
 
 /**
