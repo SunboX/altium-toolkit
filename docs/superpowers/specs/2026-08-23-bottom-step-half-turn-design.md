@@ -23,43 +23,39 @@ control restores the expected orientation.
 - Preserve existing through-hole behavior.
 - Preserve the current normalization for models whose geometry occupies the
   positive side of source Z or whose signed source extents are unavailable.
-- Replace the package-family-specific QFN/DFN preservation exception with the
-  same signed-geometry rule.
+- Supersede the package-family-specific historical behavior at the convergence
+  boundary with the same signed-geometry rule.
 - Do not add app-side adapters or viewer-side Altium behavior.
 - Do not publish, push, update the app dependency, or deploy.
 
 ## Architecture
 
-`PcbScene3dModelRegistry` will expose a `sourceBoundsMil` record for embedded
-STEP payloads. It will contain signed `minX`, `maxX`, `minY`, `maxY`, `minZ`,
-and `maxZ` values in mils. The existing `boundsMil` width, depth, and height
-contract remains unchanged so projection diagnostics and current consumers do
-not gain unrelated fields.
+The historical `src/core` and `src/ui` implementation is protected by a
+byte-exact native-source manifest. Current behavior therefore belongs in
+`src/convergence`, which wraps the historical implementation without changing
+it.
 
-`PcbScene3dBuilder` will pass the resolved external model into
-`AltiumScene3dBottomSourceHalfTurnPolicy`. The policy will preserve an authored
-X-axis half-turn only when signed bounds show that the source solid extends
-predominantly from the origin into negative Z. This is the structural condition
-under which the viewer's bottom mount mirror and a cleared local half-turn would
-reverse the solid into the board.
+The converged `PcbScene3dModelRegistry` exposes a `sourceBoundsMil` record for
+embedded STEP payloads. It contains signed `minX`, `maxX`, `minY`, `maxY`,
+`minZ`, and `maxZ` values in mils. The historical `boundsMil` width, depth, and
+height contract remains unchanged.
 
-`AltiumScene3dExternalPlacementAdapter` will use the same policy and the
-`sourceBoundsMil` already carried by `placement.externalModel`, keeping initial
-scene construction and later owner/rotation repair consistent.
+The converged `PcbScene3dBuilder` delegates scene construction to the preserved
+native builder, then corrects bottom placements only when signed bounds show
+that the source solid extends predominantly into negative Z and the associated
+source body carries an authored X-axis half-turn. `src/extensions.mjs` exports
+the converged classes under the existing public names.
 
 ## Data Flow
 
 1. The parser supplies the embedded STEP payload and authored model transform.
-2. The model registry parses Cartesian points, converts signed extents to mils,
-   and returns both dimension-only `boundsMil` and signed `sourceBoundsMil`.
-3. The scene builder creates the bottom placement and asks the half-turn policy
-   whether the authored X rotation is structural.
-4. The policy compares negative and positive source-Z extensions. A dominant
-   negative extension preserves the half-turn; otherwise the existing bottom
-   normalization clears it.
-5. The external-placement repair path repeats the same policy decision using
-   the placement's resolved external model metadata.
-6. The format-neutral viewer consumes the final scene description without any
+2. The converged registry delegates native matching, parses Cartesian points,
+   converts signed extents to mils, and adds `sourceBoundsMil`.
+3. The historical builder creates and repairs the scene unchanged.
+4. The converged builder compares negative and positive source-Z extensions. A
+   dominant negative extension restores the authored half-turn; otherwise the
+   historical result remains unchanged.
+5. The format-neutral viewer consumes the final scene description without any
    Altium-specific branch.
 
 ## Boundary Conditions
@@ -95,6 +91,7 @@ scene construction and later owner/rotation repair consistent.
 
 - No production rule contains fixture-, file-, project-, designator-, or
   package-family-specific matching for this behavior.
+- The historical native-source manifest remains byte-exact.
 - Negative-Z embedded STEP bodies retain the required half-turn on the bottom
   side.
 - Positive-Z surface-mount bodies continue to normalize the redundant

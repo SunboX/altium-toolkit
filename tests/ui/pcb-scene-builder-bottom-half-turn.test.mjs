@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbScene3dBuilder } from '../../src/ui/PcbScene3dBuilder.mjs'
+import { PcbScene3dBuilder } from '../../src/extensions.mjs'
 
 /**
  * Builds a small rectangular board outline for bottom-half-turn tests.
@@ -27,9 +27,10 @@ function buildBoardOutline() {
 
 /**
  * Builds a minimal registry that resolves synthetic body models.
- * @returns {{ resolveComponentModel: () => null, resolveComponentBodyModel: (componentBody: { name?: string, sourceStream?: string }) => { origin: string, name: string, format: string, sourceStream: string } }}
+ * @param {{ minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number } | undefined} sourceBoundsMil Signed source-model bounds.
+ * @returns {{ resolveComponentModel: () => null, resolveComponentBodyModel: (componentBody: { name?: string, sourceStream?: string }) => { origin: string, name: string, format: string, sourceStream: string, sourceBoundsMil?: { minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number } } }}
  */
-function buildModelRegistry() {
+function buildModelRegistry(sourceBoundsMil) {
     return {
         resolveComponentModel() {
             return null
@@ -39,7 +40,8 @@ function buildModelRegistry() {
                 origin: 'embedded',
                 name: String(componentBody.name || ''),
                 format: 'step',
-                sourceStream: String(componentBody.sourceStream || '')
+                sourceStream: String(componentBody.sourceStream || ''),
+                ...(sourceBoundsMil ? { sourceBoundsMil } : {})
             }
         }
     }
@@ -47,7 +49,7 @@ function buildModelRegistry() {
 
 /**
  * Builds a document with one bottom-side explicit 3D body.
- * @param {{ componentIndex: number, holeDiameter: number, designator: string, pattern: string, source: string, modelName: string, modelId: string, parameters?: Record<string, unknown>, modelRotationDeg?: { x?: number, y?: number, z?: number } }} options Case options.
+ * @param {{ componentIndex: number, holeDiameter: number, designator: string, pattern: string, source: string, modelName: string, modelId: string, parameters?: Record<string, unknown>, modelRotationDeg?: { x?: number, y?: number, z?: number }, sourceBoundsMil?: { minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number } }} options Case options.
  * @returns {object}
  */
 function buildBottomBodyDocument(options) {
@@ -115,7 +117,7 @@ function buildBottomBodyDocument(options) {
  */
 function buildScene(options) {
     return PcbScene3dBuilder.build(buildBottomBodyDocument(options), {
-        modelRegistry: buildModelRegistry()
+        modelRegistry: buildModelRegistry(options.sourceBoundsMil)
     })
 }
 
@@ -131,7 +133,15 @@ test('PcbScene3dBuilder normalizes bottom surface-mount body half-turns', () => 
         pattern: 'SURFACE_CONTACTS',
         source: 'CON/SURFACE_CONTACTS',
         modelName: 'surface-body.step',
-        modelId: '{MODEL-SURFACE}'
+        modelId: '{MODEL-SURFACE}',
+        sourceBoundsMil: {
+            minX: -50,
+            maxX: 50,
+            minY: -40,
+            maxY: 40,
+            minZ: -10,
+            maxZ: 90
+        }
     })
 
     assert.equal(scene.externalPlacements.length, 1)
@@ -144,21 +154,26 @@ test('PcbScene3dBuilder normalizes bottom surface-mount body half-turns', () => 
 })
 
 /**
- * Verifies bottom-side QFN bodies keep their source-frame half-turn because
- * the source model's contact side must stay board-facing after mounting.
+ * Verifies a bottom-side body keeps its source-frame half-turn when the STEP
+ * geometry is structurally authored below the source origin.
  */
-test('PcbScene3dBuilder preserves bottom UQFN source half-turns', () => {
+test('PcbScene3dBuilder preserves negative-Z bottom source half-turns', () => {
     const scene = buildScene({
         componentIndex: 5,
         holeDiameter: 0,
         designator: 'U5',
-        pattern: 'GENERIC_UQFN16',
-        source: 'GENERIC_LEVEL_TRANSLATOR',
-        modelName: 'GENERIC_UQFN16.step',
-        modelId: '{MODEL-UQFN}',
+        pattern: 'SURFACE_DEVICE',
+        source: 'GENERIC/SURFACE_DEVICE',
+        modelName: 'source-body.step',
+        modelId: '{MODEL-NEGATIVE-Z}',
         modelRotationDeg: { x: 180, y: 0, z: 180 },
-        parameters: {
-            PackageDescription: 'Bottom-side 16-UFQFN perimeter package'
+        sourceBoundsMil: {
+            minX: -60,
+            maxX: 60,
+            minY: -45,
+            maxY: 45,
+            minZ: -95,
+            maxZ: 5
         }
     })
 

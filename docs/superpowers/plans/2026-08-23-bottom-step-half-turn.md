@@ -4,7 +4,7 @@
 
 **Goal:** Preserve authored bottom-side X-axis half-turns when signed embedded STEP geometry proves that the solid occupies negative source Z.
 
-**Architecture:** Extend the Altium model registry with signed source bounds while preserving its dimension-only bounds contract. Feed those signed bounds into one geometry-based half-turn policy used by both initial scene construction and external-placement repair.
+**Architecture:** Wrap the byte-frozen historical registry and builder in `src/convergence`. The converged registry adds signed source bounds while preserving the native dimension-only contract; the converged builder applies one geometry-based correction after historical scene construction.
 
 **Tech Stack:** JavaScript ES modules, Node.js test runner, Altium embedded STEP metadata, ECAD Forge integration tests.
 
@@ -16,20 +16,22 @@
 - Add JSDoc for every new method.
 - Use 4-space indentation, single quotes, no semicolons, and no trailing commas.
 - Do not publish, push, update the ECAD Forge dependency, or deploy.
+- Do not modify files covered by `spec/native-source-manifest-v1.1.41.json`.
 
 ---
 
-### Task 1: Preserve signed embedded STEP bounds
+### Task 1: Preserve signed embedded STEP bounds at the convergence boundary
 
 **Files:**
-- Modify: `src/ui/PcbScene3dModelRegistry.mjs:16-484`
+- Add: `src/convergence/PcbScene3dModelRegistry.mjs`
+- Modify: `src/extensions.mjs`
 - Test: `tests/ui/pcb-scene-model-registry.test.mjs:119-156`
 
 **Interfaces:**
-- Consumes: embedded STEP `payloadText` and the existing `#resolveStepMilScale(payloadText)` unit conversion.
+- Consumes: resolved embedded STEP `payloadText` and STEP length-unit metadata.
 - Produces: `resolvedModel.sourceBoundsMil` with finite `minX`, `maxX`, `minY`, `maxY`, `minZ`, and `maxZ` values in mils while leaving `resolvedModel.boundsMil` as `{ width, depth, height }`.
 
-- [ ] **Step 1: Extend the STEP registry regression with signed-bound assertions**
+- [x] **Step 1: Extend the STEP registry regression with signed-bound assertions**
 
 Add assertions after the current dimension checks:
 
@@ -47,79 +49,43 @@ assert.deepEqual(Object.keys(match.boundsMil).sort(), [
 ])
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: `node --test tests/ui/pcb-scene-model-registry.test.mjs`
 
 Expected: FAIL because `match.sourceBoundsMil` is undefined.
 
-- [ ] **Step 3: Return signed source bounds without changing dimension bounds**
+- [x] **Step 3: Return signed source bounds without changing dimension bounds**
 
-In `#resolveStepBoundsMil`, convert every extent to mils and return both extents and dimensions:
+Wrap the historical registry, delegate all native matching, and parse signed
+Cartesian-point extents only for resolved inline STEP payloads. Add
+`sourceBoundsMil` to the returned model without changing native `boundsMil`.
 
-```js
-const sourceBoundsMil = Object.fromEntries(
-    Object.entries(bounds).map(([key, value]) => [key, value * scale])
-)
-
-return {
-    ...sourceBoundsMil,
-    width: sourceBoundsMil.maxX - sourceBoundsMil.minX,
-    depth: sourceBoundsMil.maxY - sourceBoundsMil.minY,
-    height: sourceBoundsMil.maxZ - sourceBoundsMil.minZ
-}
-```
-
-In `#normalizeEmbeddedModel`, rename the local result to `sourceBoundsMil`, derive the existing record, and retain both:
-
-```js
-const sourceBoundsMil = PcbScene3dModelRegistry.#resolveEmbeddedBoundsMil(
-    format,
-    payloadText
-)
-const boundsMil = sourceBoundsMil
-    ? {
-          width: sourceBoundsMil.width,
-          depth: sourceBoundsMil.depth,
-          height: sourceBoundsMil.height
-      }
-    : null
-```
-
-Add the signed record to the normalized model and resolved embedded match:
-
-```js
-...(boundsMil ? { boundsMil } : {}),
-...(sourceBoundsMil ? { sourceBoundsMil } : {})
-```
-
-Update the affected JSDoc return types to describe `sourceBoundsMil`.
-
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run: `node --test tests/ui/pcb-scene-model-registry.test.mjs`
 
 Expected: all model-registry tests pass, including signed millimetre and dimension-only assertions.
 
-- [ ] **Step 5: Commit the signed-bounds contract**
+- [x] **Step 5: Commit the converged signed-bounds contract**
 
 ```bash
-git add src/ui/PcbScene3dModelRegistry.mjs tests/ui/pcb-scene-model-registry.test.mjs
-git commit -m "feature: expose signed STEP source bounds"
+git add src/convergence/PcbScene3dModelRegistry.mjs src/extensions.mjs tests/ui/pcb-scene-model-registry.test.mjs
+git commit -m "fix: preserve negative-Z bottom STEP orientation"
 ```
 
 ### Task 2: Replace package matching with source-geometry policy
 
 **Files:**
-- Modify: `src/ui/AltiumScene3dBottomSourceHalfTurnPolicy.mjs:1-93`
-- Modify: `src/ui/PcbScene3dBuilder.mjs:589-601,2184-2219`
+- Add: `src/convergence/PcbScene3dBuilder.mjs`
+- Modify: `src/extensions.mjs`
 - Test: `tests/ui/pcb-scene-builder-bottom-half-turn.test.mjs:27-196`
 
 **Interfaces:**
 - Consumes: `externalModel.sourceBoundsMil` from Task 1 and the authored source X rotation from `componentBody.modelRotationDeg`.
-- Produces: `AltiumScene3dBottomSourceHalfTurnPolicy.shouldPreserve(context): boolean`, where a source with at least 80 percent of its Z span below the origin preserves X=180.
+- Produces: a converged external placement where a source with at least 80 percent of its Z span below the origin preserves X=180.
 
-- [ ] **Step 1: Make the positive-Z case explicit and add a negative-Z regression**
+- [x] **Step 1: Make the positive-Z case explicit and add a negative-Z regression**
 
 Change `buildModelRegistry` to accept and return optional signed bounds:
 
@@ -188,67 +154,19 @@ test('PcbScene3dBuilder preserves bottom negative-Z source half-turns', () => {
 })
 ```
 
-- [ ] **Step 2: Run the focused scene test and verify RED**
+- [x] **Step 2: Run the focused scene test and verify RED**
 
 Run: `node --test tests/ui/pcb-scene-builder-bottom-half-turn.test.mjs`
 
 Expected: the negative-Z surface-mount case FAILS with X=0 instead of X=-180.
 
-- [ ] **Step 3: Implement the geometry-based policy**
+- [x] **Step 3: Implement the geometry-based policy**
 
-Replace the package regex and identity helpers with:
+Delegate to the historical builder, then structurally restore X=-180 for a
+bottom placement only when its resolved model has dominant negative-Z signed
+bounds and its matched source body carries an authored X half-turn.
 
-```js
-static #NEGATIVE_SOURCE_Z_RATIO = 0.8
-
-static shouldPreserve(context = {}) {
-    if (
-        !AltiumScene3dBottomSourceHalfTurnPolicy.#hasSourceHalfTurn(context)
-    ) {
-        return false
-    }
-
-    const sourceBoundsMil =
-        context?.externalModel?.sourceBoundsMil ||
-        context?.placement?.externalModel?.sourceBoundsMil
-
-    return AltiumScene3dBottomSourceHalfTurnPolicy.#hasDominantNegativeSourceZ(
-        sourceBoundsMil
-    )
-}
-
-/**
- * Checks whether most source geometry occupies the negative side of Z.
- * @param {{ minZ?: number, maxZ?: number } | null | undefined} sourceBoundsMil Signed source bounds.
- * @returns {boolean}
- */
-static #hasDominantNegativeSourceZ(sourceBoundsMil) {
-    const minZ = Number(sourceBoundsMil?.minZ)
-    const maxZ = Number(sourceBoundsMil?.maxZ)
-    const height = maxZ - minZ
-    if (
-        !Number.isFinite(minZ) ||
-        !Number.isFinite(maxZ) ||
-        !Number.isFinite(height) ||
-        minZ >= 0 ||
-        height <= 0
-    ) {
-        return false
-    }
-
-    const negativeExtension = Math.abs(Math.min(minZ, 0))
-
-    return (
-        negativeExtension / height >=
-        AltiumScene3dBottomSourceHalfTurnPolicy.#NEGATIVE_SOURCE_Z_RATIO
-    )
-}
-```
-
-Pass `resolvedModel` into `#resolveExternalModelRotation` and then into the
-policy as `externalModel: resolvedModel`. Update its JSDoc and signature.
-
-- [ ] **Step 4: Run both focused suites and verify GREEN**
+- [x] **Step 4: Run both focused suites and verify GREEN**
 
 Run:
 
@@ -258,16 +176,16 @@ node --test tests/ui/pcb-scene-model-registry.test.mjs tests/ui/pcb-scene-builde
 
 Expected: both suites pass; the positive-Z body reports X=0, the negative-Z body reports X=-180, and through-hole behavior remains X=-180.
 
-- [ ] **Step 5: Run formatting verification**
+- [x] **Step 5: Run formatting verification**
 
 Run: `npm run check:format`
 
 Expected: exit 0 with no formatting differences.
 
-- [ ] **Step 6: Commit the structural policy**
+- [x] **Step 6: Commit the structural policy**
 
 ```bash
-git add src/ui/AltiumScene3dBottomSourceHalfTurnPolicy.mjs src/ui/PcbScene3dBuilder.mjs tests/ui/pcb-scene-builder-bottom-half-turn.test.mjs
+git add src/convergence/PcbScene3dBuilder.mjs src/convergence/PcbScene3dModelRegistry.mjs src/extensions.mjs tests/ui/pcb-scene-builder-bottom-half-turn.test.mjs tests/ui/pcb-scene-model-registry.test.mjs
 git commit -m "fix: preserve negative-Z bottom STEP orientation"
 ```
 

@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { PcbScene3dModelRegistry } from '../../src/ui/PcbScene3dModelRegistry.mjs'
+import { PcbScene3dModelRegistry } from '../../src/extensions.mjs'
 
 /**
  * Verifies the model registry resolves explicit references before basename
