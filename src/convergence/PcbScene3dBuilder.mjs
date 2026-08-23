@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbScene3dBuilder as HistoricalPcbScene3dBuilder } from '../ui/PcbScene3dBuilder.mjs'
+import { AltiumScene3dGeometricOwnerRecovery } from '../ui/AltiumScene3dGeometricOwnerRecovery.mjs'
 
 const NEGATIVE_SOURCE_Z_DOMINANCE_RATIO = 0.8
 const POSITION_EPSILON_MIL = 1e-6
@@ -18,7 +19,10 @@ export class PcbScene3dBuilder {
      * @returns {object}
      */
     static build(documentModel, options = {}) {
-        const scene = HistoricalPcbScene3dBuilder.build(documentModel, options)
+        const scene = AltiumScene3dGeometricOwnerRecovery.apply(
+            HistoricalPcbScene3dBuilder.build(documentModel, options),
+            documentModel
+        )
         if (!Array.isArray(scene?.externalPlacements)) {
             return scene
         }
