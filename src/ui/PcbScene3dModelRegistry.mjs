@@ -13,12 +13,12 @@ export class PcbScene3dModelRegistry {
     /** @type {{ file?: File | Blob | null, name: string, relativePath: string, format: string, source: string, normalizedPath: string, normalizedBaseName: string }[]} */
     #modelFiles
 
-    /** @type {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string, boundsMil?: { width: number, depth: number, height: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } }[]} */
+    /** @type {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string, boundsMil?: { width: number, depth: number, height: number }, sourceBoundsMil?: { minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } }[]} */
     #embeddedModels
 
     /**
      * @param {{ file?: File | Blob | null, name: string, relativePath: string, format: string, source: string, normalizedPath: string, normalizedBaseName: string }[]} modelFiles
-     * @param {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string, boundsMil?: { width: number, depth: number, height: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } }[]} embeddedModels
+     * @param {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string, boundsMil?: { width: number, depth: number, height: number }, sourceBoundsMil?: { minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } }[]} embeddedModels
      */
     constructor(modelFiles, embeddedModels) {
         this.#modelFiles = modelFiles
@@ -227,7 +227,7 @@ export class PcbScene3dModelRegistry {
      * Resolves the best available model for one normalized component-body
      * placement.
      * @param {{ modelId?: string, checksum?: number | null, name?: string }} componentBody
-     * @returns {{ origin: 'embedded' | 'session', file?: File | Blob | null, name: string, relativePath?: string, format: string, payloadText?: string, sourceStream?: string, boundsMil?: { width: number, depth: number, height: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } } | null}
+     * @returns {{ origin: 'embedded' | 'session', file?: File | Blob | null, name: string, relativePath?: string, format: string, payloadText?: string, sourceStream?: string, boundsMil?: { width: number, depth: number, height: number }, sourceBoundsMil?: { minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } } | null}
      */
     resolveComponentBodyModel(componentBody) {
         const embeddedMatch = this.#resolveEmbeddedMatch(componentBody)
@@ -289,7 +289,7 @@ export class PcbScene3dModelRegistry {
     /**
      * Normalizes one embedded payload for registry lookup.
      * @param {{ id?: string, checksum?: number | null, name?: string, format?: string, payloadText?: string, sourceStream?: string, transform?: object }} model
-     * @returns {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string, boundsMil?: { width: number, depth: number, height: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } } | null}
+     * @returns {{ id: string, checksum: number | null, name: string, format: string, payloadText: string, sourceStream: string, normalizedId: string, normalizedBaseName: string, boundsMil?: { width: number, depth: number, height: number }, sourceBoundsMil?: { minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } } | null}
      */
     static #normalizeEmbeddedModel(model) {
         const id = String(model?.id || '').trim()
@@ -302,10 +302,18 @@ export class PcbScene3dModelRegistry {
             return null
         }
 
-        const boundsMil = PcbScene3dModelRegistry.#resolveEmbeddedBoundsMil(
-            format,
-            payloadText
-        )
+        const sourceBoundsMil =
+            PcbScene3dModelRegistry.#resolveEmbeddedBoundsMil(
+                format,
+                payloadText
+            )
+        const boundsMil = sourceBoundsMil
+            ? {
+                  width: sourceBoundsMil.maxX - sourceBoundsMil.minX,
+                  depth: sourceBoundsMil.maxY - sourceBoundsMil.minY,
+                  height: sourceBoundsMil.maxZ - sourceBoundsMil.minZ
+              }
+            : null
         const transform = PcbScene3dModelRegistry.#normalizeModelTransform(
             model?.transform
         )
@@ -324,6 +332,7 @@ export class PcbScene3dModelRegistry {
                 name.replace(/\.[^.]+$/, '')
             ),
             ...(boundsMil ? { boundsMil } : {}),
+            ...(sourceBoundsMil ? { sourceBoundsMil } : {}),
             ...(transform ? { transform } : {})
         }
     }
@@ -331,7 +340,7 @@ export class PcbScene3dModelRegistry {
     /**
      * Resolves one embedded model match from authored model metadata.
      * @param {{ modelId?: string, checksum?: number | null, name?: string }} componentBody
-     * @returns {{ origin: 'embedded', name: string, format: string, payloadText: string, sourceStream: string, boundsMil?: { width: number, depth: number, height: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } } | null}
+     * @returns {{ origin: 'embedded', name: string, format: string, payloadText: string, sourceStream: string, boundsMil?: { width: number, depth: number, height: number }, sourceBoundsMil?: { minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number }, transform?: { rotationDeg?: { x?: number, y?: number, z?: number }, dzMil?: number } } | null}
      */
     #resolveEmbeddedMatch(componentBody) {
         const normalizedId = PcbScene3dModelRegistry.#normalizeToken(
@@ -373,6 +382,9 @@ export class PcbScene3dModelRegistry {
             sourceStream: embeddedMatch.sourceStream,
             ...(embeddedMatch.boundsMil
                 ? { boundsMil: embeddedMatch.boundsMil }
+                : {}),
+            ...(embeddedMatch.sourceBoundsMil
+                ? { sourceBoundsMil: embeddedMatch.sourceBoundsMil }
                 : {}),
             ...(embeddedMatch.transform
                 ? { transform: embeddedMatch.transform }
@@ -416,7 +428,7 @@ export class PcbScene3dModelRegistry {
      * inspectable without a geometry engine.
      * @param {string} format Embedded model format.
      * @param {string} payloadText Embedded model text payload.
-     * @returns {{ width: number, depth: number, height: number } | null}
+     * @returns {{ minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number } | null}
      */
     static #resolveEmbeddedBoundsMil(format, payloadText) {
         const normalizedFormat = String(format || '').toLowerCase()
@@ -430,7 +442,7 @@ export class PcbScene3dModelRegistry {
     /**
      * Resolves a STEP payload envelope from authored Cartesian points.
      * @param {string} payloadText STEP text payload.
-     * @returns {{ width: number, depth: number, height: number } | null}
+     * @returns {{ minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number } | null}
      */
     static #resolveStepBoundsMil(payloadText) {
         const text = String(payloadText || '')
@@ -479,9 +491,12 @@ export class PcbScene3dModelRegistry {
         })
 
         return {
-            width: (bounds.maxX - bounds.minX) * scale,
-            depth: (bounds.maxY - bounds.minY) * scale,
-            height: (bounds.maxZ - bounds.minZ) * scale
+            minX: bounds.minX * scale,
+            maxX: bounds.maxX * scale,
+            minY: bounds.minY * scale,
+            maxY: bounds.maxY * scale,
+            minZ: bounds.minZ * scale,
+            maxZ: bounds.maxZ * scale
         }
     }
 

@@ -150,9 +150,20 @@ test('PcbScene3dModelRegistry derives embedded STEP payload bounds', () => {
     })
 
     assert.equal(match?.origin, 'embedded')
+    assert.deepEqual(Object.keys(match.boundsMil).sort(), [
+        'depth',
+        'height',
+        'width'
+    ])
     assert.ok(Math.abs(match.boundsMil.width - 100) < 1e-9)
     assert.ok(Math.abs(match.boundsMil.depth - 94.4881889764) < 1e-9)
     assert.ok(Math.abs(match.boundsMil.height - 287.4015748031) < 1e-9)
+    assert.ok(Math.abs(match.sourceBoundsMil.minX + 25) < 1e-9)
+    assert.ok(Math.abs(match.sourceBoundsMil.maxX - 75) < 1e-9)
+    assert.ok(Math.abs(match.sourceBoundsMil.minY + 47.2440944882) < 1e-9)
+    assert.ok(Math.abs(match.sourceBoundsMil.maxY - 47.2440944882) < 1e-9)
+    assert.ok(Math.abs(match.sourceBoundsMil.minZ + 90.5511811024) < 1e-9)
+    assert.ok(Math.abs(match.sourceBoundsMil.maxZ - 196.8503937008) < 1e-9)
 })
 
 test('PcbScene3dModelRegistry honors embedded STEP inch payload bounds', () => {
