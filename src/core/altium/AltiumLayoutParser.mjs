@@ -308,6 +308,25 @@ export class AltiumLayoutParser {
         }
 
         const margin = Math.max(Number(sheet?.marginWidth || 20), 20)
+        const footerLineBounds =
+            AltiumLayoutParser.#collectSchematicFooterLineBounds(
+                lines,
+                sheet,
+                margin
+            )
+        const embeddedNativeTemplateSheet =
+            AltiumLayoutParser.#resolveEmbeddedNativeTemplateSheetSize(
+                sheet,
+                bounds,
+                footerLineBounds,
+                margin
+            )
+        if (embeddedNativeTemplateSheet) {
+            return {
+                ...sheet,
+                ...embeddedNativeTemplateSheet
+            }
+        }
         const nativeTemplateSheet =
             AltiumLayoutParser.#resolveNativeStandardTemplateSheetSize(
                 sheet,
@@ -335,12 +354,6 @@ export class AltiumLayoutParser {
             textRecords,
             Number(sheet?.width || 0)
         )
-        const footerLineBounds =
-            AltiumLayoutParser.#collectSchematicFooterLineBounds(
-                lines,
-                sheet,
-                margin
-            )
         const requiredWidthResult =
             AltiumLayoutParser.#resolveSchematicRequiredWidth(
                 sheet,
@@ -595,6 +608,54 @@ export class AltiumLayoutParser {
             Number(bounds?.maxX || 0) <= width - margin + 0.01 &&
             Number(bounds?.maxY || 0) <= height - margin + 0.01
         )
+    }
+
+    /**
+     * Keeps the stored coordinate frame of an embedded standard template when
+     * owned footer chrome proves that the source dimensions are the authored
+     * frame rather than a sparse content estimate.
+     * @param {{ width?: number, height?: number, sourceWidth?: number, sourceHeight?: number, paperSize?: string, sheetStyle?: number, borderOn?: boolean }} sheet
+     * @param {{ maxX: number, maxY: number }} bounds
+     * @param {{ maxX: number } | null} footerLineBounds
+     * @param {number} margin
+     * @returns {{ width: number, height: number, sourceWidth: number, sourceHeight: number } | null}
+     */
+    static #resolveEmbeddedNativeTemplateSheetSize(
+        sheet,
+        bounds,
+        footerLineBounds,
+        margin
+    ) {
+        const width = Number(sheet?.width || 0)
+        const height = Number(sheet?.height || 0)
+        const sourceWidth = Number(sheet?.sourceWidth || 0)
+        const sourceHeight = Number(sheet?.sourceHeight || 0)
+        const frameEdge = sourceWidth - margin
+
+        if (
+            Number(sheet?.sheetStyle || 0) !== 1 ||
+            !sheet?.paperSize ||
+            !sheet?.borderOn ||
+            width <= 0 ||
+            height <= 0 ||
+            sourceWidth <= margin * 2 ||
+            sourceHeight <= margin * 2 ||
+            (width >= height) !== (sourceWidth >= sourceHeight) ||
+            !footerLineBounds ||
+            footerLineBounds.maxX < frameEdge - 0.01 ||
+            footerLineBounds.maxX > sourceWidth + 0.01 ||
+            Number(bounds?.maxX || 0) > sourceWidth - margin + 0.01 ||
+            Number(bounds?.maxY || 0) > sourceHeight - margin + 0.01
+        ) {
+            return null
+        }
+
+        return {
+            width: sourceWidth,
+            height: sourceHeight,
+            sourceWidth,
+            sourceHeight
+        }
     }
 
     /**
