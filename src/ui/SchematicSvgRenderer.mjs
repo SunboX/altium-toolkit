@@ -22,6 +22,7 @@ import { SchematicImageRenderer } from './SchematicImageRenderer.mjs'
 import { SchematicNativeFooterPartitioner } from './SchematicNativeFooterPartitioner.mjs'
 import { SchematicOwnerPinMarkerLineThemer } from './SchematicOwnerPinMarkerLineThemer.mjs'
 import { SchematicHarnessRenderer } from './SchematicHarnessRenderer.mjs'
+import { SchematicRotatedOwnerTextPlacement } from './SchematicRotatedOwnerTextPlacement.mjs'
 import { TextGeometrySidecarBuilder } from './TextGeometrySidecarBuilder.mjs'
 import { SchematicRenderOpsSidecarBuilder } from './SchematicRenderOpsSidecarBuilder.mjs'
 import { SchematicProjectParameterResolver } from '../core/altium/SchematicProjectParameterResolver.mjs'
@@ -2739,10 +2740,16 @@ export class SchematicSvgRenderer {
                 matchedOwnerPin
             )
         const sourceY = mirroredOwnerPinPlacement?.y ?? text.y
-        const x = mirroredOwnerPinPlacement?.x ?? text.x
-        const projectedY = projectSchematicY(sheetHeight, sourceY)
+        const sourceX = mirroredOwnerPinPlacement?.x ?? text.x
         const fontSize =
             SchematicTypography.resolveViewerFontSize(text.fontSize) || 0
+        const x = SchematicRotatedOwnerTextPlacement.resolveX(
+            text,
+            sourceX,
+            fontSize,
+            ownerTextBodyBounds
+        )
+        const projectedY = projectSchematicY(sheetHeight, sourceY)
         const baselineLift =
             SchematicSvgRenderer.#resolveSectionHeadingBaselineLift(
                 text,
