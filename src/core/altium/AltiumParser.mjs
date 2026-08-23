@@ -70,6 +70,7 @@ const {
     stripExtension
 } = ParserUtils
 const {
+    collectTitleBlockFooterOwners,
     extractSchematicFonts,
     extractSchematicFontDiagnostics,
     extractSchematicMetadata,
@@ -506,6 +507,10 @@ export class AltiumParser {
                 schematicFonts
             )
         }
+        const footerOwnerIndexes = collectTitleBlockFooterOwners(
+            textRecords,
+            sheet.width
+        )
 
         let lines = [
             ...lineRecords.map((record, index) => ({
@@ -643,7 +648,8 @@ export class AltiumParser {
                     metadataTexts,
                     sheet,
                     schematicFonts,
-                    ownerMetadataTexts
+                    ownerMetadataTexts,
+                    footerOwnerIndexes
                 )
             )
             .filter(Boolean)
@@ -1491,7 +1497,7 @@ export class AltiumParser {
      * @returns {boolean}
      */
     static #hasDisplayText(fields) {
-        return Boolean(getDisplayText(fields))
+        return Boolean(getDisplayText(fields) || getField(fields, 'Text'))
     }
 
     /**

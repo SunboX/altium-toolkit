@@ -20,6 +20,8 @@ test('parseAltiumArrayBuffer resolves owner-indexed native title-block footer pl
             '|Size2=9|FontName2=Times New Roman|Bold2=F|Italic2=T|Rotation2=0',
         '|RECORD=4|OwnerIndex=1|Location.X=1075|Location.Y=65|Color=8388608|FontID=1|Text=Title:',
         '|RECORD=4|OwnerIndex=1|Location.X=1166|Location.Y=66|Color=128|FontID=1|Text==title',
+        '|RECORD=4|OwnerIndex=1|Location.X=1075|Location.Y=165|Color=8388608|FontID=1|Text==organization',
+        '|RECORD=4|OwnerIndex=1|Location.X=1205|Location.Y=165|Color=8388608|FontID=1|Text==ApprovedBy',
         '|RECORD=4|OwnerIndex=1|Location.X=1176|Location.Y=61|Color=8388608|FontID=1|Text==documentnumber',
         '|RECORD=4|OwnerIndex=1|Location.X=1328|Location.Y=65|Color=8388608|FontID=2|Text==address1',
         '|RECORD=4|OwnerIndex=1|Location.X=1333|Location.Y=55|Color=8388608|FontID=2|Text==address2',
@@ -46,6 +48,8 @@ test('parseAltiumArrayBuffer resolves owner-indexed native title-block footer pl
         '|RECORD=41|Name=SheetNumber|Text=7|IsHidden=T',
         '|RECORD=41|Name=SheetTotal|Text=23|IsHidden=T',
         '|RECORD=41|Name=Project|Text=OBFUSCATED_PROJECT|IsHidden=T',
+        '|RECORD=41|Name=Organization|Text=OBSCURA LABS|IsHidden=T',
+        '|RECORD=41|Name=ApprovedBy|Text=*|IsHidden=T',
         '|RECORD=41|Name=Address1|Text=Unit 1|IsHidden=T',
         '|RECORD=41|Name=Address2|Text=' + latinAddress + '|IsHidden=T',
         '|RECORD=41|Name=Address3|Text=Test City|IsHidden=T',
@@ -74,6 +78,8 @@ test('parseAltiumArrayBuffer resolves owner-indexed native title-block footer pl
     assert.equal(documentModel.schematic.sheet.titleBlock.drawnBy, 'QA Team')
     assert.equal(visibleTexts.includes('OBFUSCATED_CORE'), true)
     assert.equal(visibleTexts.includes('OBFUSCATED_PROJECT'), true)
+    assert.equal(visibleTexts.includes('OBSCURA LABS'), true)
+    assert.equal(visibleTexts.filter((text) => text === '*').length, 1)
     assert.equal(visibleTexts.includes('Unit 1'), true)
     assert.equal(visibleTexts.includes('Polígono Unit'), true)
     assert.equal(visibleTexts.includes('=title'), false)
