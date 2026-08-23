@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbSvgRenderer as LegacyPcbSvgRenderer } from '../ui/PcbSvgRenderer.mjs'
+import { PcbDrawingTextComposite } from './PcbDrawingTextComposite.mjs'
+import { PcbVisibleLayerViewport } from './PcbVisibleLayerViewport.mjs'
 
 /**
  * Renders native Altium PCB models through the preserved historical renderer
@@ -19,7 +21,22 @@ export class PcbSvgRenderer {
      * @returns {string} Rendered SVG panel markup.
      */
     static render(documentModel, options = {}) {
-        const markup = LegacyPcbSvgRenderer.render(documentModel, options)
+        const historicalMarkup = LegacyPcbSvgRenderer.render(
+            documentModel,
+            options
+        )
+        const drawingMarkup = PcbDrawingTextComposite.apply(
+            historicalMarkup,
+            documentModel,
+            options
+        )
+        const markup = PcbVisibleLayerViewport.apply(
+            drawingMarkup,
+            documentModel,
+            options,
+            (filteredDocument, filteredOptions) =>
+                LegacyPcbSvgRenderer.render(filteredDocument, filteredOptions)
+        )
         const subsurfacePadIndexes = PcbSvgRenderer.#subsurfacePadIndexes(
             documentModel,
             options
