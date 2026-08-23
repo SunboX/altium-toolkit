@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { SchematicSvgRenderer as LegacySchematicSvgRenderer } from '../ui/SchematicSvgRenderer.mjs'
+import { SchematicProjectParameterResolver } from '../core/altium/SchematicProjectParameterResolver.mjs'
 import { AltiumSchematicImageNormalizer } from './AltiumSchematicImageNormalizer.mjs'
 import { AltiumSchematicNativeFooterOwnerAligner } from './AltiumSchematicNativeFooterOwnerAligner.mjs'
 import { AltiumSchematicFidelityNormalizer } from './AltiumSchematicFidelityNormalizer.mjs'
@@ -21,17 +22,32 @@ export class SchematicSvgRenderer {
      * @returns {string} Rendered SVG panel markup.
      */
     static render(documentModel, options = {}) {
+        const projectParameters = options.projectParameters
+        const projectResolved = projectParameters
+            ? SchematicProjectParameterResolver.applyToDocumentModel(
+                  documentModel,
+                  projectParameters,
+                  { replaceText: true }
+              )
+            : documentModel
         const normalized =
-            AltiumSchematicImageNormalizer.normalize(documentModel)
+            AltiumSchematicImageNormalizer.normalize(projectResolved)
         const fidelityNormalized =
             AltiumSchematicFidelityNormalizer.normalize(normalized)
         const aligned =
             AltiumSchematicNativeFooterOwnerAligner.align(fidelityNormalized)
         const renderDocument =
             SchematicSvgRenderer.#visibilityAwareDocument(aligned)
+        const legacyOptions = projectParameters
+            ? Object.fromEntries(
+                  Object.entries(options).filter(
+                      ([name]) => name !== 'projectParameters'
+                  )
+              )
+            : options
         const markup = LegacySchematicSvgRenderer.render(
             renderDocument,
-            options
+            legacyOptions
         )
 
         return SchematicSvgRenderer.#injectHarnessMarkup(markup, renderDocument)

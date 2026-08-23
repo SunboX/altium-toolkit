@@ -60,6 +60,20 @@ function createNativeFidelityFixture() {
                     x: 205,
                     y: 150,
                     text: '=organization',
+                    rawText: '=organization',
+                    resolvedText: '=organization',
+                    specialString: {
+                        rawText: '=organization',
+                        resolvedText: '=organization',
+                        parameterNames: ['organization'],
+                        expressionParts: [
+                            {
+                                kind: 'parameter',
+                                name: 'organization',
+                                value: '=organization'
+                            }
+                        ]
+                    },
                     ownerIndex: '1',
                     recordType: '4',
                     color: '#000080',
@@ -317,4 +331,16 @@ test('convergence schematic renderer emits complete harness geometry in the exis
     assert.match(markup, /class="schematic-label" x="118"[^>]*>62R</u)
     assert.match(markup, /class="schematic-label" x="128"[^>]*>0\.5W</u)
     assert.doesNotMatch(markup, /style="[^";]*color:/u)
+})
+
+test('project context preserves native footer metadata fallback values', () => {
+    const markup = SchematicSvgRenderer.render(createNativeFidelityFixture(), {
+        projectParameters: {
+            CurrentDate: '1/2/2026',
+            DocumentName: 'neutral.SchDoc'
+        }
+    })
+
+    assert.match(markup, />OBSCURA LABS</u)
+    assert.doesNotMatch(markup, />=organization</u)
 })

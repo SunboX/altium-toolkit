@@ -214,10 +214,45 @@ export class AltiumSchematicFidelityNormalizer {
             if (!replacement) return text
 
             changed = true
-            return { ...text, text: replacement }
+            return AltiumSchematicFidelityNormalizer.#resolvedFooterText(
+                text,
+                replacement
+            )
         })
 
         return changed ? resolvedTexts : texts
+    }
+
+    /**
+     * Synchronizes one footer fallback across the visible text sidecar fields.
+     * @param {Record<string, any>} text Footer text primitive.
+     * @param {string} replacement Resolved native metadata value.
+     * @returns {Record<string, any>} Resolved footer text primitive.
+     */
+    static #resolvedFooterText(text, replacement) {
+        const specialString = text?.specialString
+        const resolvedSpecialString = specialString
+            ? {
+                  ...specialString,
+                  resolvedText: replacement,
+                  expressionParts: Array.isArray(specialString.expressionParts)
+                      ? specialString.expressionParts.map((part) =>
+                            part?.kind === 'parameter'
+                                ? { ...part, value: replacement }
+                                : part
+                        )
+                      : specialString.expressionParts
+              }
+            : specialString
+
+        return {
+            ...text,
+            text: replacement,
+            resolvedText: replacement,
+            ...(resolvedSpecialString
+                ? { specialString: resolvedSpecialString }
+                : {})
+        }
     }
 
     /**
