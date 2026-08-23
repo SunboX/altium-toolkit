@@ -28,7 +28,8 @@ export class PcbScene3dBuilder {
             externalPlacements: scene.externalPlacements.map((placement) =>
                 PcbScene3dBuilder.#normalizePlacement(
                     placement,
-                    documentModel?.pcb?.componentBodies
+                    documentModel?.pcb?.componentBodies,
+                    documentModel?.pcb?.components
                 )
             )
         }
@@ -39,27 +40,72 @@ export class PcbScene3dBuilder {
      * predominantly below the authored origin.
      * @param {object} placement Built external placement.
      * @param {object[] | undefined} componentBodies Source component bodies.
+     * @param {object[] | undefined} components Source PCB components.
      * @returns {object}
      */
-    static #normalizePlacement(placement, componentBodies) {
-        if (
-            String(placement?.mountSide || '').toLowerCase() !== 'bottom' ||
-            !PcbScene3dBuilder.#isDominantlyNegativeSourceZ(
-                placement?.externalModel?.sourceBoundsMil
-            )
-        ) {
-            return placement
-        }
-
+    static #normalizePlacement(placement, componentBodies, components) {
         const componentBody = PcbScene3dBuilder.#resolveComponentBody(
             placement,
             componentBodies
         )
+        const normalizedPlacement =
+            PcbScene3dBuilder.#normalizeRecoveredOwnerVerticalOffset(
+                placement,
+                componentBody,
+                components
+            )
+
+        if (
+            String(normalizedPlacement?.mountSide || '').toLowerCase() !==
+                'bottom' ||
+            !PcbScene3dBuilder.#isDominantlyNegativeSourceZ(
+                normalizedPlacement?.externalModel?.sourceBoundsMil
+            )
+        ) {
+            return normalizedPlacement
+        }
+
         if (
             PcbScene3dBuilder.#normalizeAngle(
                 componentBody?.modelRotationDeg?.x ??
-                    placement?.externalModel?.transform?.rotationDeg?.x
+                    normalizedPlacement?.externalModel?.transform?.rotationDeg
+                        ?.x
             ) !== 180
+        ) {
+            return normalizedPlacement
+        }
+
+        return {
+            ...normalizedPlacement,
+            modelTransform: {
+                ...(normalizedPlacement.modelTransform || {}),
+                rotationDeg: {
+                    ...(normalizedPlacement.modelTransform?.rotationDeg || {}),
+                    x: -180
+                }
+            }
+        }
+    }
+
+    /**
+     * Applies owned-package seating after a later adapter recovered the owner.
+     * @param {object} placement Built external placement.
+     * @param {object | null} componentBody Resolved source component body.
+     * @param {object[] | undefined} components Source PCB components.
+     * @returns {object}
+     */
+    static #normalizeRecoveredOwnerVerticalOffset(
+        placement,
+        componentBody,
+        components
+    ) {
+        if (
+            !PcbScene3dBuilder.#hasResolvedOwner(placement, components) ||
+            !PcbScene3dBuilder.#hasZeroAuthoredStandoff(componentBody) ||
+            !PcbScene3dBuilder.#retainsPositiveSourceOffset(
+                placement,
+                componentBody
+            )
         ) {
             return placement
         }
@@ -68,12 +114,66 @@ export class PcbScene3dBuilder {
             ...placement,
             modelTransform: {
                 ...(placement.modelTransform || {}),
-                rotationDeg: {
-                    ...(placement.modelTransform?.rotationDeg || {}),
-                    x: -180
-                }
+                dzMil: 0
             }
         }
+    }
+
+    /**
+     * Checks whether the final placement designator resolves a source owner.
+     * @param {object} placement Built external placement.
+     * @param {object[] | undefined} components Source PCB components.
+     * @returns {boolean}
+     */
+    static #hasResolvedOwner(placement, components) {
+        const designator = String(placement?.designator || '')
+        return (
+            designator.length > 0 &&
+            (Array.isArray(components) ? components : []).some(
+                (component) =>
+                    String(component?.designator || '') === designator
+            )
+        )
+    }
+
+    /**
+     * Checks whether the source explicitly authors zero model standoff.
+     * @param {object | null} componentBody Resolved source component body.
+     * @returns {boolean}
+     */
+    static #hasZeroAuthoredStandoff(componentBody) {
+        const sourceStandoff = componentBody?.standoffHeightMil
+        if (
+            sourceStandoff === null ||
+            sourceStandoff === undefined ||
+            sourceStandoff === ''
+        ) {
+            return false
+        }
+
+        const standoff = Number(sourceStandoff)
+        return (
+            Number.isFinite(standoff) &&
+            Math.abs(standoff) <= POSITION_EPSILON_MIL
+        )
+    }
+
+    /**
+     * Checks whether the final placement still carries the positive source Z.
+     * @param {object} placement Built external placement.
+     * @param {object | null} componentBody Resolved source component body.
+     * @returns {boolean}
+     */
+    static #retainsPositiveSourceOffset(placement, componentBody) {
+        const sourceOffset = Number(componentBody?.dzMil)
+        const placementOffset = Number(placement?.modelTransform?.dzMil)
+
+        return (
+            Number.isFinite(sourceOffset) &&
+            sourceOffset > 0 &&
+            Number.isFinite(placementOffset) &&
+            Math.abs(placementOffset - sourceOffset) <= POSITION_EPSILON_MIL
+        )
     }
 
     /**
