@@ -552,7 +552,17 @@ ids, layer roles, cutouts, and pad/via drill render state (`open`, `covered`,
 `PcbSvgRenderer.renderLayerSvgs()` uses the same semantic sidecar shape with
 `view.kind: 'layer'` and a layer-specific `layerSet`.
 
+Native PCB layer summaries collect source layer keys without constructing hit-test
+geometry. Interaction indexes resolve component ownership once per build, and
+hit tests normalize visibility filters once per query. These preparations are
+scoped to each invocation so edits to documents and filters remain visible.
+
 ## 3D Scene Data
+
+Copper scene detail excludes numeric non-copper region kinds (`KIND=1` polygon
+cutouts, outlines, and cavities) as well as explicit clearance flags. Authored
+region arcs carry a signed `sweepAngle` in normalized coordinates, preserving
+angle wrapping, major arcs, and traversal from either endpoint.
 
 ```js
 import {
@@ -581,6 +591,13 @@ import {
 
 The library intentionally does not create Three.js objects, canvases, controls,
 or event listeners.
+
+Native Altium scene construction indexes pad ownership once per build and
+prepares drilled-pad anchor candidates only when owner recovery needs them.
+Placement repair searches nearby authored-body positions before comparing
+identity metadata. These indexes preserve mounted-surface pad preference and
+source-order ties, and are rebuilt for every invocation so later document
+edits are visible.
 
 ## Read-only CLI Examples
 

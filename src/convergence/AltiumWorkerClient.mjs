@@ -74,18 +74,9 @@ export class AltiumWorkerClient {
      */
     static #client() {
         if (!client) {
-            client = new ParserWorkerClient({
-                createWorker: () => {
-                    const WorkerConstructor = globalThis.Worker
-                    return Reflect.construct(WorkerConstructor, [
-                        new URL(
-                            '../workers/parser.worker.mjs',
-                            import.meta.url
-                        ),
-                        { type: 'module' }
-                    ])
-                }
-            })
+            client = ParserWorkerClient.fromWorkerUrl(
+                new URL('../workers/parser.worker.mjs', import.meta.url)
+            )
         }
         return client
     }

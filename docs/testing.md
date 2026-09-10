@@ -11,7 +11,8 @@ streams. Do not add native customer files or provider-derived raw fixtures.
 When exercising source lookup, inject a fake fetcher/client and assert emitted
 entries, progress events, checkpoints, diagnostics, and OLE round trips.
 
-Run the complete suite:
+Run the complete suite from a Git checkout containing the historical release
+tags (`git fetch --tags` if needed):
 
 ```bash
 npm test
@@ -31,12 +32,23 @@ The strict feature check creates an isolated packed install and packs the
 currently installed CircuitJSON dependency beside the Altium candidate. This
 keeps the isolated contract gate aligned with the dependency declared by the
 active release instead of a stale version-specific fixture. It verifies all
-historical native source and extension contracts, checks the exact
-package/subpath layout, and runs the shared observable toolkit contract against
-the packed package.
+historical baseline provenance, extension signatures, and public asset paths.
+Native implementations and assets may evolve through tested fixes starting with 1.4.17; historical
+source and asset hashes are never rewritten to approve a candidate. The gate requires
+every historical implementation path, captures all current `src/` files before
+packing, and compares exact file inventories and bytes before importing the
+packed candidate. It rejects changed, missing, additional, or symlinked source,
+including new helpers. It also checks the exact package/subpath layout and runs
+the shared observable toolkit contract against the packed package. A final
+source comparison catches changes made during validation.
 
 The performance check is bound to the immutable 1.1.41 commit, source tree,
-and native-source manifest. It measures legacy and canonical projections of
+and native-source manifest. It verifies the complete local dependency graph of
+the measured historical parser and schematic renderer, checking each module's
+bytes before following its imports and re-exports. Computed dynamic imports
+are rejected because their full dependency graph cannot be verified statically.
+Source outside that baseline graph can evolve without changing the historical
+manifest. It measures legacy and canonical projections of
 the same synthetic inputs. Default canonical parsing must stay inside both a
 relative budget and a small envelope-construction allowance scaled by actual
 project document count. Direct async execution, metadata/full asset modes, and

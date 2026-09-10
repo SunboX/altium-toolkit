@@ -71,7 +71,13 @@ export class PcbScene3dCopperRegionDetailBuilder {
      * @returns {boolean}
      */
     static #isCutoutOrKeepout(region) {
+        const kind = region?.kind ?? region?.properties?.KIND
+        // Native KIND=0 is copper; cutouts, outlines and cavities are not
+        // positive copper even when the optional boolean flags are absent.
+        const hasNonCopperKind =
+            kind != null && Number.isFinite(Number(kind)) && Number(kind) !== 0
         return (
+            hasNonCopperKind ||
             region?.isKeepout === true ||
             region?.isBoardCutout === true ||
             region?.isPolygonPourCutout === true ||
@@ -215,9 +221,37 @@ export class PcbScene3dCopperRegionDetailBuilder {
             x: center.x,
             y: center.y,
             radius,
-            startAngle: Number(current.startAngle),
-            endAngle: Number(current.endAngle)
+            ...PcbScene3dCopperRegionDetailBuilder.#arcTraversal(
+                current,
+                center
+            )
         }
+    }
+
+    /**
+     * Preserves the authored arc and its traversal through the region contour.
+     * @param {object} point Region vertex with normalized arc metadata.
+     * @param {{ x: number, y: number }} center Normalized arc center.
+     * @returns {{ startAngle: number, endAngle: number, sweepAngle: number }}
+     */
+    static #arcTraversal(point, center) {
+        const startAngle = Number(point.startAngle)
+        const endAngle = Number(point.endAngle)
+        const radius = Number(point.radius)
+        /** @param {number} angle Endpoint angle. @returns {number} Vertex distance. */
+        const distanceToEndpoint = (angle) => {
+            const radians = (angle * Math.PI) / 180
+            return Math.hypot(
+                Number(point.x) - center.x - radius * Math.cos(radians),
+                Number(point.y) - center.y - radius * Math.sin(radians)
+            )
+        }
+        // Altium's counterclockwise arc becomes clockwise after the parser's
+        // Y reflection. A contour may traverse that same arc from either end.
+        const sweep = (((startAngle - endAngle) % 360) + 360) % 360 || 360
+        return distanceToEndpoint(startAngle) <= distanceToEndpoint(endAngle)
+            ? { startAngle, endAngle, sweepAngle: -sweep }
+            : { startAngle: endAngle, endAngle: startAngle, sweepAngle: sweep }
     }
 
     /**

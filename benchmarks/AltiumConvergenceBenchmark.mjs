@@ -7,6 +7,8 @@ import { performance } from 'node:perf_hooks'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { AltiumHistoricalSourceVerifier } from './AltiumHistoricalSourceVerifier.mjs'
+
 import { AltiumParser } from '../src/core/altium/AltiumParser.mjs'
 import { AltiumDocumentBuilder } from '../src/convergence/AltiumDocumentBuilder.mjs'
 import { AltiumWorkerClient } from '../src/convergence/AltiumWorkerClient.mjs'
@@ -444,7 +446,7 @@ class BenchmarkWorker {
 }
 
 /**
- * Verifies every historical native module against a hard-coded manifest.
+ * Verifies the historical baseline dependency graph against its pinned manifest.
  * @returns {Promise<void>}
  */
 async function verifyHistoricalNativeSource() {
@@ -461,12 +463,10 @@ async function verifyHistoricalNativeSource() {
     ) {
         throw new Error('Historical native-source provenance changed.')
     }
-    for (const row of manifest.files) {
-        const current = await readFile(resolve(ROOT, row.path))
-        if (sha256(current) !== row.sha256) {
-            throw new Error(`Historical native source changed: ${row.path}`)
-        }
-    }
+    await AltiumHistoricalSourceVerifier.verify(ROOT, manifest, [
+        'src/core/altium/AltiumParser.mjs',
+        'src/ui/SchematicSvgRenderer.mjs'
+    ])
 }
 
 /**

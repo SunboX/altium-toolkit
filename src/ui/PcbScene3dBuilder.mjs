@@ -11,11 +11,10 @@ import { AltiumScene3dComponentBodyAdapter } from './AltiumScene3dComponentBodyA
 import { AltiumScene3dAuthoredBodyAnchorAdapter } from './AltiumScene3dAuthoredBodyAnchorAdapter.mjs'
 import { AltiumScene3dShapeStackOwnerAdapter } from './AltiumScene3dShapeStackOwnerAdapter.mjs'
 import { PcbFootprintPrimitiveSelector } from './PcbFootprintPrimitiveSelector.mjs'
-import { PcbScene3dPadLocalSpanResolver } from './PcbScene3dPadLocalSpanResolver.mjs'
+import { PcbScene3dComponentGeometryResolver } from './PcbScene3dComponentGeometryResolver.mjs'
 import { PcbScene3dPackages } from './PcbScene3dPackages.mjs'
 import { PcbScene3dPlacementSideResolver } from './PcbScene3dPlacementSideResolver.mjs'
 import { PcbScene3dStaticBodyPlacementBuilder } from './PcbScene3dStaticBodyPlacementBuilder.mjs'
-import { PcbScene3dPadYawResolver } from './PcbScene3dPadYawResolver.mjs'
 import { PcbScene3dTextBoxLayoutResolver } from './PcbScene3dTextBoxLayoutResolver.mjs'
 import { PcbFootprintPadAxisNormalizer } from './PcbFootprintPadAxisNormalizer.mjs'
 import { PcbScene3dCopperRegionDetailBuilder } from './PcbScene3dCopperRegionDetailBuilder.mjs'
@@ -84,6 +83,10 @@ export class PcbScene3dBuilder {
             ? pcb.componentBodies
             : []
         const pads = Array.isArray(pcb.pads) ? pcb.pads : []
+        const componentGeometry = new PcbScene3dComponentGeometryResolver(
+            components,
+            pads
+        )
         const tracks = Array.isArray(pcb.tracks) ? pcb.tracks : []
         const arcs = Array.isArray(pcb.arcs) ? pcb.arcs : []
         const fills = Array.isArray(pcb.fills) ? pcb.fills : []
@@ -168,7 +171,7 @@ export class PcbScene3dBuilder {
             .map((component) =>
                 PcbScene3dBuilder.#buildComponent(
                     component,
-                    pads,
+                    componentGeometry,
                     board,
                     thicknessMil,
                     modelRegistry
@@ -182,7 +185,7 @@ export class PcbScene3dBuilder {
                     bodyMatches[index],
                     componentBodyModels[index],
                     components,
-                    pads,
+                    componentGeometry,
                     board,
                     thicknessMil,
                     componentBodies
@@ -209,7 +212,7 @@ export class PcbScene3dBuilder {
                     sceneComponents,
                     components,
                     externalPlacements,
-                    pads
+                    componentGeometry
                 ),
             externalPlacements,
             staticBodyPlacements,
@@ -252,7 +255,7 @@ export class PcbScene3dBuilder {
     /**
      * Builds one procedural component scene entry.
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null, source?: string, description?: string, parameters?: Record<string, unknown>, modelPath?: string }} component
-     * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[]} pads
+     * @param {PcbScene3dComponentGeometryResolver} componentGeometry Build-scoped pad geometry.
      * @param {{ centerX: number, centerY: number }} board
      * @param {number} thicknessMil
      * @param {{ resolveComponentModel: (component: any) => { name: string, relativePath: string, format: string } | null } | null} modelRegistry
@@ -260,22 +263,17 @@ export class PcbScene3dBuilder {
      */
     static #buildComponent(
         component,
-        pads,
+        componentGeometry,
         board,
         thicknessMil,
         modelRegistry
     ) {
         const mountSide = PcbScene3dBuilder.#resolveMountSide(component)
-        const rotationDeg = PcbScene3dBuilder.#resolveComponentRotation(
+        const rotationDeg = componentGeometry.resolveComponentRotation(
             component,
-            pads,
             mountSide
         )
-        const padSpan = PcbScene3dBuilder.#resolvePadSpan(
-            component,
-            pads,
-            rotationDeg
-        )
+        const padSpan = componentGeometry.resolvePadSpan(component, rotationDeg)
         const body = PcbScene3dPackages.resolve(component, padSpan)
         const externalModel = modelRegistry
             ? modelRegistry.resolveComponentModel(component)
@@ -351,14 +349,14 @@ export class PcbScene3dBuilder {
      * @param {object[]} sceneComponents Scene component rows.
      * @param {object[]} sourceComponents Source PCB component rows.
      * @param {object[]} externalPlacements Built external placements.
-     * @param {object[]} pads PCB pad rows.
+     * @param {PcbScene3dComponentGeometryResolver} componentGeometry PCB pad rows.
      * @returns {object[]}
      */
     static #suppressExternallyCoveredFallbackBodies(
         sceneComponents,
         sourceComponents,
         externalPlacements,
-        pads
+        componentGeometry
     ) {
         const sourceByDesignator = new Map(
             (Array.isArray(sourceComponents) ? sourceComponents : []).map(
@@ -374,7 +372,7 @@ export class PcbScene3dBuilder {
                     ) || component,
                     component,
                     externalPlacements,
-                    pads
+                    componentGeometry
                 )
                     ? { ...component, renderFallbackBody: false }
                     : component
@@ -386,24 +384,25 @@ export class PcbScene3dBuilder {
      * @param {object} sourceComponent Source PCB component.
      * @param {object} sceneComponent Scene component.
      * @param {object[]} externalPlacements Built external placements.
-     * @param {object[]} pads PCB pad rows.
+     * @param {PcbScene3dComponentGeometryResolver} componentGeometry PCB pad rows.
      * @returns {boolean}
      */
     static #hasExternalPlacementPadCoverage(
         sourceComponent,
         sceneComponent,
         externalPlacements,
-        pads
+        componentGeometry
     ) {
         if (sceneComponent?.renderFallbackBody === false) {
             return false
         }
 
         const designator = String(sceneComponent?.designator || '')
-        const componentPads = PcbScene3dBuilder.#componentPads(
-            sourceComponent,
-            pads
-        ).filter((pad) => PcbScene3dBuilder.#hasDrilledPadOpening(pad))
+        const componentPads = componentGeometry
+            .componentPads(sourceComponent)
+            .filter((pad) =>
+                PcbScene3dComponentGeometryResolver.hasDrilledPadOpening(pad)
+            )
         if (componentPads.length < 2) {
             return false
         }
@@ -440,8 +439,10 @@ export class PcbScene3dBuilder {
         }
 
         return (
-            PcbScene3dBuilder.#distanceToPadAnchor(point, pad) <=
-            PcbScene3dBuilder.#EXACT_BODY_MISMATCH_TOLERANCE_MIL
+            PcbScene3dComponentGeometryResolver.distanceToPadAnchor(
+                point,
+                pad
+            ) <= PcbScene3dBuilder.#EXACT_BODY_MISMATCH_TOLERANCE_MIL
         )
     }
 
@@ -522,7 +523,7 @@ export class PcbScene3dBuilder {
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, rotation?: number, height?: number | null } | null} matchedComponent
      * @param {{ origin: string, name: string, format: string, payloadText?: string, sourceStream?: string, relativePath?: string } | null} resolvedModel
      * @param {{ designator: string, x: number, y: number, layer?: string, pattern?: string, source?: string, modelPath?: string }[]} components
-     * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[]} pads
+     * @param {PcbScene3dComponentGeometryResolver} componentGeometry Build-scoped pad geometry.
      * @param {{ centerX: number, centerY: number }} board
      * @param {number} thicknessMil
      * @param {object[]} componentBodies All source component bodies.
@@ -533,7 +534,7 @@ export class PcbScene3dBuilder {
         matchedComponent,
         resolvedModel,
         components,
-        pads,
+        componentGeometry,
         board,
         thicknessMil,
         componentBodies
@@ -552,10 +553,8 @@ export class PcbScene3dBuilder {
             )
         const resolvedMatchedComponent =
             matchedComponent ||
-            PcbScene3dBuilder.#resolveComponentFromOwnedDrilledPad(
-                sourcePosition,
-                components,
-                pads
+            componentGeometry.resolveComponentFromOwnedDrilledPad(
+                sourcePosition
             )
 
         if (
@@ -596,7 +595,7 @@ export class PcbScene3dBuilder {
         const modelRotation = PcbScene3dBuilder.#resolveExternalModelRotation(
             componentBody,
             resolvedMatchedComponent,
-            pads,
+            componentGeometry,
             mountSide
         )
 
@@ -635,7 +634,7 @@ export class PcbScene3dBuilder {
             projection: PcbScene3dBuilder.#resolveProjectionDiagnostics(
                 componentBody,
                 resolvedMatchedComponent,
-                pads,
+                componentGeometry,
                 resolvedModel
             ),
             ...PcbScene3dBuilder.#componentBodyDisplayMetadata(componentBody),
@@ -819,14 +818,14 @@ export class PcbScene3dBuilder {
      * Explains which footprint projection source informed one external model.
      * @param {object} componentBody Normalized component body row.
      * @param {{ x: number, y: number, height?: number | null } | null} matchedComponent Matched component.
-     * @param {object[]} pads Normalized pad rows.
+     * @param {PcbScene3dComponentGeometryResolver} componentGeometry Normalized pad rows.
      * @param {object | null} resolvedModel Resolved model metadata.
      * @returns {{ source: string, reason: string, boundsMil: { width: number, depth: number, height: number } }}
      */
     static #resolveProjectionDiagnostics(
         componentBody,
         matchedComponent,
-        pads,
+        componentGeometry,
         resolvedModel
     ) {
         const authoredBounds = PcbScene3dBuilder.#firstBounds([
@@ -855,10 +854,7 @@ export class PcbScene3dBuilder {
         }
 
         if (matchedComponent) {
-            const padSpan = PcbScene3dBuilder.#resolvePadSpan(
-                matchedComponent,
-                pads
-            )
+            const padSpan = componentGeometry.resolvePadSpan(matchedComponent)
             if (padSpan.width > 0 || padSpan.depth > 0) {
                 return {
                     source: 'pad-fallback',
@@ -2186,14 +2182,14 @@ export class PcbScene3dBuilder {
      * rotation fields into the renderer's signed 3D model convention.
      * @param {{ modelRotationDeg?: { x?: number, y?: number, z?: number } }} componentBody Component body.
      * @param {{ componentIndex?: number, layer?: string } | null} matchedComponent Matched component.
-     * @param {object[]} pads PCB pads.
+     * @param {PcbScene3dComponentGeometryResolver} componentGeometry Build-scoped pad geometry.
      * @param {'top' | 'bottom'} mountSide Placement mount side.
      * @returns {{ x: number, y: number, z: number }}
      */
     static #resolveExternalModelRotation(
         componentBody,
         matchedComponent,
-        pads,
+        componentGeometry,
         mountSide
     ) {
         const rotation = {
@@ -2210,10 +2206,7 @@ export class PcbScene3dBuilder {
                 componentBody,
                 modelTransform: { rotationDeg: rotation }
             }) &&
-            !PcbScene3dBuilder.#componentHasThroughHolePads(
-                matchedComponent,
-                pads
-            )
+            !componentGeometry.componentHasThroughHolePads(matchedComponent)
         ) {
             rotation.x = 0
         }
@@ -2630,228 +2623,6 @@ export class PcbScene3dBuilder {
         }
 
         return Array.isArray(pcb?.regions) ? pcb.regions : []
-    }
-
-    /**
-     * Resolves the owned or nearby pad-span box around one component.
-     * @param {{ x: number, y: number, componentIndex?: number, layer?: string, rotation?: number }} component
-     * @param {{ x: number, y: number, sizeTopX?: number, sizeTopY?: number, sizeMidX?: number, sizeMidY?: number, sizeBottomX?: number, sizeBottomY?: number }[]} pads
-     * @param {number} [rotationDeg] Body-local rotation used for span measurement.
-     * @returns {{ width: number, depth: number }}
-     */
-    static #resolvePadSpan(
-        component,
-        pads,
-        rotationDeg = Number(component?.rotation || 0)
-    ) {
-        const componentPads = PcbScene3dBuilder.#componentPads(component, pads)
-        const nearbyPads = pads.filter((pad) =>
-            PcbScene3dBuilder.#isPadNearComponent(component, pad)
-        )
-        const spanPads = componentPads.length ? componentPads : nearbyPads
-
-        if (!spanPads.length) {
-            return { width: 0, depth: 0 }
-        }
-
-        const mountSide = PcbScene3dBuilder.#resolveMountSide(component)
-        return (
-            PcbScene3dPadLocalSpanResolver.resolve(
-                { ...component, rotation: rotationDeg },
-                spanPads,
-                mountSide
-            ) || { width: 0, depth: 0 }
-        )
-    }
-
-    /**
-     * Resolves the visible procedural component rotation.
-     * @param {{ componentIndex?: number, rotation?: number }} component PCB component.
-     * @param {object[]} pads PCB pads.
-     * @param {string} mountSide Component mount side.
-     * @returns {number}
-     */
-    static #resolveComponentRotation(component, pads, mountSide) {
-        return (
-            PcbScene3dPadYawResolver.resolve(component, pads, mountSide) ??
-            Number(component?.rotation || 0)
-        )
-    }
-
-    /**
-     * Resolves a component owner when an external body anchor sits on a drilled
-     * pad owned by that component.
-     * @param {{ x?: number, y?: number } | null | undefined} sourcePosition External body anchor.
-     * @param {{ componentIndex?: number, x?: number, y?: number }[]} components PCB components.
-     * @param {object[]} pads PCB pads.
-     * @returns {object | null}
-     */
-    static #resolveComponentFromOwnedDrilledPad(
-        sourcePosition,
-        components,
-        pads
-    ) {
-        const sourceX = Number(sourcePosition?.x)
-        const sourceY = Number(sourcePosition?.y)
-        if (!Number.isFinite(sourceX) || !Number.isFinite(sourceY)) {
-            return null
-        }
-
-        const candidates = (Array.isArray(components) ? components : [])
-            .flatMap((component) =>
-                PcbScene3dBuilder.#componentPads(component, pads)
-                    .filter((pad) =>
-                        PcbScene3dBuilder.#hasDrilledPadOpening(pad)
-                    )
-                    .map((pad) => ({
-                        component,
-                        padDistance: PcbScene3dBuilder.#distanceToPadAnchor(
-                            { x: sourceX, y: sourceY },
-                            pad
-                        ),
-                        componentDistance: Math.hypot(
-                            Number(component?.x || 0) - sourceX,
-                            Number(component?.y || 0) - sourceY
-                        )
-                    }))
-            )
-            .filter(
-                (candidate) =>
-                    candidate.padDistance <=
-                    PcbScene3dBuilder.#EXACT_BODY_MISMATCH_TOLERANCE_MIL
-            )
-            .sort(
-                (left, right) =>
-                    left.padDistance - right.padDistance ||
-                    left.componentDistance - right.componentDistance
-            )
-
-        return candidates[0]?.component || null
-    }
-
-    /**
-     * Measures the distance from a source point to a drilled pad's effective
-     * anchor area.
-     * @param {{ x: number, y: number }} sourcePosition External body anchor.
-     * @param {object} pad PCB pad.
-     * @returns {number}
-     */
-    static #distanceToPadAnchor(sourcePosition, pad) {
-        const centerDistance = Math.hypot(
-            Number(pad?.x || 0) - Number(sourcePosition.x || 0),
-            Number(pad?.y || 0) - Number(sourcePosition.y || 0)
-        )
-        const radius = PcbScene3dBuilder.#padAnchorRadiusMil(pad)
-
-        return radius > 0
-            ? Math.max(0, centerDistance - radius)
-            : Number.POSITIVE_INFINITY
-    }
-
-    /**
-     * Resolves the effective XY radius around a drilled pad center.
-     * @param {object} pad PCB pad.
-     * @returns {number}
-     */
-    static #padAnchorRadiusMil(pad) {
-        const holeGeometry = pad?.holeGeometry || {}
-        const diameter = Math.max(
-            Number(pad?.sizeTopX || 0),
-            Number(pad?.sizeTopY || 0),
-            Number(pad?.sizeMidX || 0),
-            Number(pad?.sizeMidY || 0),
-            Number(pad?.sizeBottomX || 0),
-            Number(pad?.sizeBottomY || 0),
-            Number(pad?.holeDiameter || 0),
-            Number(pad?.drillDiameter || 0),
-            Number(pad?.holeSlotLength || 0),
-            Number(pad?.slotLength || 0),
-            Number(holeGeometry?.diameter || 0),
-            Number(holeGeometry?.length || 0),
-            Number(holeGeometry?.slotLength || 0)
-        )
-
-        return Number.isFinite(diameter) && diameter > 0 ? diameter / 2 : 0
-    }
-
-    /**
-     * Checks whether a component owns drilled or slotted pads.
-     * @param {{ componentIndex?: number, layer?: string } | null} component PCB component.
-     * @param {object[]} pads PCB pads.
-     * @returns {boolean}
-     */
-    static #componentHasThroughHolePads(component, pads) {
-        return PcbScene3dBuilder.#componentPads(component, pads).some((pad) =>
-            PcbScene3dBuilder.#hasDrilledPadOpening(pad)
-        )
-    }
-
-    /**
-     * Resolves pads explicitly owned by one component, preferring pads on the
-     * mounted surface when paste-mask side metadata is available.
-     * @param {{ componentIndex?: number, layer?: string }} component PCB component.
-     * @param {object[]} pads PCB pads.
-     * @returns {object[]}
-     */
-    static #componentPads(component, pads) {
-        const componentIndex = Number(component?.componentIndex)
-        if (!Number.isFinite(componentIndex)) {
-            return []
-        }
-
-        const ownedPads = pads.filter(
-            (pad) => Number(pad?.componentIndex) === componentIndex
-        )
-        const mountSide = PcbScene3dBuilder.#resolveMountSide(component)
-        const surfacePads = ownedPads.filter((pad) =>
-            PcbScene3dBuilder.#isSurfacePad(pad, mountSide)
-        )
-
-        return surfacePads.length ? surfacePads : ownedPads
-    }
-
-    /**
-     * Checks whether one pad belongs to the requested component surface.
-     * @param {object} pad PCB pad.
-     * @param {'top' | 'bottom'} mountSide Component mount side.
-     * @returns {boolean}
-     */
-    static #isSurfacePad(pad, mountSide) {
-        return mountSide === 'bottom'
-            ? Boolean(pad?.hasBottomPasteMaskOpening)
-            : Boolean(pad?.hasTopPasteMaskOpening)
-    }
-
-    /**
-     * Checks whether one pad contains a drilled or slotted board opening.
-     * @param {object} pad PCB pad.
-     * @returns {boolean}
-     */
-    static #hasDrilledPadOpening(pad) {
-        const holeGeometry = pad?.holeGeometry || {}
-
-        return [
-            pad?.holeDiameter,
-            pad?.drillDiameter,
-            pad?.holeSlotLength,
-            pad?.slotLength,
-            holeGeometry?.diameter,
-            holeGeometry?.length,
-            holeGeometry?.slotLength
-        ].some((value) => Number(value || 0) > 0)
-    }
-
-    /**
-     * Returns true when one pad lies inside the component's local search area.
-     * @param {{ x: number, y: number }} component
-     * @param {{ x: number, y: number }} pad
-     * @returns {boolean}
-     */
-    static #isPadNearComponent(component, pad) {
-        return (
-            Math.abs(Number(pad.x || 0) - Number(component.x || 0)) <= 160 &&
-            Math.abs(Number(pad.y || 0) - Number(component.y || 0)) <= 160
-        )
     }
 
     /**

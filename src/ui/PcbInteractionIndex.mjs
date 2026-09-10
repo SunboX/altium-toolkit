@@ -4,6 +4,7 @@
 
 import { PcbInteractionGeometry } from './PcbInteractionGeometry.mjs'
 import { PcbInteractionItemRegistry } from './PcbInteractionItemRegistry.mjs'
+import { PcbInteractionSourceMetadata } from './PcbInteractionSourceMetadata.mjs'
 
 const TYPE_PRIORITY = {
     track: 100,
@@ -67,15 +68,18 @@ export class PcbInteractionIndex {
      * @returns {object[]}
      */
     static hitTestItems(items, point, options = {}) {
+        const visibility = PcbInteractionIndex.#visibilityContext(options)
+        const tolerance = Number(options?.tolerance) || 0
+
         return (Array.isArray(items) ? items : [])
             .filter((item) =>
-                PcbInteractionIndex.#isVisibleCandidate(item, options)
+                PcbInteractionIndex.#isVisibleCandidate(item, visibility)
             )
             .filter((item) =>
                 PcbInteractionGeometry.containsPoint(
                     item.geometry,
                     point,
-                    Number(options?.tolerance) || 0
+                    tolerance
                 )
             )
             .sort(PcbInteractionIndex.#compareCandidates)
@@ -101,9 +105,23 @@ export class PcbInteractionIndex {
      * @returns {object}
      */
     static #context(pcb) {
+        const components = Array.isArray(pcb.components) ? pcb.components : []
+        const componentsById = new Map()
+        for (const component of components) {
+            const componentIndex = Number(component?.componentIndex)
+            if (
+                Number.isInteger(componentIndex) &&
+                !componentsById.has(componentIndex)
+            ) {
+                // Explicit identities take precedence, retaining the first row.
+                componentsById.set(componentIndex, component)
+            }
+        }
+
         return {
-            components: Array.isArray(pcb.components) ? pcb.components : [],
-            layerNameFor: PcbInteractionIndex.#layerNameResolver(pcb)
+            components,
+            componentsById,
+            layerNameFor: PcbInteractionSourceMetadata.layerNameResolver(pcb)
         }
     }
 
@@ -129,13 +147,7 @@ export class PcbInteractionIndex {
      */
     static #extractZones(documentModel, context) {
         const pcb = documentModel?.pcb || {}
-        const zones = [
-            ...(Array.isArray(pcb.regions) ? pcb.regions : []),
-            ...(Array.isArray(pcb.shapeBasedRegions)
-                ? pcb.shapeBasedRegions
-                : []),
-            ...(Array.isArray(pcb.polygons) ? pcb.polygons : [])
-        ]
+        const zones = PcbInteractionSourceMetadata.zoneSources(pcb)
 
         return zones
             .map((zone, index) => {
@@ -326,10 +338,11 @@ export class PcbInteractionIndex {
      * @returns {object | null}
      */
     static #zoneGeometry(zone) {
-        if (Array.isArray(zone?.points) && zone.points.length >= 3) {
+        const kind = PcbInteractionSourceMetadata.zoneGeometryKind(zone)
+        if (kind === 'points') {
             return PcbInteractionGeometry.polygon(zone.points)
         }
-        if (Array.isArray(zone?.segments) && zone.segments.length >= 3) {
+        if (kind === 'segments') {
             return PcbInteractionGeometry.polygon(
                 zone.segments.map((segment) => ({
                     x: segment.x1,
@@ -337,12 +350,7 @@ export class PcbInteractionIndex {
                 }))
             )
         }
-        if (
-            Number.isFinite(Number(zone?.x1)) &&
-            Number.isFinite(Number(zone?.y1)) &&
-            Number.isFinite(Number(zone?.x2)) &&
-            Number.isFinite(Number(zone?.y2))
-        ) {
+        if (kind === 'bounds') {
             return PcbInteractionGeometry.bounds({
                 minX: Math.min(Number(zone.x1), Number(zone.x2)),
                 minY: Math.min(Number(zone.y1), Number(zone.y2)),
@@ -372,21 +380,38 @@ export class PcbInteractionIndex {
     }
 
     /**
-     * Returns whether an item is visible under hit-test filters.
-     * @param {object} item Interaction item.
+     * Normalizes visibility filters once for the current hit test.
      * @param {object} options Hit-test options.
+     * @returns {object}
+     */
+    static #visibilityContext(options) {
+        return {
+            side: PcbInteractionIndex.#normalizeSide(options?.side),
+            hiddenObjects: new Set(
+                (Array.isArray(options?.hiddenObjects)
+                    ? options.hiddenObjects
+                    : []
+                ).map(String)
+            ),
+            hiddenLayers: new Set(
+                (Array.isArray(options?.hiddenLayers)
+                    ? options.hiddenLayers
+                    : []
+                ).map(String)
+            )
+        }
+    }
+
+    /**
+     * Returns whether an item is visible under normalized hit-test filters.
+     * @param {object} item Interaction item.
+     * @param {object} visibility Normalized visibility filters.
      * @returns {boolean}
      */
-    static #isVisibleCandidate(item, options) {
-        const side = PcbInteractionIndex.#normalizeSide(options?.side)
+    static #isVisibleCandidate(item, visibility) {
+        const { side, hiddenObjects, hiddenLayers } = visibility
         if (item.side !== 'both' && item.side !== side) return false
 
-        const hiddenObjects = new Set(
-            (Array.isArray(options?.hiddenObjects)
-                ? options.hiddenObjects
-                : []
-            ).map(String)
-        )
         if (
             hiddenObjects.has(item.objectKey) ||
             hiddenObjects.has(PLURAL_TYPE_KEYS[item.type] || item.type)
@@ -394,12 +419,6 @@ export class PcbInteractionIndex {
             return false
         }
 
-        const hiddenLayers = new Set(
-            (Array.isArray(options?.hiddenLayers)
-                ? options.hiddenLayers
-                : []
-            ).map(String)
-        )
         return (
             !item.layerKeys?.length ||
             item.layerKeys.some((layerKey) => !hiddenLayers.has(layerKey))
@@ -414,39 +433,6 @@ export class PcbInteractionIndex {
      */
     static #compareCandidates(first, second) {
         return second.priority - first.priority || first.order - second.order
-    }
-
-    /**
-     * Creates a layer-name resolver for layer-id based primitives.
-     * @param {object} pcb PCB model.
-     * @returns {(item: object) => string[]}
-     */
-    static #layerNameResolver(pcb) {
-        const byId = new Map()
-        const layers = [
-            ...(Array.isArray(pcb?.layers) ? pcb.layers : []),
-            ...(Array.isArray(pcb?.primitiveLayers) ? pcb.primitiveLayers : [])
-        ]
-
-        for (const layer of layers) {
-            const layerId = Number(layer?.layerId)
-            const name = String(layer?.name || '').trim()
-            if (Number.isInteger(layerId) && name) {
-                byId.set(layerId, name)
-            }
-        }
-
-        return (item) => {
-            const directLayer = String(item?.layer || '').trim()
-            if (directLayer) return [directLayer]
-
-            const layerId = Number(item?.layerId ?? item?.layerCode)
-            if (Number.isInteger(layerId) && byId.has(layerId)) {
-                return [byId.get(layerId)]
-            }
-
-            return []
-        }
     }
 
     /**
@@ -484,18 +470,13 @@ export class PcbInteractionIndex {
         const componentIndex = Number(primitive?.componentIndex)
         if (!Number.isInteger(componentIndex)) return null
 
-        const explicitMatch =
-            context.components.find(
-                (component) =>
-                    Number(component?.componentIndex) === componentIndex
-            ) || null
+        const explicitMatch = context.componentsById.get(componentIndex)
         if (explicitMatch) return explicitMatch
 
-        return (
-            context.components.find((component, index) => {
-                return index === componentIndex
-            }) || null
-        )
+        if (componentIndex < 0 || componentIndex >= context.components.length) {
+            return null
+        }
+        return context.components[componentIndex] || null
     }
 
     /**

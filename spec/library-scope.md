@@ -7,8 +7,8 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 # Library Scope
 
 Altium Toolkit provides reusable native Altium parsing behind the common ECAD
-toolkit API. Canonical results use CircuitJSON; source-only facts and all
-historical 1.1.41 contracts remain explicit Altium extensions.
+toolkit API. Canonical results use CircuitJSON; source-only facts and historical
+1.1.41 APIs remain explicit Altium extensions with maintained implementations.
 
 ## In Scope
 
@@ -18,7 +18,8 @@ historical 1.1.41 contracts remain explicit Altium extensions.
   reusable document contexts
 - Shared CircuitJSON render, interaction, query, manufacturing, simulation,
   and data-only 3D scene services
-- Exact `/extensions` preservation of audited Altium 1.1.41 behavior
+- Preservation of audited Altium 1.1.41 `/extensions` API signatures and public
+  asset entrypoints and targets, with tested bug fixes and performance improvements
 - `.SchDoc`, `.PcbDoc`, `.PCBDwf`, `.SchLib`, `.PcbLib`, `.PrjPcb`, `.PrjScr`,
   and `.IntLib` parsing from `ArrayBuffer`
 - OLE and binary stream helpers needed by parser recovery

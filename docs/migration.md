@@ -6,9 +6,19 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 # Migration from 1.1.41 to 1.2.0
 
 Version 1.2.0 adds the canonical ECAD toolkit API. Existing Altium
-exports are retained under `altium-toolkit/extensions`; the native
-`src/core` and `src/ui` implementations remain byte-identical to the
-pinned 1.1.41 source tree.
+exports are retained under `altium-toolkit/extensions`.
+
+Starting with 1.4.17, native implementations and assets are maintained:
+reviewed bug fixes and performance improvements may change their source and
+corrected behavior. Historical export signatures and public asset
+entrypoints and targets remain checked. The immutable 1.1.41 source tree and manifest
+remain provenance evidence, not a claim of current byte equality.
+
+The release gate retains every historical implementation path and
+compares every packed source file against a snapshot of the tested
+checkout, including new helpers and workers. Public contract and
+synthetic regression tests validate maintained behavior. See
+[testing](testing.md) for the complete release checks.
 
 The paged appendix maps every frozen export, static member, prototype
 member, public asset, and the native implementation tree:

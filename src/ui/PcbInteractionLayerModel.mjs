@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { PcbInteractionIndex } from './PcbInteractionIndex.mjs'
+import { PcbInteractionSourceMetadata } from './PcbInteractionSourceMetadata.mjs'
 
 const VIRTUAL_LAYER_DEFINITIONS = [
     { key: 'tracks', label: 'Tracks' },
@@ -25,8 +25,7 @@ export class PcbInteractionLayerModel {
     static resolve(documentModel) {
         const pcb = documentModel?.pcb || {}
         const physicalLayers = PcbInteractionLayerModel.#physicalLayers(pcb)
-        const items = PcbInteractionIndex.build(documentModel)
-        const layersByObject = PcbInteractionLayerModel.#layersByObject(items)
+        const layersByObject = PcbInteractionSourceMetadata.layersByObject(pcb)
 
         return {
             physicalLayers,
@@ -70,34 +69,5 @@ export class PcbInteractionLayerModel {
         }
 
         return layers
-    }
-
-    /**
-     * Collects referenced physical layer keys by virtual object key.
-     * @param {object[]} items Interaction items.
-     * @returns {Map<string, Set<string>>}
-     */
-    static #layersByObject(items) {
-        const layersByObject = new Map()
-
-        for (const item of items) {
-            if (!layersByObject.has(item.objectKey)) {
-                layersByObject.set(item.objectKey, new Set())
-            }
-            const layerSet = layersByObject.get(item.objectKey)
-            for (const layerKey of item.layerKeys || []) {
-                layerSet.add(layerKey)
-            }
-            if (item.type === 'pad' || item.type === 'via') {
-                if (!layersByObject.has('holes')) {
-                    layersByObject.set('holes', new Set())
-                }
-                for (const layerKey of item.layerKeys || []) {
-                    layersByObject.get('holes').add(layerKey)
-                }
-            }
-        }
-
-        return layersByObject
     }
 }

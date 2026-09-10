@@ -14,6 +14,7 @@ import {
     captureExportContract
 } from './capture-api-baseline.mjs'
 import { buildFeaturePreservationRows } from './generate-feature-preservation.mjs'
+import { AltiumCandidateSourceVerifier } from './AltiumCandidateSourceVerifier.mjs'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = resolve(fileURLToPath(new URL('../', import.meta.url)))
@@ -84,7 +85,7 @@ const SHARED_EXTENSION_EXPORTS = Object.freeze([
 const CONVERGENCE_EXTENSION_EXPORTS = Object.freeze(['AltiumExtensionResolver'])
 
 /**
- * Validates the local or packed candidate against the immutable 1.1.41 tree.
+ * Validates maintained APIs against 1.1.41 and packed source against the candidate.
  * @param {{ strict?: boolean }} [options] Validation options.
  * @returns {Promise<{ featureCount: number, legacyExportCount: number, extensionExportCount: number, strict: boolean }>} Validation summary.
  */
@@ -101,14 +102,18 @@ export async function checkFeaturePreservation(options = {}) {
     validateArtifact(manifest, 'native source manifest')
     validatePinnedIdentity(baseline, assets, manifest)
     validateLedger(ledger, baseline, assets, manifest)
-    await validateNativeSources(repositoryRoot, manifest)
+    const candidateSources = await AltiumCandidateSourceVerifier.capture(
+        repositoryRoot,
+        manifest
+    )
 
     if (options.strict) {
         return await validatePackedCandidate({
             assets,
             baseline,
             ledger,
-            manifest
+            manifest,
+            candidateSources
         })
     }
     const [extensions, sharedExtensions, canonical, sharedCanonical] =
@@ -128,6 +133,7 @@ export async function checkFeaturePreservation(options = {}) {
         sharedExtensions
     )
     validateCanonicalNamespace(canonical, sharedCanonical)
+    await AltiumCandidateSourceVerifier.verify(repositoryRoot, candidateSources)
     return {
         featureCount: ledger.length,
         legacyExportCount: extensionCounts.legacy,
@@ -138,7 +144,7 @@ export async function checkFeaturePreservation(options = {}) {
 
 /**
  * Validates the candidate tarball in an isolated install fixture.
- * @param {{ assets: Record<string, any>, baseline: Record<string, any>, ledger: Record<string, any>[], manifest: Record<string, any> }} artifacts Immutable artifacts.
+ * @param {{ assets: Record<string, any>, baseline: Record<string, any>, ledger: Record<string, any>[], manifest: Record<string, any>, candidateSources: ReadonlyArray<{ path: string, sha256: string }> }} artifacts Baselines and candidate snapshot.
  * @returns {Promise<{ featureCount: number, legacyExportCount: number, extensionExportCount: number, strict: true }>} Packed summary.
  */
 async function validatePackedCandidate(artifacts) {
@@ -171,6 +177,11 @@ async function validatePackedCandidate(artifacts) {
             )
         }
         const packageRoot = resolve(fixture, 'node_modules/altium-toolkit')
+        // Verify all runtime bytes before importing the packaged candidate.
+        await AltiumCandidateSourceVerifier.verify(
+            packageRoot,
+            artifacts.candidateSources
+        )
         const extensions = await import(
             `${pathToFileURL(resolve(packageRoot, 'src/extensions.mjs')).href}?packed=${Date.now()}`
         )
@@ -201,8 +212,19 @@ async function validatePackedCandidate(artifacts) {
                 `Packed Altium contract failed: ${contract.failures.join(', ')}`
             )
         }
-        await validateNativeSources(packageRoot, artifacts.manifest)
-        await validatePackedAssets(packageRoot, artifacts.assets)
+        await AltiumCandidateSourceVerifier.verify(
+            packageRoot,
+            artifacts.candidateSources
+        )
+        await AltiumCandidateSourceVerifier.verify(
+            repositoryRoot,
+            artifacts.candidateSources
+        )
+        await AltiumCandidateSourceVerifier.verifyAssets(
+            packageRoot,
+            artifacts.assets,
+            artifacts.candidateSources
+        )
         await validatePackedManifest(packageRoot)
         return {
             featureCount: artifacts.ledger.length,
@@ -414,52 +436,6 @@ function validateCanonicalNamespace(namespace, shared) {
     for (const name of CANONICAL_EXPORTS) {
         if (typeof namespace[name] !== 'function') {
             throw new Error(`Altium canonical export is not a class: ${name}`)
-        }
-    }
-}
-
-/**
- * Verifies every historical native implementation hash.
- * @param {string} packageRoot Candidate package root.
- * @param {Record<string, any>} manifest Source manifest.
- * @returns {Promise<void>}
- */
-async function validateNativeSources(packageRoot, manifest) {
-    for (const entry of manifest.files) {
-        const actual = createHash('sha256')
-            .update(await readFile(resolve(packageRoot, entry.path)))
-            .digest('hex')
-        if (actual !== entry.sha256) {
-            throw new Error(`Native Altium source differs: ${entry.path}`)
-        }
-    }
-}
-
-/**
- * Verifies packed extension asset hashes at their declared replacement paths.
- * @param {string} packageRoot Packed package root.
- * @param {Record<string, any>} baseline Asset baseline.
- * @returns {Promise<void>}
- */
-async function validatePackedAssets(packageRoot, baseline) {
-    const pkg = JSON.parse(
-        await readFile(resolve(packageRoot, 'package.json'), 'utf8')
-    )
-    for (const asset of baseline.assets) {
-        const extensionEntrypoint = `./extensions${asset.entrypoint.slice(1)}`
-        const target = pkg.exports?.[extensionEntrypoint]
-        if (typeof target !== 'string') {
-            throw new Error(
-                `Packed Altium extension asset is missing: ${extensionEntrypoint}`
-            )
-        }
-        const actual = createHash('sha256')
-            .update(await readFile(resolve(packageRoot, target)))
-            .digest('hex')
-        if (actual !== asset.sha256) {
-            throw new Error(
-                `Packed Altium asset differs: ${extensionEntrypoint}`
-            )
         }
     }
 }

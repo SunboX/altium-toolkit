@@ -76,7 +76,7 @@ test('native implementation manifest covers every historical core and UI module'
     )
 })
 
-test('legacy worker and stylesheet assets have immutable content contracts', async () => {
+test('historical worker and stylesheet baselines retain immutable provenance', async () => {
     const baseline = await readJson('spec/asset-baseline-v1.1.41.json')
     const { artifactChecksum, ...body } = baseline
 

@@ -1,3 +1,4 @@
+import { AltiumScene3dBodyPlacementIndex } from './AltiumScene3dBodyPlacementIndex.mjs'
 import { AltiumScene3dIdentityTokens } from './AltiumScene3dIdentityTokens.mjs'
 import { AltiumScene3dAuthoredConnectorYawPolicy } from './AltiumScene3dAuthoredConnectorYawPolicy.mjs'
 import { AltiumScene3dPlacementRotationPolicy } from './AltiumScene3dPlacementRotationPolicy.mjs'
@@ -59,6 +60,7 @@ export class AltiumScene3dExternalPlacementAdapter {
             ])
         )
 
+        const bodyIndex = new AltiumScene3dBodyPlacementIndex(componentBodies)
         const repairedScene = {
             ...sceneDescription,
             externalPlacements: sceneDescription.externalPlacements
@@ -67,7 +69,7 @@ export class AltiumScene3dExternalPlacementAdapter {
                         placement,
                         components,
                         componentByDesignator,
-                        componentBodies,
+                        bodyIndex,
                         pads,
                         sceneDescription?.board
                     )
@@ -86,7 +88,7 @@ export class AltiumScene3dExternalPlacementAdapter {
         placement,
         components,
         componentByDesignator,
-        componentBodies,
+        bodyIndex,
         pads,
         board
     ) {
@@ -101,11 +103,7 @@ export class AltiumScene3dExternalPlacementAdapter {
             return placement
         }
 
-        const componentBody =
-            AltiumScene3dExternalPlacementAdapter.#resolveComponentBody(
-                placement,
-                componentBodies
-            )
+        const componentBody = bodyIndex.resolve(placement)
         const currentComponent = componentByDesignator.get(
             String(placement?.designator || '')
         )
@@ -1540,60 +1538,6 @@ export class AltiumScene3dExternalPlacementAdapter {
                 )
             )
         ]
-    }
-
-    /**
-     * Resolves the source component body row for one placement.
-     * @param {object} placement External model placement.
-     * @param {object[]} componentBodies Source component body rows.
-     * @returns {object | null}
-     */
-    static #resolveComponentBody(placement, componentBodies) {
-        const candidates = componentBodies
-            .map((componentBody) => ({
-                componentBody,
-                distance:
-                    AltiumScene3dExternalPlacementAdapter.#distanceBetweenPoints(
-                        placement?.bodyPositionMil,
-                        componentBody?.positionMil
-                    ),
-                identityScore:
-                    AltiumScene3dExternalPlacementAdapter.#bodyPlacementIdentityScore(
-                        placement,
-                        componentBody
-                    )
-            }))
-            .filter((candidate) => candidate.distance <= 0.01)
-            .sort(
-                (left, right) =>
-                    right.identityScore - left.identityScore ||
-                    left.distance - right.distance
-            )
-
-        return candidates[0]?.componentBody || null
-    }
-
-    /**
-     * Scores whether a source body row belongs to one placement.
-     * @param {object} placement External model placement.
-     * @param {object} componentBody Source component body.
-     * @returns {number}
-     */
-    static #bodyPlacementIdentityScore(placement, componentBody) {
-        const placementText =
-            AltiumScene3dExternalPlacementAdapter.#normalizeIdentityText([
-                placement?.designator,
-                placement?.externalModel?.name
-            ])
-        const bodyText =
-            AltiumScene3dExternalPlacementAdapter.#normalizeIdentityText([
-                componentBody?.identifier,
-                componentBody?.name
-            ])
-
-        return placementText && bodyText && placementText.includes(bodyText)
-            ? bodyText.length
-            : 0
     }
 
     /**

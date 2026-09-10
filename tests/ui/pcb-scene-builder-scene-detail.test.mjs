@@ -202,7 +202,8 @@ test('PcbScene3dBuilder exposes Altium copper regions as 3D fills', () => {
         y: 120,
         radius: 40,
         startAngle: 180,
-        endAngle: 90
+        endAngle: 90,
+        sweepAngle: -90
     })
 })
 

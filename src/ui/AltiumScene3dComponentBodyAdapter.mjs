@@ -1,3 +1,4 @@
+import { PcbScene3dComponentGeometryResolver } from './PcbScene3dComponentGeometryResolver.mjs'
 import { PcbScene3dPadLocalSpanResolver } from './PcbScene3dPadLocalSpanResolver.mjs'
 
 const REFINABLE_FAMILIES = new Set(['chip', 'diode', 'generic', 'ic', 'sot'])
@@ -33,6 +34,10 @@ export class AltiumScene3dComponentBodyAdapter {
             return sceneDescription
         }
 
+        const componentGeometry = new PcbScene3dComponentGeometryResolver(
+            sourceComponents,
+            pads
+        )
         const sourceByDesignator = new Map(
             sourceComponents.map((component) => [
                 String(component?.designator || ''),
@@ -46,7 +51,7 @@ export class AltiumScene3dComponentBodyAdapter {
                 AltiumScene3dComponentBodyAdapter.#refineComponent(
                     component,
                     sourceByDesignator.get(String(component?.designator || '')),
-                    pads
+                    componentGeometry
                 )
             )
         }
@@ -56,10 +61,10 @@ export class AltiumScene3dComponentBodyAdapter {
      * Refines one procedural component body when nearby pads overinflated it.
      * @param {object} component Scene component.
      * @param {object | undefined} sourceComponent Source PCB component.
-     * @param {object[]} pads Source PCB pads.
+     * @param {PcbScene3dComponentGeometryResolver} componentGeometry Build-scoped geometry.
      * @returns {object}
      */
-    static #refineComponent(component, sourceComponent, pads) {
+    static #refineComponent(component, sourceComponent, componentGeometry) {
         const family = String(component?.body?.family || '')
         if (
             component?.externalModel ||
@@ -72,7 +77,7 @@ export class AltiumScene3dComponentBodyAdapter {
         const span = AltiumScene3dComponentBodyAdapter.#ownedPadSpan(
             sourceComponent,
             component.mountSide,
-            pads
+            componentGeometry
         )
         const size = component?.body?.sizeMil || {}
         if (
@@ -99,40 +104,15 @@ export class AltiumScene3dComponentBodyAdapter {
      * Resolves the owned surface-pad span for one source component.
      * @param {object} component Source component.
      * @param {string} mountSide Component mount side.
-     * @param {object[]} pads Source PCB pads.
+     * @param {PcbScene3dComponentGeometryResolver} componentGeometry Build-scoped geometry.
      * @returns {{ width: number, depth: number } | null}
      */
-    static #ownedPadSpan(component, mountSide, pads) {
-        const componentIndex = Number(component?.componentIndex)
-        if (!Number.isFinite(componentIndex)) {
-            return null
-        }
-
-        const ownedPads = pads.filter(
-            (pad) => Number(pad?.componentIndex) === componentIndex
-        )
-        const surfacePads = ownedPads.filter((pad) =>
-            AltiumScene3dComponentBodyAdapter.#isSurfacePad(pad, mountSide)
-        )
-        const spanPads = surfacePads.length ? surfacePads : ownedPads
-
+    static #ownedPadSpan(component, mountSide, componentGeometry) {
         return PcbScene3dPadLocalSpanResolver.resolve(
             component,
-            spanPads,
+            componentGeometry.componentPads(component, mountSide),
             mountSide
         )
-    }
-
-    /**
-     * Checks whether one pad belongs to the component's mounted surface.
-     * @param {object} pad Source pad.
-     * @param {string} mountSide Component mount side.
-     * @returns {boolean}
-     */
-    static #isSurfacePad(pad, mountSide) {
-        return String(mountSide || '').toLowerCase() === 'bottom'
-            ? Boolean(pad?.hasBottomPasteMaskOpening)
-            : Boolean(pad?.hasTopPasteMaskOpening)
     }
 
     /**
