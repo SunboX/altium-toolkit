@@ -619,3 +619,13 @@ Each script reads one input file and writes text, CSV, or JSON to stdout. The
 corpus smoke script reads a caller-provided directory and can include aggregate
 parser coverage and field-gap counters. The scripts are examples of library
 usage, not installed package binaries.
+
+## Loaded queries and retained native models
+
+`LoadedDesignNetlistService` also accepts canonical document envelopes whose
+explicit `extensions.altium.native` field retains the normalized source model.
+The library resolves that model before design discovery, component/net queries,
+and traversal, preserving session ids and active selection. Callers do not need
+to unwrap documents or add legacy properties to the canonical envelope.
+Canonical documents without a retained native model should use the shared
+`QueryService` from `altium-toolkit/query` instead of this native query API.

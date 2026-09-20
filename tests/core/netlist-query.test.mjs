@@ -285,3 +285,43 @@ test('LoadedDesignNetlistService handles PCB-only documents without connectivity
     })
     assert.match(service.listNets().error, /No schematic connectivity/)
 })
+
+/**
+ * Verifies loaded queries resolve the explicitly retained model in a canonical envelope.
+ */
+test('LoadedDesignNetlistService queries retained native document envelopes', () => {
+    const native = createSchematicDocument('query-sheet.SchDoc')
+    const documentModel = {
+        schema: 'ecad-toolkit.document.v1',
+        source: { format: 'altium', fileName: 'query-sheet.SchDoc' },
+        model: [],
+        extensions: { altium: { native } }
+    }
+    const service = createService([
+        { id: 'doc-envelope', active: true, documentModel }
+    ])
+
+    assert.deepEqual(service.listDesigns(), [
+        {
+            id: 'doc-envelope',
+            name: 'Logic Sheet',
+            fileName: 'query-sheet.SchDoc',
+            kind: 'schematic',
+            active: true,
+            hasConnectivity: true
+        }
+    ])
+    assert.deepEqual(service.listNets({ design: 'query-sheet' }), {
+        nets: ['FILTERED_SIG', 'GND', 'I2C_SDA', 'PP3V3']
+    })
+    assert.equal(
+        service.queryComponent({ refdes: 'u1' }).pins[5].net,
+        'I2C_SDA'
+    )
+    assert.equal(
+        service.queryXnetByNetName({ net_name: 'I2C_SDA' }).starting_point,
+        'I2C_SDA'
+    )
+    assert.equal(documentModel.extensions.altium.native, native)
+    assert.equal(Object.hasOwn(documentModel, 'schematic'), false)
+})

@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { AltiumExtensionResolver } from '../../convergence/AltiumExtensionResolver.mjs'
 import { ComponentGrouping, MPN_MISSING_NOTE } from './ComponentGrouping.mjs'
 import { CircuitTraversal } from './CircuitTraversal.mjs'
 import { QueryNetlistBuilder } from './QueryNetlistBuilder.mjs'
@@ -571,7 +572,10 @@ export class LoadedDesignNetlistService {
      * @returns {object}
      */
     static #normalizeEntry(entry) {
-        const documentModel = entry?.documentModel || entry
+        const sourceDocument = entry?.documentModel || entry
+        const documentModel =
+            AltiumExtensionResolver.nativeModel(sourceDocument) ||
+            sourceDocument
         return {
             id: String(entry?.id || documentModel?.id || ''),
             active: entry?.active === true,
