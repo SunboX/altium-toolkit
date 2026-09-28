@@ -96,13 +96,20 @@ export class LoadedDesignNetlistService {
      * @returns {{ nets: string[] } | { error: string }}
      */
     listNets(args = {}) {
-        const resolved = this.#resolveDesignWithConnectivity(args.design)
+        const resolved = this.#resolveDesign(args.design)
         if (resolved.error) return resolved
 
+        const netNames = LoadedDesignNetlistService.#netNames(
+            resolved.entry.documentModel
+        )
+        if (!netNames.length) {
+            return {
+                error: 'No schematic connectivity is available for this loaded design.'
+            }
+        }
+
         return {
-            nets: Object.keys(resolved.netlist.nets).sort((left, right) =>
-                left.localeCompare(right)
-            )
+            nets: netNames.sort((left, right) => left.localeCompare(right))
         }
     }
 
@@ -112,13 +119,22 @@ export class LoadedDesignNetlistService {
      * @returns {{ results: Record<string, string[]>, notes?: string[] } | { error: string }}
      */
     searchNets(args = {}) {
-        const resolved = this.#resolveDesignWithConnectivity(args.design)
+        const resolved = this.#resolveDesign(args.design)
         if (resolved.error) return resolved
+
+        const netNames = LoadedDesignNetlistService.#netNames(
+            resolved.entry.documentModel
+        )
+        if (!netNames.length) {
+            return {
+                error: 'No schematic connectivity is available for this loaded design.'
+            }
+        }
 
         const parsed = RegexPattern.parse(args.pattern)
         if (parsed.error) return parsed
 
-        const allNets = Object.keys(resolved.netlist.nets)
+        const allNets = netNames
         if (RegexPattern.rejectsBroadMatch(args.pattern, allNets)) {
             return {
                 error: 'Pattern matches every net. Use list_nets for full net lists.'
@@ -387,6 +403,24 @@ export class LoadedDesignNetlistService {
         }
 
         return response
+    }
+
+    /**
+     * Lists declared net names independently of schematic pin connectivity.
+     * @param {object} documentModel Resolved native document model.
+     * @returns {string[]} Unique nonempty net names.
+     */
+    static #netNames(documentModel) {
+        // Listing names does not require the pin graph used for traversal.
+        return [
+            ...new Set(
+                [documentModel?.schematic?.nets, documentModel?.pcb?.nets]
+                    .filter(Array.isArray)
+                    .flatMap((nets) => nets)
+                    .map((net) => String(net?.name || '').trim())
+                    .filter(Boolean)
+            )
+        ]
     }
 
     /**

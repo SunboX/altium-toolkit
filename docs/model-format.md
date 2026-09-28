@@ -640,3 +640,13 @@ Focused machine-readable schemas are available under
 `docs/schemas/altium_toolkit/` for the normalized root plus focused project,
 netlist, SVG, PCB review, layer-stack, Draftsman, library, parser QA,
 inspection, unsupported-feature, and CI/reporting contracts.
+
+## Loaded net-name queries
+
+The `LoadedDesignNetlistService` extension lists and searches declared names in
+`schematic.nets` and `pcb.nets`, including named nets without component pins.
+Names are trimmed, deduplicated, and sorted. Retained native document envelopes
+use the same lookup. Missing net names still produce a missing-data error.
+
+Net listing does not create schematic connectivity: `hasConnectivity`, component
+pin queries, and extended-net traversal continue to use the schematic pin graph.
