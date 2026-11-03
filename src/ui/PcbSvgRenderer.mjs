@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PcbArcUtils } from './PcbArcUtils.mjs'
+import { PcbCoordinateBounds } from './PcbCoordinateBounds.mjs'
 import { PcbDimensionPrimitiveRenderer } from './PcbDimensionPrimitiveRenderer.mjs'
 import { PcbEdgeFacingGlyphNormalizer } from './PcbEdgeFacingGlyphNormalizer.mjs'
 import { PcbEmbeddedFontFaceRenderer } from './PcbEmbeddedFontFaceRenderer.mjs'
@@ -2446,10 +2447,7 @@ export class PcbSvgRenderer {
             )
         }
 
-        const minX = Math.min(...xs)
-        const minY = Math.min(...ys)
-        const maxX = Math.max(...xs)
-        const maxY = Math.max(...ys)
+        const { minX, minY, maxX, maxY } = PcbCoordinateBounds.fromAxes(xs, ys)
         const padding = 240
         return [
             minX - padding,

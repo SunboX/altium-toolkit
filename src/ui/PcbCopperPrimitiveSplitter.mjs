@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { PcbCoordinateBounds } from './PcbCoordinateBounds.mjs'
+
 /**
  * Splits PCB copper primitives into surface and subsurface render groups.
  */
@@ -86,7 +88,9 @@ export class PcbCopperPrimitiveSplitter {
         const layerCodes = primitives
             .map((primitive) => primitive.layerCode)
             .filter((layerCode) => Number.isFinite(layerCode))
-        return layerCodes.length ? Math.min(...layerCodes) : null
+        return layerCodes.length
+            ? PcbCoordinateBounds.range(layerCodes).min
+            : null
     }
 
     /**

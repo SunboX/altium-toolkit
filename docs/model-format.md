@@ -54,6 +54,13 @@ before exporting.
 
 ## Renderer Compatibility Fields
 
+PCB SVG viewBox measurement, region and interaction bounds, native overlay
+bounds, and copper layer selection use iterative extrema calculations. Their
+call-stack usage does not grow with the number of coordinates or primitives;
+no sampling or primitive-count cap is applied by these calculations. Region
+bounds retain valid outer and hole points, while layer rules and viewBox
+padding remain unchanged.
+
 For compatibility, `AltiumParser.parseArrayBuffer()` attaches the previous
 renderer model fields directly to the Circuit JSON array. Integrations that need
 the object form can call

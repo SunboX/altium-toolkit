@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { SchematicSvgUtils } from './SchematicSvgUtils.mjs'
+import { PcbCoordinateBounds } from './PcbCoordinateBounds.mjs'
 
 /**
  * Renders filled PCB region contours into SVG path markup.
@@ -59,12 +60,7 @@ export class PcbRegionPrimitiveRenderer {
             return null
         }
 
-        return {
-            minX: Math.min(...points.map((point) => Number(point.x))),
-            minY: Math.min(...points.map((point) => Number(point.y))),
-            maxX: Math.max(...points.map((point) => Number(point.x))),
-            maxY: Math.max(...points.map((point) => Number(point.y)))
-        }
+        return PcbCoordinateBounds.fromPoints(points)
     }
 
     /**

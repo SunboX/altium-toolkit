@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { PcbCoordinateBounds } from './PcbCoordinateBounds.mjs'
+
 /**
  * Detects native overlay artwork that already contains text knockout holes.
  */
@@ -117,14 +119,6 @@ export class PcbNativeTextKnockoutDetector {
             return null
         }
 
-        const xs = points.map((point) => point.x)
-        const ys = points.map((point) => point.y)
-
-        return {
-            minX: Math.min(...xs),
-            minY: Math.min(...ys),
-            maxX: Math.max(...xs),
-            maxY: Math.max(...ys)
-        }
+        return PcbCoordinateBounds.fromPoints(points)
     }
 }

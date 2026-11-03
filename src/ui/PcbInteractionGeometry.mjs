@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { PcbCoordinateBounds } from './PcbCoordinateBounds.mjs'
+
 /**
  * Provides lightweight hit-test geometry helpers for PCB mil coordinates.
  */
@@ -119,12 +121,8 @@ export class PcbInteractionGeometry {
         const points = PcbInteractionGeometry.#pointsForBounds(geometry)
         if (!points.length) return PcbInteractionGeometry.normalizeBounds(null)
 
-        const xs = points.map((point) => point.x)
-        const ys = points.map((point) => point.y)
-        const minX = Math.min(...xs)
-        const minY = Math.min(...ys)
-        const maxX = Math.max(...xs)
-        const maxY = Math.max(...ys)
+        const { minX, minY, maxX, maxY } =
+            PcbCoordinateBounds.fromPoints(points)
 
         return {
             minX,
