@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { CircuitJsonModelAdapter } from '../../src/legacy-parser.mjs'
+import { AltiumCircuitJsonProjection } from '../../src/convergence/AltiumCircuitJsonProjection.mjs'
 
 /**
  * Returns the first Circuit JSON element of a type.
@@ -27,6 +28,45 @@ function assertPoint(value) {
     assert.equal(typeof value?.x, 'number')
     assert.equal(typeof value?.y, 'number')
 }
+
+test('schematic conversion preserves native pin owners and net memberships', () => {
+    const first = { ownerIndex: '12', designator: '1', name: 'Z', x: 4, y: 5 }
+    const second = { ...first, designator: '2', y: 7 }
+    const source = {
+        fileName: 'neutral-sheet.SchDoc',
+        kind: 'schematic',
+        schematic: {
+            components: [{ designator: 'U1' }],
+            pins: [first, second],
+            nets: [
+                {
+                    name: 'AUX',
+                    pins: [{ ...first, componentDesignator: 'U1' }]
+                },
+                {
+                    name: 'AUX',
+                    pins: [{ ...second, componentDesignator: 'U1' }]
+                }
+            ]
+        }
+    }
+    const model = AltiumCircuitJsonProjection.project(
+        CircuitJsonModelAdapter.fromRendererModel(source),
+        source
+    )
+    const component = firstElement(model, 'source_component')
+    const nets = model.filter((row) => row.type === 'source_net')
+    const ports = model.filter((row) => row.type === 'source_port')
+    assert.equal(component.name, 'U1')
+    assert.equal(nets.length, 1)
+    assert.equal(ports.length, 2)
+    assert.notEqual(ports[0].source_port_id, ports[1].source_port_id)
+    for (const [index, port] of ports.entries()) {
+        assert.equal(port.source_component_id, component.source_component_id)
+        assert.equal(port.pin_number, index + 1)
+        assert.deepEqual(port.connected_source_net_ids, [nets[0].source_net_id])
+    }
+})
 
 /**
  * Verifies renderer models convert to Circuit JSON arrays while preserving

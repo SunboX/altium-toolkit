@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { CircuitJsonModelAdapterPrimitives } from '../core/circuit-json/CircuitJsonModelAdapterPrimitives.mjs'
+import { AltiumSchematicPinConnectivity } from '../core/circuit-json/AltiumSchematicPinConnectivity.mjs'
 import { CircuitJsonSchematicGraphicBuilder } from '../core/circuit-json/CircuitJsonSchematicGraphicBuilder.mjs'
 import { AltiumSchematicCoordinateProjection } from './AltiumSchematicCoordinateProjection.mjs'
 
@@ -114,7 +115,7 @@ export class AltiumCircuitJsonProjection {
             netIds
         )
         return AltiumSchematicCoordinateProjection.project(
-            model,
+            AltiumSchematicPinConnectivity.project(model, schematic, idScope),
             schematic?.sheet?.height
         )
     }
